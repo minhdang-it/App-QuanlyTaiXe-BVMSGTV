@@ -7,7 +7,7 @@
 
 # Điều phối xe Bệnh viện mắt Sài Gòn Trà Vinh
 
-**Phiên bản:** 1.3.0 — xác nhận GPS trước khi xuất phát và tự mở Google Maps.
+**Phiên bản:** 1.3.2 — bổ sung nút Đăng xuất rõ ràng cho toàn bộ vai trò quản lý trên máy tính và điện thoại.
 
 Website/PWA dành cho đội xe **Bệnh viện Mắt Sài Gòn Trà Vinh**.
 
@@ -16,6 +16,20 @@ Bộ source gồm hai giao diện trong cùng một ứng dụng:
 - **Tài xế trên điện thoại:** nhận chuyến, checklist, chụp kilomet, gửi chi phí, báo sự cố và gọi điều phối.
 - **Quản trị trên máy tính/điện thoại:** dashboard, điều xe, hồ sơ xe, duyệt chi phí, sự cố, bảo dưỡng và báo cáo.
 
+
+
+
+## Cập nhật v1.3.2 — nút Đăng xuất
+
+- Điều phối, Kế toán, Hành chính đội xe, Ban Giám đốc và Quản trị đều có nút **Đăng xuất** rõ ràng.
+- Trên máy tính: nút nằm cuối thanh menu bên trái, ngay dưới tên và vai trò tài khoản.
+- Trên điện thoại: nút nằm góc phải thanh tiêu đề và luôn hiển thị.
+- Có hộp xác nhận trước khi đăng xuất để tránh bấm nhầm.
+- Không cần chạy lại SQL Supabase; chỉ build và cập nhật frontend.
+
+## Sửa lỗi Supabase ở v1.3.1
+
+Nếu SQL Editor báo `functions in index expression must be marked IMMUTABLE`, hãy chạy file `supabase/fix-trip-overlap.sql`, rồi chạy lại toàn bộ `supabase/schema.sql`. Nguyên nhân là PostgreSQL không cho index trực tiếp biểu thức `scheduled_start + interval '1 hour'` trên kiểu `timestamptz`. Bản 1.3.1 dùng cột `scheduled_period` được đồng bộ bằng trigger, sau đó tạo exclusion constraint trên chính cột này.
 
 ## Cập nhật luồng xuất phát ở v1.3.0
 

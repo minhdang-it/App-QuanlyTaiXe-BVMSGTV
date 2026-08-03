@@ -65,3 +65,13 @@ npm run verify
 - Đã chạy `scripts/verify-source.mjs` thành công.
 - Đã kiểm tra transpile cú pháp toàn bộ tệp TypeScript/TSX bằng TypeScript 5.8.3.
 - Không chạy được `npm install` trong môi trường đóng gói do registry nội bộ không có gói `@supabase/supabase-js`; cần chạy `npm run build` trên máy triển khai.
+
+## Kiểm tra bổ sung v1.3.2
+
+- Đã thay biểu tượng đăng xuất khó nhận biết ở sidebar bằng nút có chữ `Đăng xuất`.
+- Đã bổ sung nút `Đăng xuất` trên thanh tiêu đề ở giao diện điện thoại và máy tính bảng.
+- Đã áp dụng chung cho Điều phối, Kế toán, Hành chính đội xe, Ban Giám đốc và Quản trị.
+- Đã bổ sung hộp xác nhận và trạng thái chờ khi đang kết thúc phiên.
+- Đã tăng cache Service Worker từ `shell-v5` lên `shell-v6`.
+- Đã chạy `scripts/verify-source.mjs` thành công: 33 tệp TypeScript.
+- Không chạy được `npm install` trong môi trường đóng gói vì registry nội bộ trả 404 cho `@supabase/supabase-js`; cần chạy `npm run build` trên máy triển khai.

@@ -46,6 +46,7 @@ create table if not exists public.trips (
   passenger_count integer check (passenger_count is null or passenger_count >= 0),
   scheduled_start timestamptz not null,
   expected_end timestamptz,
+  scheduled_period tstzrange,
   started_at timestamptz,
   ended_at timestamptz,
   status text not null default 'assigned' check (status in ('assigned','accepted','ready','active','completed','cancelled')),
@@ -76,11 +77,54 @@ create table if not exists public.trips (
   )
 );
 
+-- PostgreSQL không cho dùng phép cộng timestamptz + interval trực tiếp trong
+-- biểu thức index/exclusion constraint vì phép toán này được đánh dấu STABLE.
+-- Lưu khoảng thời gian vào một cột thật và đồng bộ bằng trigger để GiST chỉ index cột.
+alter table public.trips
+  add column if not exists scheduled_period tstzrange;
+
+create or replace function public.sync_trip_scheduled_period()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.scheduled_period := tstzrange(
+    new.scheduled_start,
+    coalesce(new.expected_end, new.scheduled_start + interval '1 hour'),
+    '[)'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trips_sync_scheduled_period on public.trips;
+create trigger trips_sync_scheduled_period
+before insert or update on public.trips
+for each row execute function public.sync_trip_scheduled_period();
+
+-- Hỗ trợ chạy lại schema trên project đã tạo bảng trips trước đó.
+update public.trips
+set scheduled_period = tstzrange(
+  scheduled_start,
+  coalesce(expected_end, scheduled_start + interval '1 hour'),
+  '[)'
+)
+where scheduled_period is null
+   or scheduled_period is distinct from tstzrange(
+     scheduled_start,
+     coalesce(expected_end, scheduled_start + interval '1 hour'),
+     '[)'
+   );
+
+alter table public.trips
+  alter column scheduled_period set not null;
+
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'trips_vehicle_time_no_overlap') then
     alter table public.trips add constraint trips_vehicle_time_no_overlap
-      exclude using gist (vehicle_id with =, tstzrange(scheduled_start, coalesce(expected_end, scheduled_start + interval '1 hour'), '[)') with &&)
+      exclude using gist (vehicle_id with =, scheduled_period with &&)
       where (status not in ('completed','cancelled'));
   end if;
 end $$;
@@ -89,7 +133,7 @@ do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'trips_driver_time_no_overlap') then
     alter table public.trips add constraint trips_driver_time_no_overlap
-      exclude using gist (driver_id with =, tstzrange(scheduled_start, coalesce(expected_end, scheduled_start + interval '1 hour'), '[)') with &&)
+      exclude using gist (driver_id with =, scheduled_period with &&)
       where (status not in ('completed','cancelled'));
   end if;
 end $$;

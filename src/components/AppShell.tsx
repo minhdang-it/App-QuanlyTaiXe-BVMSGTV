@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { ROLE_LABELS } from '../lib/constants'
 import { NetworkBanner } from './NetworkBanner'
@@ -21,7 +21,21 @@ const navigation: Array<{ key: PageKey; label: string; icon: string; roles: stri
 export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (page: PageKey) => void; children: ReactNode }) {
   const { user, logout, mode } = useAuth()
   const { error } = useData()
+  const [loggingOut, setLoggingOut] = useState(false)
   const visible = navigation.filter((item) => item.roles.includes(user?.profile.role ?? ''))
+
+  async function handleLogout() {
+    if (loggingOut) return
+    const accepted = window.confirm('Đăng xuất khỏi hệ thống Điều phối xe?')
+    if (!accepted) return
+
+    setLoggingOut(true)
+    try {
+      await logout()
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -36,10 +50,15 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
             </button>
           ))}
         </nav>
-        <div className="sidebar-user">
-          <div className="avatar">{user?.profile.full_name.slice(0, 1).toUpperCase()}</div>
-          <div className="user-copy"><strong>{user?.profile.full_name}</strong><span>{ROLE_LABELS[user!.profile.role]}</span></div>
-          <button className="icon-button inverse" onClick={() => void logout()} title="Đăng xuất">↪</button>
+        <div className="sidebar-account">
+          <div className="sidebar-user">
+            <div className="avatar">{user?.profile.full_name.slice(0, 1).toUpperCase()}</div>
+            <div className="user-copy"><strong>{user?.profile.full_name}</strong><span>{ROLE_LABELS[user!.profile.role]}</span></div>
+          </div>
+          <button className="sidebar-logout" onClick={() => void handleLogout()} disabled={loggingOut}>
+            <span aria-hidden="true">⎋</span>
+            {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
+          </button>
         </div>
       </aside>
       <main className="main-area">
@@ -50,7 +69,13 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
             <h1>{navigation.find((item) => item.key === page)?.label}</h1>
             <p>Bệnh viện Mắt Sài Gòn Trà Vinh</p>
           </div>
-          <span className={`mode-pill ${mode}`}>{mode === 'demo' ? 'Chế độ Demo' : 'Dữ liệu trực tuyến'}</span>
+          <div className="topbar-actions">
+            <span className={`mode-pill ${mode}`}>{mode === 'demo' ? 'Chế độ Demo' : 'Dữ liệu trực tuyến'}</span>
+            <button className="mobile-logout" onClick={() => void handleLogout()} disabled={loggingOut} aria-label="Đăng xuất">
+              <span aria-hidden="true">⎋</span>
+              <strong>{loggingOut ? 'Đang thoát...' : 'Đăng xuất'}</strong>
+            </button>
+          </div>
         </header>
         <div className="page-content">{children}</div>
       </main>
