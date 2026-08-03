@@ -1,0 +1,146 @@
+export const currency = new Intl.NumberFormat('vi-VN', {
+  style: 'currency',
+  currency: 'VND',
+  maximumFractionDigits: 0,
+})
+
+export function formatCurrency(value: number | null | undefined) {
+  return currency.format(value ?? 0)
+}
+
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
+export function formatDate(value: string | null | undefined) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
+export function toDateTimeLocal(date: Date) {
+  const offset = date.getTimezoneOffset()
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16)
+}
+
+export function todayKey(date = new Date()) {
+  const offset = date.getTimezoneOffset()
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10)
+}
+
+export function isSameLocalDay(value: string, date = new Date()) {
+  return todayKey(new Date(value)) === todayKey(date)
+}
+
+export function daysUntil(value?: string | null) {
+  if (!value) return null
+  const target = new Date(`${value}T00:00:00`)
+  const now = new Date()
+  target.setHours(0, 0, 0, 0)
+  now.setHours(0, 0, 0, 0)
+  return Math.ceil((target.getTime() - now.getTime()) / 86_400_000)
+}
+
+export function uid(_prefix = 'id') {
+  if (crypto.randomUUID) return crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function normalizePhone(value: string) {
+  return value.replace(/\D/g, '').replace(/^84/, '0')
+}
+
+export async function fileToDataUrl(file?: Blob | null) {
+  if (!file) return null
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error)
+    reader.onload = () => resolve(String(reader.result))
+    reader.readAsDataURL(file)
+  })
+}
+
+export interface ConfirmedLocation {
+  lat: number
+  lng: number
+  accuracy: number
+}
+
+export async function requestCurrentLocation(): Promise<ConfirmedLocation> {
+  if (!navigator.geolocation) throw new Error('Thiết bị hoặc trình duyệt không hỗ trợ định vị GPS.')
+  if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+    throw new Error('Định vị chỉ hoạt động trên website HTTPS. Hãy mở đúng địa chỉ bảo mật của hệ thống.')
+  }
+
+  return await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      }),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new Error('Bạn chưa cho phép truy cập vị trí. Hãy bật quyền Vị trí cho trình duyệt rồi thử lại.'))
+          return
+        }
+        if (error.code === error.TIMEOUT) {
+          reject(new Error('Không lấy được vị trí trong thời gian cho phép. Hãy ra nơi thoáng hơn rồi thử lại.'))
+          return
+        }
+        reject(new Error('Không xác định được vị trí hiện tại. Hãy kiểm tra GPS và kết nối mạng.'))
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+    )
+  })
+}
+
+export async function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const location = await requestCurrentLocation()
+    return { lat: location.lat, lng: location.lng }
+  } catch {
+    return null
+  }
+}
+
+export function googleMapsDirectionsUrl(destination: string, origin?: { lat: number; lng: number } | null) {
+  const url = new URL('https://www.google.com/maps/dir/')
+  url.searchParams.set('api', '1')
+  if (origin) url.searchParams.set('origin', `${origin.lat},${origin.lng}`)
+  url.searchParams.set('destination', destination)
+  url.searchParams.set('travelmode', 'driving')
+  url.searchParams.set('dir_action', 'navigate')
+  return url.toString()
+}
+
+export function googleMapsLocationUrl(location: { lat: number; lng: number }) {
+  const url = new URL('https://www.google.com/maps/search/')
+  url.searchParams.set('api', '1')
+  url.searchParams.set('query', `${location.lat},${location.lng}`)
+  return url.toString()
+}
+
+export function safeNumber(value: FormDataEntryValue | null, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
