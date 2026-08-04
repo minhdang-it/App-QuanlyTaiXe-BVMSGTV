@@ -1,0 +1,13 @@
+CAP NHAT GIAO DIEN DANG NHAP v1.9.8
+==================================
+
+1. Sao luu file .env dang su dung.
+2. Giai nen Full Source v1.9.8 hoac chep de ban Patch.
+3. Neu dung Full Source, chep file .env cu vao thu muc goc.
+4. Chay:
+   npm install
+   npm run build
+5. Chay RESTART-SERVICE.bat.
+6. Bam Ctrl + F5. Tren PWA, dong hoan toan ung dung va mo lai.
+
+Ban nay khong can chay SQL va khong can deploy lai Edge Function.

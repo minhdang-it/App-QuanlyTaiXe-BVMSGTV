@@ -8,6 +8,7 @@ import type {
   Incident,
   Maintenance,
   Trip,
+  UpdateUserInput,
   Vehicle,
 } from '../types/models'
 import { backend, type MediaPayload } from '../lib/backend'
@@ -20,10 +21,12 @@ interface DataContextValue {
   online: boolean
   pending: number
   refresh(): Promise<void>
-  createUser(input: CreateUserInput): Promise<import('../types/models').Profile>
+  createUser(input: CreateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
+  updateUser(input: UpdateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
   updateProfile(id: string, changes: Partial<import('../types/models').Profile>): Promise<import('../types/models').Profile>
   createTrip(input: CreateTripInput): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
+  deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
@@ -104,10 +107,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     online,
     pending,
     refresh,
-    createUser: (input) => run(() => backend.createUser(input)),
+    createUser: (input, avatarFile) => run(() => backend.createUser(input, avatarFile)),
+    updateUser: (input, avatarFile) => run(() => backend.updateUser(input, avatarFile)),
     updateProfile: (id, changes) => run(() => backend.updateProfile(id, changes)),
     createTrip: (input) => run(() => backend.createTrip(input, user!.id)),
     updateTrip: (id, changes) => run(() => backend.updateTrip(id, changes)),
+    deleteTrip: (id) => run(() => backend.deleteTrip(id)),
     createChecklist: (input) => run(() => backend.createChecklist(input)),
     submitOdometer: (trip, phase, odometer, file) => run(() => backend.submitOdometer(trip, phase, odometer, file)),
     createExpense: (input, file) => run(() => backend.createExpense(input, file)),

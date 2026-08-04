@@ -1,0 +1,40 @@
+DIEU PHOI XE BVMSGTV - WINDOWS SERVICE SCRIPTS (NO DOCKER)
+==========================================================
+
+YEU CAU
+- Windows 10/11 hoac Windows Server.
+- Node.js 22 tro len.
+- Source website da co package.json va .env.
+
+CAI DAT
+1. Chep 2 file BAT va thu muc service vao thu muc goc website.
+2. Cau truc:
+
+   App Quan ly xe...
+   |-- START-SERVICE.bat
+   |-- RESTART-SERVICE.bat
+   |-- service\
+   |   |-- common.ps1
+   |   |-- start-service.ps1
+   |   |-- restart-service.ps1
+   |   `-- static-server.mjs
+   |-- package.json
+   |-- .env
+   `-- dist\
+
+SU DUNG
+- Nhap dup START-SERVICE.bat de chay website nen.
+- Nhap dup RESTART-SERVICE.bat de dung va khoi dong lai.
+- Website: http://localhost:8080
+
+HOAT DONG
+- Neu chua co dist/index.html, START-SERVICE se tu chay npm run build.
+- Process ID duoc luu tai .service\msg-car-web.pid.
+- Log duoc luu tai:
+  .service\msg-car-web.log
+  .service\msg-car-web-error.log
+
+LUU Y
+- RESTART-SERVICE khong tu build lai source neu thu muc dist da ton tai.
+- Sau khi sua source, chay npm run build truoc, sau do chay RESTART-SERVICE.bat.
+- Hai file BAT khong can quyen Administrator trong cau hinh thong thuong.

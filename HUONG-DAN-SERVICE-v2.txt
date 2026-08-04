@@ -1,0 +1,65 @@
+BO START/RESTART SERVICE FIX v2.0
+================================
+
+NGUYEN NHAN BAN CU KHONG CHAY
+- Goi truoc chi co START-SERVICE.bat va RESTART-SERVICE.bat.
+- Bi thieu thu muc "service" chua PowerShell va Node static server.
+- Hai file BAT vi vay goi den file khong ton tai.
+
+CACH CAI
+1. Giai nen goi nay.
+2. Chep TOAN BO 6 muc sau vao THU MUC GOC website:
+   - START-SERVICE.bat
+   - RESTART-SERVICE.bat
+   - STOP-SERVICE.bat
+   - KIEM-TRA-SERVICE.bat
+   - HUONG-DAN.txt
+   - thu muc service
+3. Dung vi tri la noi co:
+   - package.json
+   - .env
+   - dist
+   - src
+
+CAU TRUC DUNG
+App Quan ly xe...
+|-- START-SERVICE.bat
+|-- RESTART-SERVICE.bat
+|-- STOP-SERVICE.bat
+|-- KIEM-TRA-SERVICE.bat
+|-- package.json
+|-- dist
+`-- service
+    |-- service-manager.ps1
+    `-- static-server.mjs
+
+SU DUNG
+- START-SERVICE.bat:
+  Khoi dong website. Neu da co dist thi khong build lai.
+
+- RESTART-SERVICE.bat:
+  Dung service, tu dong npm run build, sau do khoi dong lai.
+
+- STOP-SERVICE.bat:
+  Dung website.
+
+- KIEM-TRA-SERVICE.bat:
+  Xem website co chay hay khong, PID, URL LAN va log loi.
+
+DIA CHI
+- Tren may dang chay: http://localhost:8080
+- May khac trong LAN: http://DIA_CHI_IP_MAY_CHU:8080
+
+LOG
+- .service\msg-car-web.log
+- .service\msg-car-web-error.log
+
+NEU BAO CONG 8080 DANG BI SU DUNG
+- Chay KIEM-TRA-SERVICE.bat de xem PID.
+- Mo CMD quyen Administrator va dung:
+  taskkill /PID SO_PID /F
+- Sau do chay lai START-SERVICE.bat.
+
+FIREWALL CHO MAY KHAC TRUY CAP
+Mo PowerShell quyen Administrator:
+New-NetFirewallRule -DisplayName "MSG Car Web 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow

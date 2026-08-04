@@ -1,0 +1,14 @@
+HUONG DAN CAP NHAT v1.9.6
+
+1. Sao luu source hien tai.
+2. Giai nen file Dieu-phoi-xe-BVMSGTV-Web-Full-Source-v1.9.6.zip hoac ban va patch.
+3. Neu cap nhat bang patch, chep de cac file vao source hien tai.
+4. Chay lai build:
+   npm run build
+5. Khoi dong lai dich vu web:
+   RESTART-SERVICE.bat
+6. Tren trinh duyet/PWA, nhan Ctrl + F5 hoac dong/mo lai app.
+
+Luu y:
+- Ban nay da doi cache service worker sang v196.
+- Giao dien dang nhap duoc toi uu de khung ben trai khong can scroll tren desktop thong dung.

@@ -64,6 +64,15 @@ const loginSource = fs.readFileSync(path.join(root, 'src/pages/LoginPage.tsx'), 
 assert(!loginSource.includes('Chọn nhanh tài khoản'), 'Màn hình đăng nhập không được chứa đăng nhập nhanh')
 assert(!loginSource.includes('demoCredentials'), 'Màn hình đăng nhập không được tự điền tài khoản Demo')
 
+
+const backendSource = fs.readFileSync(path.join(root, 'src/lib/backend.ts'), 'utf8')
+assert(backendSource.includes('phoneToInternalEmail'), 'Thiếu chuyển số điện thoại thành email nội bộ')
+assert(backendSource.includes('signInWithPassword({ email, password })'), 'Supabase login phải dùng email nội bộ')
+
+const manageUserSource = fs.readFileSync(path.join(root, 'supabase/functions/manage-user/index.ts'), 'utf8')
+assert(manageUserSource.includes('email_confirm: true'), 'Edge Function phải xác nhận email nội bộ')
+assert(manageUserSource.includes("login_method: 'internal_email'"), 'Edge Function thiếu metadata cơ chế đăng nhập')
+
 const driverSource = fs.readFileSync(path.join(root, 'src/pages/DriverPage.tsx'), 'utf8')
 assert(driverSource.includes('Xác nhận địa điểm xuất phát'), 'Thiếu bước xác nhận địa điểm trước chuyến')
 assert(driverSource.includes('googleMapsDirectionsUrl'), 'Thiếu tích hợp Google Maps dẫn đường')

@@ -11,8 +11,18 @@ create table if not exists public.profiles (
   role text not null default 'driver' check (role in ('driver','dispatcher','accountant','fleet','director','admin')),
   active boolean not null default true,
   avatar_url text,
-  created_at timestamptz not null default now()
+  employee_code text,
+  department text,
+  job_title text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+-- Mỗi số điện thoại chỉ thuộc một tài khoản. Email xác thực nội bộ không lưu tại đây.
+create unique index if not exists profiles_phone_unique
+  on public.profiles(phone)
+  where phone <> '';
 
 create table if not exists public.vehicles (
   id uuid primary key default gen_random_uuid(),
@@ -231,6 +241,9 @@ begin
 end;
 $$;
 
+drop trigger if exists profiles_updated_at on public.profiles;
+create trigger profiles_updated_at before update on public.profiles for each row execute function public.set_updated_at();
+
 drop trigger if exists vehicles_updated_at on public.vehicles;
 create trigger vehicles_updated_at before update on public.vehicles for each row execute function public.set_updated_at();
 drop trigger if exists trips_updated_at on public.trips;
@@ -250,10 +263,13 @@ begin
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', 'Người dùng'),
-    coalesce(new.phone, new.raw_user_meta_data->>'phone', ''),
+    coalesce(new.raw_user_meta_data->>'phone', new.phone, ''),
     'driver'
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update
+  set
+    full_name = excluded.full_name,
+    phone = case when excluded.phone <> '' then excluded.phone else public.profiles.phone end;
   return new;
 end;
 $$;
@@ -416,6 +432,9 @@ begin
 end;
 $$;
 
+drop trigger if exists audit_profiles on public.profiles;
+create trigger audit_profiles after insert or update or delete on public.profiles for each row execute function public.audit_change();
+
 drop trigger if exists audit_trips on public.trips;
 create trigger audit_trips after insert or update or delete on public.trips for each row execute function public.audit_change();
 drop trigger if exists audit_expenses on public.expenses;
@@ -452,6 +471,17 @@ drop policy if exists "trips dispatcher insert" on public.trips;
 create policy "trips dispatcher insert" on public.trips for insert to authenticated with check (public.can_dispatch());
 drop policy if exists "trips driver or dispatcher update" on public.trips;
 create policy "trips driver or dispatcher update" on public.trips for update to authenticated using (driver_id = auth.uid() or public.can_dispatch()) with check (driver_id = auth.uid() or public.can_dispatch());
+drop policy if exists "trips dispatcher safe delete" on public.trips;
+create policy "trips dispatcher safe delete" on public.trips for delete to authenticated using (
+  public.can_dispatch()
+  and status not in ('active','completed')
+  and start_odometer is null
+  and end_odometer is null
+  and start_odometer_image_url is null
+  and end_odometer_image_url is null
+  and not exists (select 1 from public.expenses e where e.trip_id = trips.id)
+  and not exists (select 1 from public.incidents i where i.trip_id = trips.id)
+);
 
 drop policy if exists "checklists own or management read" on public.checklists;
 create policy "checklists own or management read" on public.checklists for select to authenticated using (driver_id = auth.uid() or public.is_management());
@@ -521,7 +551,10 @@ create policy "media upload own folder"
 on storage.objects for insert to authenticated
 with check (
   bucket_id = 'vehicle-media'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (public.current_role() = 'admin' and (storage.foldername(name))[2] = 'avatars')
+  )
 );
 
 drop policy if exists "media update own folder" on storage.objects;
@@ -529,11 +562,17 @@ create policy "media update own folder"
 on storage.objects for update to authenticated
 using (
   bucket_id = 'vehicle-media'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (public.current_role() = 'admin' and (storage.foldername(name))[2] = 'avatars')
+  )
 )
 with check (
   bucket_id = 'vehicle-media'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (public.current_role() = 'admin' and (storage.foldername(name))[2] = 'avatars')
+  )
 );
 
 drop policy if exists "media owner or admin delete" on storage.objects;
@@ -545,6 +584,11 @@ using (
 );
 
 -- Bật realtime. Nếu bảng đã nằm trong publication, Supabase có thể báo trùng; khi đó bỏ qua câu tương ứng.
+do $$
+begin
+  alter publication supabase_realtime add table public.profiles;
+exception when duplicate_object then null;
+end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.trips;

@@ -1,0 +1,8 @@
+CAP NHAT v1.9.3
+================
+1. Chep de source moi, giu nguyen file .env dung.
+2. Chay npm run build.
+3. Chay RESTART-SERVICE.bat.
+4. Bam Ctrl + F5 hoac xoa cache PWA.
+
+Ban nay khong can SQL va khong can deploy Edge Function.

@@ -1,0 +1,36 @@
+DIEU PHOI XE BVMSGTV - SUA LOI KHONG TAO DUOC USER v1.4.1
+================================================================
+
+NGUYEN NHAN TRONG SOURCE CU:
+- .env dang dung Publishable Key (sb_publishable_...).
+- supabase/config.toml lai dat verify_jwt = true.
+- Request co the bi Edge Gateway chan truoc khi vao manage-user.
+- Trinh duyet chi hien: Failed to send a request to the Edge Function.
+
+CAC BUOC CAP NHAT:
+
+1. Giai nen source v1.4.1 vao thu muc moi.
+2. Giu nguyen file .env cua du an hien tai neu source moi khong co .env.
+3. Nhan dup TRIEN-KHAI-MANAGE-USER.bat.
+4. Dang nhap Supabase khi trinh duyet mo ra.
+5. Cho den khi thay thong bao THANH CONG.
+6. Chay:
+       npm run build
+7. Upload lai toan bo thu muc dist len hosting.
+8. Dang xuat khoi website, dang nhap lai bang tai khoan admin.
+9. Thu tao tai khoan moi.
+
+KIEM TRA RIENG EDGE FUNCTION:
+- Nhan dup KIEM-TRA-MANAGE-USER.bat.
+- Ket qua dung co dang:
+  {
+    "ok": true,
+    "function": "manage-user",
+    "version": "1.4.1"
+  }
+
+KHONG CAN:
+- Khong can chay lai schema.sql.
+- Khong can bat Phone Provider.
+- Khong can Twilio/SMS.
+- Khong dua Secret/service_role key vao .env cua website.

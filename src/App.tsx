@@ -13,6 +13,8 @@ import { IncidentsPage } from './pages/IncidentsPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { ReportsPage } from './pages/ReportsPage'
 import { UsersPage } from './pages/UsersPage'
+import { AccountPage } from './pages/AccountPage'
+import { NotificationProvider } from './context/NotificationContext'
 
 export default function App() {
   const { user, loading } = useAuth()
@@ -21,16 +23,16 @@ export default function App() {
   if (loading) return <Loading label="Đang kiểm tra phiên đăng nhập..." />
   if (!user) return <LoginPage />
 
-  return <DataProvider><AuthenticatedArea role={user.profile.role} page={page} setPage={setPage} /></DataProvider>
+  return <DataProvider><NotificationProvider><AuthenticatedArea role={user.profile.role} page={page} setPage={setPage} /></NotificationProvider></DataProvider>
 }
 
 
 const rolePages: Record<string, PageKey[]> = {
-  dispatcher: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports'],
-  accountant: ['dashboard', 'expenses', 'reports'],
-  fleet: ['dashboard', 'vehicles', 'incidents', 'maintenance', 'reports'],
-  director: ['dashboard', 'expenses', 'incidents', 'reports'],
-  admin: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'users'],
+  dispatcher: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  accountant: ['dashboard', 'dispatch', 'expenses', 'reports', 'account'],
+  fleet: ['dashboard', 'dispatch', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
+  director: ['dashboard', 'dispatch', 'expenses', 'incidents', 'reports', 'account'],
+  admin: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
 }
 
 function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKey; setPage: (page: PageKey) => void }) {
@@ -49,6 +51,7 @@ function Page({ page }: { page: PageKey }) {
     case 'incidents': return <IncidentsPage />
     case 'maintenance': return <MaintenancePage />
     case 'reports': return <ReportsPage />
+    case 'account': return <AccountPage />
     case 'users': return <UsersPage />
     default: return <DashboardPage />
   }

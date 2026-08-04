@@ -1,7 +1,7 @@
 {
   "name": "dieu-phoi-xe-bvmsgtv",
   "private": true,
-  "version": "1.3.2",
+  "version": "1.9.8",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,0 +1,12 @@
+CẬP NHẬT GIAO DIỆN ĐĂNG NHẬP v1.9.5
+=======================================
+
+1. Giải nén bản vá hoặc full source.
+2. Giữ nguyên file .env đang sử dụng.
+3. Chép đè các file mới vào source hiện tại.
+4. Chạy: npm run build
+5. Chạy: RESTART-SERVICE.bat
+6. Nhấn Ctrl + F5 hoặc xóa cache PWA nếu giao diện cũ vẫn còn.
+
+Không cần chạy SQL.
+Không cần deploy lại Edge Function.

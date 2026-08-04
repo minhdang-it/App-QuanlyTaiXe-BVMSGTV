@@ -1,3 +1,5 @@
+import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from '@supabase/supabase-js'
+
 import type {
   AppData,
   AuthUser,
@@ -9,12 +11,14 @@ import type {
   Maintenance,
   Profile,
   Trip,
+  UpdateUserInput,
   Vehicle,
 } from '../types/models'
 import { demoData } from './demoData'
 import { addPending, listPending, loadMediaBlob, pendingCount, removePending, saveMediaBlob, updatePending, type PendingAction } from './offline'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { fileToDataUrl, getCurrentLocation, normalizePhone, uid } from './utils'
+import { optimizeCapturedImage } from './image'
 
 const DEMO_DATA_KEY = 'msg-car-demo-data-v1'
 const DEMO_SESSION_KEY = 'msg-car-demo-session-v1'
@@ -31,11 +35,13 @@ export interface BackendApi {
   logout(): Promise<void>
   session(): Promise<AuthUser | null>
   loadData(): Promise<AppData>
-  createUser(input: CreateUserInput): Promise<Profile>
+  createUser(input: CreateUserInput, avatarFile?: File | null): Promise<Profile>
+  updateUser(input: UpdateUserInput, avatarFile?: File | null): Promise<Profile>
   updateProfile(id: string, changes: Partial<Profile>): Promise<Profile>
   subscribe(onChange: () => void): () => void
   createTrip(input: CreateTripInput, creatorId: string): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
+  deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
@@ -110,9 +116,39 @@ function demoUpdate<K extends keyof AppData>(key: K, updater: (items: AppData[K]
 }
 
 function phoneToE164(phone: string) {
-  const normalized = normalizePhone(phone)
-  if (normalized.startsWith('0')) return `+84${normalized.slice(1)}`
-  return normalized.startsWith('+') ? normalized : `+${normalized}`
+  const digits = normalizePhone(phone).replace(/\D/g, '')
+  if (digits.startsWith('84')) return `+${digits}`
+  if (digits.startsWith('0')) return `+84${digits.slice(1)}`
+  return `+84${digits}`
+}
+
+function phoneToInternalEmail(phone: string) {
+  const e164 = phoneToE164(phone)
+  return `${e164.slice(1)}@auth.bvmsgtv.internal`
+}
+
+function friendlyLoginError(message: string) {
+  if (/invalid login credentials/i.test(message)) return 'Số điện thoại hoặc mật khẩu không đúng.'
+  if (/email logins are disabled/i.test(message)) return 'Supabase chưa bật đăng nhập Email. Hãy bật Authentication → Providers → Email.'
+  return message
+}
+
+async function friendlyFunctionError(error: unknown) {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload = await error.context.clone().json() as { error?: string; message?: string }
+      return payload.error ?? payload.message ?? `Edge Function trả lỗi HTTP ${error.context.status}.`
+    } catch {
+      return `Edge Function trả lỗi HTTP ${error.context.status}. Hãy xem Supabase → Edge Functions → manage-user → Logs.`
+    }
+  }
+  if (error instanceof FunctionsFetchError) {
+    return 'Không kết nối được Edge Function manage-user. Hãy deploy lại function bằng TRIEN-KHAI-MANAGE-USER.bat và kiểm tra đúng Supabase Project.'
+  }
+  if (error instanceof FunctionsRelayError) {
+    return `Supabase Edge Relay gặp lỗi: ${error.message}`
+  }
+  return error instanceof Error ? error.message : String(error)
 }
 
 async function mediaToDemo(file?: File | null) {
@@ -129,6 +165,10 @@ async function resolveDemoMedia(path?: string | null) {
 }
 
 async function hydrateDemoData(data: AppData): Promise<AppData> {
+  const profiles = await Promise.all(data.profiles.map(async (profile) => {
+    const avatarPath = profile.avatar_path ?? profile.avatar_url ?? null
+    return { ...profile, avatar_path: avatarPath, avatar_url: await resolveDemoMedia(avatarPath) }
+  }))
   const trips = await Promise.all(data.trips.map(async (trip) => ({
     ...trip,
     start_odometer_image_url: await resolveDemoMedia(trip.start_odometer_image_url),
@@ -140,7 +180,7 @@ async function hydrateDemoData(data: AppData): Promise<AppData> {
     image_url: await resolveDemoMedia(incident.image_url),
     audio_url: await resolveDemoMedia(incident.audio_url),
   })))
-  return { ...data, trips, expenses, incidents }
+  return { ...data, profiles, trips, expenses, incidents }
 }
 
 const demoBackend: BackendApi = {
@@ -163,9 +203,46 @@ const demoBackend: BackendApi = {
   async loadData() {
     return await hydrateDemoData(readDemoData())
   },
-  async createUser(input) {
-    const record: Profile = { id: uid('profile'), full_name: input.full_name, phone: input.phone, role: input.role, active: true, created_at: new Date().toISOString() }
+  async createUser(input, avatarFile) {
+    const now = new Date().toISOString()
+    const record: Profile = {
+      id: uid('profile'),
+      full_name: input.full_name,
+      phone: input.phone,
+      role: input.role,
+      active: true,
+      avatar_url: avatarFile ? await fileToDataUrl(avatarFile) : null,
+      employee_code: input.employee_code?.trim() || null,
+      department: input.department?.trim() || null,
+      job_title: input.job_title?.trim() || null,
+      notes: input.notes?.trim() || null,
+      created_at: now,
+      updated_at: now,
+    }
     demoUpdate('profiles', (items) => [record, ...items])
+    return record
+  },
+  async updateUser(input, avatarFile) {
+    let record: Profile | undefined
+    const avatarUrl = avatarFile ? await fileToDataUrl(avatarFile) : input.avatar_url
+    demoUpdate('profiles', (items) => items.map((item) => {
+      if (item.id !== input.id) return item
+      record = {
+        ...item,
+        full_name: input.full_name,
+        phone: input.phone,
+        role: input.role,
+        active: input.active,
+        avatar_url: avatarUrl ?? item.avatar_url ?? null,
+        employee_code: input.employee_code?.trim() || null,
+        department: input.department?.trim() || null,
+        job_title: input.job_title?.trim() || null,
+        notes: input.notes?.trim() || null,
+        updated_at: new Date().toISOString(),
+      }
+      return record
+    }))
+    if (!record) throw new Error('Không tìm thấy tài khoản.')
     return record
   },
   async updateProfile(id, changes) {
@@ -219,6 +296,20 @@ const demoBackend: BackendApi = {
       demoUpdate('vehicles', (items) => items.map((v) => v.id === updated?.vehicle_id ? { ...v, status: 'available' as const, odometer: updated?.end_odometer ?? v.odometer, updated_at: new Date().toISOString() } : v))
     }
     return updated
+  },
+  async deleteTrip(id) {
+    const data = readDemoData()
+    const trip = data.trips.find((item) => item.id === id)
+    if (!trip) throw new Error('Không tìm thấy chuyến xe.')
+    if (trip.status === 'active' || trip.status === 'completed' || trip.start_odometer != null || trip.end_odometer != null || trip.start_odometer_image_url || trip.end_odometer_image_url) {
+      throw new Error('Không thể xóa chuyến đã phát sinh kilomet hoặc hành trình thực tế. Hãy hủy chuyến để giữ dữ liệu đối soát.')
+    }
+    if (data.expenses.some((item) => item.trip_id === id) || data.incidents.some((item) => item.trip_id === id)) {
+      throw new Error('Chuyến đã có chi phí hoặc sự cố liên quan nên không thể xóa.')
+    }
+    data.trips = data.trips.filter((item) => item.id !== id)
+    data.checklists = data.checklists.filter((item) => item.trip_id !== id)
+    writeDemoData(data)
   },
   async createChecklist(input) {
     const record: Checklist = { ...input, id: uid('checklist'), created_at: new Date().toISOString() }
@@ -339,6 +430,17 @@ async function uploadMedia(file: Blob, folder: string, fileKey?: string) {
   return path
 }
 
+async function uploadAccountAvatar(file: File, targetUserId: string) {
+  const optimized = await optimizeCapturedImage(file, { maxDimension: 720, quality: 0.82, maxBytes: 650_000 })
+  return await uploadMedia(optimized, `${targetUserId}/avatars`, 'profile')
+}
+
+async function removeStoredMedia(path?: string | null) {
+  if (!path || path.startsWith('data:') || path.startsWith('http')) return
+  const client = await requireSupabase()
+  await client.storage.from('vehicle-media').remove([path])
+}
+
 async function signMedia(path?: string | null) {
   if (!path || path.startsWith('data:') || path.startsWith('http')) return path
   const client = await requireSupabase()
@@ -346,7 +448,17 @@ async function signMedia(path?: string | null) {
   return data?.signedUrl ?? path
 }
 
+async function hydrateProfile(profile: Profile): Promise<Profile> {
+  const avatarPath = profile.avatar_path ?? profile.avatar_url ?? null
+  return {
+    ...profile,
+    avatar_path: avatarPath,
+    avatar_url: await signMedia(avatarPath),
+  }
+}
+
 async function hydrateData(data: AppData): Promise<AppData> {
+  const profiles = await Promise.all(data.profiles.map(hydrateProfile))
   const trips = await Promise.all(data.trips.map(async (trip) => ({
     ...trip,
     start_odometer_image_url: await signMedia(trip.start_odometer_image_url),
@@ -358,7 +470,7 @@ async function hydrateData(data: AppData): Promise<AppData> {
     image_url: await signMedia(incident.image_url),
     audio_url: await signMedia(incident.audio_url),
   })))
-  return { ...data, trips, expenses, incidents }
+  return { ...data, profiles, trips, expenses, incidents }
 }
 
 async function supabaseLoadData(): Promise<AppData> {
@@ -456,13 +568,14 @@ const supabaseBackend: BackendApi = {
   mode: 'supabase',
   async login(phone, password) {
     const client = await requireSupabase()
-    const { data, error } = await client.auth.signInWithPassword({ phone: phoneToE164(phone), password })
-    if (error) throw error
+    const email = phoneToInternalEmail(phone)
+    const { data, error } = await client.auth.signInWithPassword({ email, password })
+    if (error) throw new Error(friendlyLoginError(error.message))
     if (!data.user) throw new Error('Không đăng nhập được.')
     const { data: profile, error: profileError } = await client.from('profiles').select('*').eq('id', data.user.id).single()
     if (profileError) throw profileError
     if (!profile.active) { await client.auth.signOut(); throw new Error('Tài khoản đã bị khóa.') }
-    return { id: data.user.id, profile: profile as Profile }
+    return { id: data.user.id, profile: await hydrateProfile(profile as Profile) }
   },
   async logout() {
     const client = await requireSupabase()
@@ -474,15 +587,70 @@ const supabaseBackend: BackendApi = {
     if (!data.session?.user) return null
     const { data: profile } = await client.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle()
     if (!profile || !profile.active) { await client.auth.signOut(); return null }
-    return { id: data.session.user.id, profile: profile as Profile }
+    return { id: data.session.user.id, profile: await hydrateProfile(profile as Profile) }
   },
   loadData: supabaseLoadData,
-  async createUser(input) {
+  async createUser(input, avatarFile) {
     const client = await requireSupabase()
-    const { data, error } = await client.functions.invoke('manage-user', { body: { action: 'create', ...input } })
-    if (error) throw error
+    const { data, error } = await client.functions.invoke('manage-user', {
+      body: { action: 'create', ...input, avatar_url: null },
+    })
+    if (error) throw new Error(await friendlyFunctionError(error))
     if (data?.error) throw new Error(data.error)
-    return data.profile as Profile
+    if (!data?.profile) throw new Error('Edge Function không trả về hồ sơ tài khoản mới.')
+
+    let profile = data.profile as Profile
+    if (avatarFile) {
+      const avatarPath = await uploadAccountAvatar(avatarFile, profile.id)
+      const updateResult = await client.functions.invoke('manage-user', {
+        body: {
+          action: 'update',
+          id: profile.id,
+          full_name: input.full_name,
+          phone: input.phone,
+          role: input.role,
+          active: true,
+          employee_code: input.employee_code,
+          department: input.department,
+          job_title: input.job_title,
+          notes: input.notes,
+          avatar_url: avatarPath,
+        },
+      })
+      if (updateResult.error) {
+        await removeStoredMedia(avatarPath)
+        throw new Error(await friendlyFunctionError(updateResult.error))
+      }
+      if (updateResult.data?.error) {
+        await removeStoredMedia(avatarPath)
+        throw new Error(updateResult.data.error)
+      }
+      if (updateResult.data?.profile) profile = updateResult.data.profile as Profile
+    }
+    return await hydrateProfile(profile)
+  },
+  async updateUser(input, avatarFile) {
+    const client = await requireSupabase()
+    const oldAvatarPath = input.previous_avatar_url ?? null
+    const avatarPath = avatarFile
+      ? await uploadAccountAvatar(avatarFile, input.id)
+      : input.avatar_url === null
+        ? null
+        : input.avatar_url ?? oldAvatarPath
+    const { data, error } = await client.functions.invoke('manage-user', {
+      body: { action: 'update', ...input, avatar_url: avatarPath },
+    })
+    if (error) {
+      if (avatarFile) await removeStoredMedia(avatarPath)
+      throw new Error(await friendlyFunctionError(error))
+    }
+    if (data?.error) {
+      if (avatarFile) await removeStoredMedia(avatarPath)
+      throw new Error(data.error)
+    }
+    if (!data?.profile) throw new Error('Edge Function không trả về hồ sơ đã cập nhật.')
+    if (oldAvatarPath && oldAvatarPath !== avatarPath) await removeStoredMedia(oldAvatarPath)
+    return await hydrateProfile(data.profile as Profile)
   },
   async updateProfile(id, changes) {
     const client = await requireSupabase()
@@ -495,7 +663,7 @@ const supabaseBackend: BackendApi = {
     if (!client) return () => undefined
 
     const channel = client.channel('msg-car-changes')
-    for (const table of ['trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists']) {
+    for (const table of ['profiles', 'trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange)
     }
     channel.subscribe()
@@ -525,6 +693,12 @@ const supabaseBackend: BackendApi = {
       if (error) throw error
       return data as Trip
     }, optimistic)
+  },
+  async deleteTrip(id) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để xóa chuyến đi.')
+    const client = await requireSupabase()
+    const { error } = await client.from('trips').delete().eq('id', id)
+    if (error) throw error
   },
   async createChecklist(input) {
     const client = await requireSupabase()
@@ -670,4 +844,6 @@ const supabaseBackend: BackendApi = {
   async getPendingCount() { return await pendingCount() },
 }
 
-export const backend: BackendApi = isSupabaseConfigured ? supabaseBackend : demoBackend
+// Production-only mode: never fall back to sample/demo data.
+// If Supabase configuration is missing, requireSupabase() returns a clear configuration error.
+export const backend: BackendApi = supabaseBackend

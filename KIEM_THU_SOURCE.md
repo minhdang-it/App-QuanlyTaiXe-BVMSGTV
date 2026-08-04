@@ -1,3 +1,18 @@
+# KIỂM THỬ SOURCE v1.4.0
+
+Bản này thay Phone Auth bằng Email Auth nội bộ nhưng giao diện vẫn đăng nhập bằng số điện thoại.
+
+Các hạng mục cần kiểm tra trước khi triển khai:
+
+- `npm run verify` thành công.
+- Supabase Email Provider đang bật và Phone Provider đã tắt.
+- Migration `migrate-v1.4-internal-email-auth.sql` đã chạy.
+- Edge Function `manage-user` đã deploy lại.
+- Admin đầu tiên đã được tạo/chuyển bằng `TAO-HOAC-CHUYEN-ADMIN.bat`.
+- Đăng nhập bằng `090...`, `+84...` và mật khẩu đều quy về cùng một tài khoản.
+- Tạo lại số điện thoại cũ trên trang Tài khoản sẽ chuyển Auth user cũ, không tạo profile trùng.
+- Không có Secret/service_role key trong `.env`, source hoặc `dist`.
+
 # Kết quả kiểm tra source Điều phối xe BVMSGTV
 
 Ngày kiểm tra: **03/08/2026**

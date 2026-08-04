@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_ICONS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
 import { formatCurrency, formatDateTime, googleMapsDirectionsUrl, googleMapsLocationUrl, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
-import type { ExpenseType, IncidentType, Severity, Trip } from '../types/models'
+import type { ExpenseType, IncidentType, Profile, Severity, Trip, UpdateUserInput } from '../types/models'
 import { Modal } from '../components/Modal'
 import { MediaInput } from '../components/MediaInput'
 import { StatusBadge } from '../components/StatusBadge'
@@ -12,14 +12,15 @@ import { EmptyState } from '../components/EmptyState'
 import { AudioRecorder } from '../components/AudioRecorder'
 import { BrandLogo } from '../components/BrandLogo'
 import { readOdometerFromImage } from '../lib/odometerOcr'
+import { NotificationCenter } from '../components/NotificationCenter'
 
 const coordinatorPhone = import.meta.env.VITE_COORDINATOR_PHONE || '0900000000'
 
-type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | null
+type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | null
 
 export function DriverPage() {
-  const { user, logout, mode } = useAuth()
-  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip } = useData()
+  const { user, logout, mode, refreshUser } = useAuth()
+  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateUser } = useData()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -104,43 +105,100 @@ export function DriverPage() {
   }
 
   return (
-    <main className="driver-app">
+    <main className="driver-app driver-app-modern">
       <NetworkBanner />
-      <header className="driver-header">
+      <header className="driver-header driver-header-modern">
         <BrandLogo className="driver-brand" compact />
-        <button className="driver-user" onClick={() => void logout()}><span>{user?.profile.full_name}</span><small>{mode === 'demo' ? 'Demo · Đăng xuất' : 'Tài xế · Đăng xuất'}</small></button>
+        <NotificationCenter compact />
+        <button className="driver-account-button" onClick={() => setDialog('profile')} aria-label="Mở hồ sơ cá nhân">
+          <span className="driver-header-avatar">
+            {user?.profile.avatar_url
+              ? <img src={user.profile.avatar_url} alt={`Ảnh đại diện ${user.profile.full_name}`} />
+              : user?.profile.full_name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="driver-account-copy">
+            <strong>{user?.profile.full_name}</strong>
+            <small>Hồ sơ cá nhân</small>
+          </span>
+          <span className="driver-account-arrow">›</span>
+        </button>
       </header>
 
-      <section className="driver-content">
-        <div className="welcome-row"><div><p>Xin chào</p><h1>{user?.profile.full_name}</h1></div><div className="date-chip">{new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date())}</div></div>
+      <section className="driver-content driver-content-modern">
+        <section className="driver-welcome-card">
+          <div>
+            <span className="driver-section-label">CA LÀM VIỆC HÔM NAY</span>
+            <h1>Xin chào, {user?.profile.full_name.split(' ').slice(-1)[0]}</h1>
+            <p>{new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</p>
+          </div>
+          <button className="driver-profile-shortcut" onClick={() => setDialog('profile')}>👤 Tài khoản</button>
+        </section>
 
         {message && <button type="button" className="driver-toast" onClick={() => setMessage(null)}><span>{message}</span><strong>✕</strong></button>}
 
         {loading ? <div className="driver-trip-card skeleton-card" /> : currentTrip ? (
-          <article className="driver-trip-card" onClick={() => setDialog('trip')}>
-            <div className="trip-card-top"><span>CHUYẾN HIỆN TẠI</span><StatusBadge status={currentTrip.status} /></div>
-            <h2>{vehicle?.plate_number ?? 'Chưa gán xe'} · {vehicle?.vehicle_name}</h2>
-            <div className="route-view"><div className="route-dot start" /><div><small>Điểm đón</small><strong>{currentTrip.pickup}</strong></div></div>
-            <div className="route-line" />
-            <div className="route-view"><div className="route-dot end" /><div><small>Điểm đến</small><strong>{currentTrip.destination}</strong></div></div>
-            <div className="trip-meta"><span>🕒 {formatDateTime(currentTrip.scheduled_start)}</span><span>🏥 {PURPOSE_LABELS[currentTrip.purpose]}</span></div>
+          <article className="driver-trip-card driver-trip-card-modern" onClick={() => setDialog('trip')}>
+            <div className="trip-card-top"><span>CHUYẾN ĐANG PHỤ TRÁCH</span><StatusBadge status={currentTrip.status} /></div>
+            <div className="driver-vehicle-line">
+              <span>🚐</span>
+              <div><strong>{vehicle?.plate_number ?? 'Chưa gán xe'}</strong><small>{vehicle?.vehicle_name || 'Chưa cập nhật tên xe'}</small></div>
+            </div>
+            <div className="driver-route-card">
+              <div className="route-view"><div className="route-dot start" /><div><small>Điểm đón</small><strong>{currentTrip.pickup}</strong></div></div>
+              <div className="route-line" />
+              <div className="route-view"><div className="route-dot end" /><div><small>Điểm đến</small><strong>{currentTrip.destination}</strong></div></div>
+            </div>
+            <div className="trip-meta"><span>🕒 {formatDateTime(currentTrip.scheduled_start)}</span><span>🏥 {PURPOSE_LABELS[currentTrip.purpose]}</span><span>Xem chi tiết →</span></div>
           </article>
         ) : <EmptyState icon="🚐" title="Chưa có chuyến được giao" description="Khi điều phối tạo chuyến, thông tin sẽ xuất hiện tại đây." />}
 
-        <section className="driver-actions" aria-label="Thao tác tài xế">
-          <button className="driver-action primary" onClick={() => void primaryTripAction()} disabled={saving || !currentTrip}><span className="action-icon">▶</span><strong>{primaryLabel()}</strong><small>Thao tác theo tiến độ chuyến</small></button>
-          <button className="driver-action" onClick={() => setDialog('odometer')} disabled={!currentTrip || !['ready', 'active'].includes(currentTrip.status)}><span className="action-icon">📷</span><strong>CHỤP ĐỒNG HỒ KM</strong><small>Km đầu hoặc cuối chuyến</small></button>
-          <button className="driver-action" onClick={() => setDialog('expense')} disabled={!vehicle}><span className="action-icon">🧾</span><strong>GỬI CHI PHÍ</strong><small>Hóa đơn và số tiền</small></button>
-          <button className="driver-action danger" onClick={() => setDialog('incident')} disabled={!vehicle}><span className="action-icon">⚠️</span><strong>BÁO SỰ CỐ</strong><small>Ảnh, ghi âm và vị trí</small></button>
+        <button className="driver-primary-journey" onClick={() => void primaryTripAction()} disabled={saving || !currentTrip}>
+          <span className="driver-primary-icon">▶</span>
+          <span><strong>{primaryLabel()}</strong><small>Thao tác tiếp theo của chuyến hiện tại</small></span>
+          <span className="driver-primary-arrow">›</span>
+        </button>
+
+        <div className="driver-section-heading"><div><strong>Thao tác nhanh</strong><span>Chọn đúng công việc cần thực hiện</span></div></div>
+        <section className="driver-quick-actions" aria-label="Thao tác tài xế">
+          <button className="driver-quick-action" onClick={() => setDialog('odometer')} disabled={!currentTrip || !['ready', 'active'].includes(currentTrip.status)}>
+            <span className="driver-quick-icon camera">📷</span><span><strong>Chụp KM</strong><small>KM đầu hoặc cuối</small></span>
+          </button>
+          <button className="driver-quick-action" onClick={() => setDialog('expense')} disabled={!vehicle}>
+            <span className="driver-quick-icon receipt">🧾</span><span><strong>Gửi chi phí</strong><small>Hóa đơn và số tiền</small></span>
+          </button>
+          <button className="driver-quick-action incident" onClick={() => setDialog('incident')} disabled={!vehicle}>
+            <span className="driver-quick-icon warning">⚠️</span><span><strong>Báo sự cố</strong><small>Ảnh, ghi âm, vị trí</small></span>
+          </button>
         </section>
 
         {currentTrip?.status === 'active' && <a className="maps-launch-button" href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.start_lat != null && currentTrip.start_lng != null ? { lat: currentTrip.start_lat, lng: currentTrip.start_lng } : null)} target="_blank" rel="noreferrer">🗺 TIẾP TỤC DẪN ĐƯỜNG GOOGLE MAPS</a>}
 
-        <div className="driver-summary"><span>Chuyến hoàn thành hôm nay</span><strong>{todayCompleted.length}</strong></div>
+        <section className="driver-day-summary">
+          <div><span>Chuyến hoàn thành</span><strong>{todayCompleted.length}</strong></div>
+          <div><span>Xe phụ trách</span><strong>{vehicle?.plate_number ?? '—'}</strong></div>
+        </section>
       </section>
 
-      <a className="call-coordinator" href={`tel:${coordinatorPhone}`}>☎ GỌI ĐIỀU PHỐI</a>
+      <nav className="driver-bottom-nav" aria-label="Điều hướng tài xế">
+        <button className="active"><span>⌂</span><small>Trang chính</small></button>
+        <button onClick={() => setDialog('profile')}><span>👤</span><small>Tài khoản</small></button>
+        <a href={`tel:${coordinatorPhone}`}><span>☎</span><small>Điều phối</small></a>
+      </nav>
 
+      {dialog === 'profile' && user && <DriverProfileModal
+        profile={user.profile}
+        mode={mode}
+        saving={saving}
+        onClose={() => setDialog(null)}
+        onLogout={async () => {
+          if (!window.confirm('Đăng xuất khỏi hệ thống Điều phối xe?')) return
+          await logout()
+        }}
+        onSubmit={(input, avatar) => guarded(async () => {
+          await updateUser(input, avatar)
+          await refreshUser()
+        }, input.password ? 'Đã cập nhật hồ sơ và đổi mật khẩu.' : 'Đã cập nhật hồ sơ cá nhân.')}
+      />}
       {dialog === 'trip' && currentTrip && <TripDetailModal trip={currentTrip} vehicleName={`${vehicle?.plate_number ?? ''} ${vehicle?.vehicle_name ?? ''}`} onClose={() => setDialog(null)} />}
       {dialog === 'checklist' && currentTrip && <ChecklistModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => { await createChecklist({ ...values, trip_id: currentTrip.id, driver_id: user!.id }) }, 'Checklist đã được ghi nhận.')} />}
       {dialog === 'startTrip' && currentTrip && <StartTripModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={startTrip} />}
@@ -157,6 +215,116 @@ export function DriverPage() {
       }, 'Đã gửi báo cáo sự cố đến điều phối.')} />}
     </main>
   )
+
+}
+
+function DriverProfileModal({
+  profile,
+  mode,
+  saving,
+  onClose,
+  onLogout,
+  onSubmit,
+}: {
+  profile: Profile
+  mode: 'demo' | 'supabase'
+  saving: boolean
+  onClose: () => void
+  onLogout: () => Promise<void>
+  onSubmit: (input: UpdateUserInput, avatar: File | null) => void
+}) {
+  const [fullName, setFullName] = useState(profile.full_name)
+  const [phone, setPhone] = useState(profile.phone)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [avatar, setAvatar] = useState<File | null>(null)
+  const [avatarRemoved, setAvatarRemoved] = useState(false)
+  const [preview, setPreview] = useState<string | null>(profile.avatar_url ?? null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => () => {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+  }, [preview])
+
+  function chooseAvatar(file: File | null) {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+    if (!file) return
+    setAvatar(file)
+    setAvatarRemoved(false)
+    setPreview(URL.createObjectURL(file))
+  }
+
+  function removeAvatar() {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+    setAvatar(null)
+    setAvatarRemoved(true)
+    setPreview(null)
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setError(null)
+    if (!fullName.trim()) return setError('Vui lòng nhập họ tên.')
+    if (!phone.trim()) return setError('Vui lòng nhập số điện thoại.')
+    if (password && password.length < 6) return setError('Mật khẩu mới cần ít nhất 6 ký tự.')
+    if (password !== confirmPassword) return setError('Mật khẩu xác nhận chưa khớp.')
+
+    onSubmit({
+      id: profile.id,
+      full_name: fullName.trim(),
+      phone: phone.trim(),
+      role: profile.role,
+      active: profile.active,
+      employee_code: profile.employee_code ?? '',
+      department: profile.department ?? '',
+      job_title: profile.job_title ?? '',
+      notes: profile.notes ?? '',
+      password: password.trim() || undefined,
+      avatar_url: avatarRemoved ? null : profile.avatar_path ?? null,
+      previous_avatar_url: profile.avatar_path ?? null,
+    }, avatar)
+  }
+
+  return <Modal title="Tài khoản của tôi" onClose={onClose} wide>
+    <form className="driver-profile-form" onSubmit={submit}>
+      <section className="driver-profile-hero">
+        <div className="driver-profile-avatar">
+          {preview ? <img src={preview} alt={`Ảnh đại diện ${profile.full_name}`} /> : <span>{fullName.trim().slice(0, 1).toUpperCase() || '?'}</span>}
+        </div>
+        <div className="driver-profile-identity">
+          <strong>{fullName || profile.full_name}</strong>
+          <span>{profile.job_title || 'Tài xế'} · {profile.department || 'Chưa cập nhật phòng ban'}</span>
+          <div className="driver-avatar-actions">
+            <label className="secondary-button compact">
+              📷 Đổi ảnh
+              <input type="file" accept="image/*" capture="user" hidden onChange={(event) => chooseAvatar(event.target.files?.[0] ?? null)} />
+            </label>
+            {preview && <button type="button" className="driver-avatar-remove" onClick={removeAvatar}>Xóa ảnh</button>}
+          </div>
+        </div>
+      </section>
+
+      <section className="driver-profile-work">
+        <div><span>Mã nhân viên</span><strong>{profile.employee_code || 'Chưa cập nhật'}</strong></div>
+        <div><span>Chức danh</span><strong>{profile.job_title || 'Tài xế'}</strong></div>
+      </section>
+
+      <div className="driver-profile-fields">
+        <label>Họ và tên<input value={fullName} onChange={(event) => setFullName(event.target.value)} required /></label>
+        <label>Số điện thoại đăng nhập<input inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required /></label>
+        <label>Mật khẩu mới<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Để trống nếu không đổi" /></label>
+        <label>Xác nhận mật khẩu<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Nhập lại mật khẩu mới" /></label>
+      </div>
+
+      <div className="driver-profile-note">Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh do quản trị viên cập nhật.</div>
+      {error && <div className="form-error">{error}</div>}
+
+      <div className="driver-profile-actions">
+        <button type="button" className="driver-profile-logout" onClick={() => void onLogout()}>↪ ĐĂNG XUẤT</button>
+        <button className="primary-button" disabled={saving}>{saving ? 'ĐANG LƯU...' : 'LƯU THÔNG TIN'}</button>
+      </div>
+    </form>
+  </Modal>
 }
 
 function TripDetailModal({ trip, vehicleName, onClose }: { trip: Trip; vehicleName: string; onClose: () => void }) {

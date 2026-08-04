@@ -1,13 +1,6 @@
-## Nhận diện thương hiệu
-
-- Tiêu đề hệ thống: **Điều phối xe Bệnh viện mắt Sài Gòn Trà Vinh**.
-- Logo chính: `public/logo-bvmsgtv.png`.
-- Favicon và biểu tượng cài PWA: `public/icons/icon-192.png`, `public/icons/icon-512.png`.
-- Logo xuất hiện tại màn hình đăng nhập, thanh quản trị và giao diện tài xế.
-
 # Điều phối xe Bệnh viện mắt Sài Gòn Trà Vinh
 
-**Phiên bản:** 1.3.2 — bổ sung nút Đăng xuất rõ ràng cho toàn bộ vai trò quản lý trên máy tính và điện thoại.
+**Phiên bản:** 1.6.0 — quản lý hồ sơ tài khoản, ảnh đại diện và đặt lại mật khẩu; đăng nhập số điện thoại qua email nội bộ, không cần Twilio/SMS.
 
 Website/PWA dành cho đội xe **Bệnh viện Mắt Sài Gòn Trà Vinh**.
 
@@ -18,6 +11,41 @@ Bộ source gồm hai giao diện trong cùng một ứng dụng:
 
 
 
+
+
+## Cập nhật bắt buộc v1.4.0 — bỏ phụ thuộc Twilio
+
+Người dùng vẫn chỉ nhìn thấy hai ô **Số điện thoại** và **Mật khẩu**. Website tự chuyển số điện thoại thành email nội bộ, ví dụ:
+
+```text
+0357552773 → 84357552773@auth.bvmsgtv.internal
+```
+
+Email này chỉ là định danh kỹ thuật trong Supabase Auth, không gửi thư và không hiển thị cho tài xế.
+
+### Cấu hình Supabase
+
+```text
+Authentication → Providers → Email: BẬT
+Authentication → Providers → Phone: TẮT
+```
+
+Không cần Twilio, SMS Provider hoặc OTP. Tài khoản do Admin tạo qua Edge Function với `email_confirm: true`.
+
+### Nâng cấp project đang dùng
+
+1. Chạy `supabase/migrate-v1.4-internal-email-auth.sql` trong SQL Editor.
+2. Deploy lại Edge Function:
+
+```powershell
+npx supabase functions deploy manage-user
+```
+
+3. Nhấp đúp `TAO-HOAC-CHUYEN-ADMIN.bat` để tạo hoặc chuyển tài khoản admin đầu tiên.
+4. Đăng nhập Admin, vào **Tài khoản → Thêm tài khoản** và nhập lại các số điện thoại cũ cùng mật khẩu mới. Nếu số đã tồn tại, hệ thống chuyển tài khoản cũ sang cơ chế mới thay vì tạo trùng.
+5. Chạy `npm run build` và cập nhật thư mục `dist`.
+
+Xem hướng dẫn ngắn tại `HUONG-DAN-NANG-CAP-v1.4.txt`.
 
 ## Cập nhật v1.3.2 — nút Đăng xuất
 
@@ -174,22 +202,17 @@ Có thể chạy thêm dữ liệu xe mẫu:
 supabase/seed-vehicles.sql
 ```
 
-### Bước 3 — Cấu hình đăng nhập số điện thoại
+### Bước 3 — Cấu hình đăng nhập số điện thoại không cần SMS
 
 Trong Supabase:
 
-1. Vào **Authentication → Providers → Phone**.
-2. Kết nối nhà cung cấp SMS nếu muốn dùng OTP.
-3. Với bản nội bộ sử dụng mật khẩu, tạo người dùng bằng số điện thoại trong **Authentication → Users**.
-4. Sau khi tạo, trigger tự thêm hồ sơ với quyền mặc định `driver`.
+1. Vào **Authentication → Providers → Email** và bật Email Provider.
+2. Vào **Authentication → Providers → Phone** và tắt Phone Provider.
+3. Không cấu hình Twilio, SMS hoặc OTP.
+4. Nhấp đúp `TAO-HOAC-CHUYEN-ADMIN.bat` để tạo hoặc chuyển tài khoản admin đầu tiên.
+5. Sau khi đăng nhập Admin, tạo các tài khoản còn lại tại trang **Tài khoản**.
 
-Cập nhật tên và quyền bằng SQL:
-
-```sql
-update public.profiles
-set full_name = 'Lê Minh Đăng', role = 'dispatcher', active = true
-where phone = '+84901000002';
-```
+Ứng dụng tự chuyển số điện thoại sang email nội bộ. Ví dụ `0901000002` được xác thực dưới dạng `84901000002@auth.bvmsgtv.internal`, nhưng người dùng chỉ nhập số điện thoại.
 
 Các quyền hợp lệ:
 
@@ -202,7 +225,7 @@ director     Ban Giám đốc
 admin        Quản trị hệ thống
 ```
 
-Tạo thủ công tài khoản `admin` đầu tiên. Sau đó quản trị viên có thể tạo các tài khoản còn lại ngay trên web.
+Nếu đang nâng cấp từ bản Phone Auth cũ, chạy `supabase/migrate-v1.4-internal-email-auth.sql` trước. Khi Admin nhập lại một số điện thoại cũ tại trang Tài khoản, Edge Function sẽ chuyển Auth user cũ sang email nội bộ và đặt mật khẩu mới.
 
 ### Bước 3.1 — Deploy Edge Function quản lý tài khoản
 
@@ -409,3 +432,48 @@ npm run verify
 ```
 
 Kết quả kiểm tra source tại thời điểm bàn giao nằm trong `KIEM_THU_SOURCE.md`.
+
+## Quản lý chuyến đi v1.5.0
+
+Menu **Chuyến đi** cho phép các vai trò quản lý xem lại toàn bộ lịch sử, lọc theo trạng thái/loại/ngày, mở chi tiết kilomet, GPS, checklist, chi phí và sự cố.
+
+- Điều phối và Admin: tạo, sửa, hủy và xóa chuyến an toàn.
+- Ban Giám đốc, Kế toán, Hành chính: chỉ xem.
+- Chuyến đã chạy, hoàn thành, có kilomet, chi phí hoặc sự cố không được xóa vĩnh viễn.
+
+Trước khi dùng nút Xóa trên Supabase hiện tại, chạy:
+
+```text
+supabase/migrate-v1.5-trip-management.sql
+```
+
+## Quản lý hồ sơ tài khoản v1.6.0
+
+Quản trị viên mở mục **Tài khoản** để:
+
+- Thêm hoặc thay ảnh đại diện.
+- Sửa họ tên, số điện thoại, mã nhân viên, phòng ban và chức danh.
+- Đổi vai trò, khóa hoặc mở tài khoản.
+- Đặt lại mật khẩu cho người dùng.
+- Ghi chú thông tin nội bộ.
+
+Trước khi dùng chức năng này trên Supabase hiện tại, chạy:
+
+```text
+supabase/migrate-v1.6-account-profiles.sql
+```
+
+Sau đó deploy lại Edge Function:
+
+```powershell
+npx supabase functions deploy manage-user --project-ref MA_PROJECT --no-verify-jwt
+```
+
+
+## Hồ sơ cá nhân cho mọi vai trò (v1.8.0)
+
+Tất cả người dùng có thể mở **Hồ sơ cá nhân** từ menu, nút avatar hoặc thanh điều hướng mobile để tự đổi ảnh đại diện, họ tên, số điện thoại đăng nhập và mật khẩu. Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh vẫn do Quản trị viên quản lý.
+
+## Cập nhật v1.9.0
+
+Phiên bản v1.9.0 bổ sung màn hình đăng nhập mới và trung tâm thông báo realtime. Không cần chạy migration SQL. Sau khi cập nhật source chỉ cần chạy `npm run build` và khởi động lại service.

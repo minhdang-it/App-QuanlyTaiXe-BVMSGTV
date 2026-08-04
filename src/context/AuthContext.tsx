@@ -8,6 +8,7 @@ interface AuthContextValue {
   mode: 'demo' | 'supabase'
   login(phone: string, password: string): Promise<void>
   logout(): Promise<void>
+  refreshUser(): Promise<AuthUser | null>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -37,6 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async logout() {
       await backend.logout()
       setUser(null)
+    },
+    async refreshUser() {
+      const session = await backend.session()
+      setUser(session)
+      return session
     },
   }), [loading, user])
 

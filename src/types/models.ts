@@ -27,7 +27,13 @@ export interface Profile {
   role: UserRole
   active: boolean
   avatar_url?: string | null
+  avatar_path?: string | null
+  employee_code?: string | null
+  department?: string | null
+  job_title?: string | null
+  notes?: string | null
   created_at: string
+  updated_at?: string | null
 }
 
 export interface Vehicle {
@@ -168,6 +174,25 @@ export interface CreateUserInput {
   phone: string
   password: string
   role: UserRole
+  employee_code?: string
+  department?: string
+  job_title?: string
+  notes?: string
+}
+
+export interface UpdateUserInput {
+  id: string
+  full_name: string
+  phone: string
+  role: UserRole
+  active: boolean
+  employee_code?: string
+  department?: string
+  job_title?: string
+  notes?: string
+  password?: string
+  avatar_url?: string | null
+  previous_avatar_url?: string | null
 }
 
 export interface CreateTripInput {

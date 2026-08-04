@@ -1,2 +1,4 @@
+# Publishable keys are not compatible with the legacy Edge Gateway JWT check.
+# The function validates the signed-in user's access token inside the handler.
 [functions.manage-user]
-verify_jwt = true
+verify_jwt = false
