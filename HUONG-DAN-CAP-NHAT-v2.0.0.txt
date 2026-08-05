@@ -1,0 +1,12 @@
+CAP NHAT v2.0.0
+================
+
+1. Sao luu file .env cua source dang chay.
+2. Giai nen full source v2.0.0.
+3. Chep file .env cu vao thu muc source moi.
+4. Chay: npm install
+5. Chay: npm run build
+6. Chay: RESTART-SERVICE.bat
+7. Bam Ctrl + F5. Tren PWA dien thoai, dong hoan toan va mo lai.
+
+Khong can chay SQL. Khong can deploy lai Edge Function.

@@ -4,8 +4,8 @@
   "description": "Hệ thống điều phối và quản lý đội xe Bệnh viện mắt Sài Gòn Trà Vinh",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#f3f7f6",
-  "theme_color": "#0b5e55",
+  "background_color": "#edf5f1",
+  "theme_color": "#087344",
   "lang": "vi",
   "icons": [
     {

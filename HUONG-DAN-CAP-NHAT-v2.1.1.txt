@@ -1,0 +1,15 @@
+BAN CAP NHAT v2.1.1
+
+Noi dung chinh:
+- Sua bo cuc giao dien dang nhap.
+- Toan bo nhan dien o trang dang nhap su dung tieng Viet.
+- Tieu de "Dang nhap van hanh" giu 1 hang.
+- Chu trong khung trang thai van hanh khong con bi cat dau ...
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Chep lai file .env cu neu dang trien khai production.
+3. Neu can build lai:
+   npm install
+   npm run build
+4. Neu dang chay service Windows thi restart service.

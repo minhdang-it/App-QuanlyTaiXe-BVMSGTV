@@ -1,0 +1,16 @@
+HƯỚNG DẪN CẬP NHẬT v2.1.0
+
+1. Sao lưu source và tệp .env hiện tại.
+2. Giải nén source v2.1.0 vào thư mục mới.
+3. Sao chép nội dung .env cũ vào tệp .env mới trên máy triển khai.
+4. Mở Terminal/PowerShell tại thư mục source.
+5. Chạy: npm install
+6. Chạy kiểm tra: npm run check
+7. Build lại giao diện: npm run build
+8. Nếu chạy bằng service Windows, chạy RESTART-SERVICE.bat.
+9. Trên điện thoại, đóng tab cũ và mở lại. Nếu vẫn thấy giao diện cũ, xóa cache website hoặc gỡ biểu tượng PWA rồi cài lại.
+
+LƯU Ý:
+- Phiên bản này thay đổi source React/CSS nên bắt buộc phải build lại.
+- Không sao chép thư mục node_modules từ máy cũ.
+- Dòng “Bệnh viện mắt Sài Gòn Trà Vinh” đã được khóa không xuống hàng.

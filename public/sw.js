@@ -1,8 +1,8 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v198'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v200'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope
-  const core = [scope, `${scope}index.html`, `${scope}manifest.webmanifest`, `${scope}icons/icon-192.png`, `${scope}icons/icon-512.png`, `${scope}logo-bvmsgtv.png`]
+  const core = [scope, `${scope}index.html`, `${scope}manifest.webmanifest`, `${scope}icons/icon-192.png`, `${scope}icons/icon-512.png`, `${scope}logo-bvmsgtv.png`, `${scope}hospital-real-v200.webp`, `${scope}hiace-real-v200.png`, `${scope}fortuner-real-v200.png`]
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(core)).then(() => self.skipWaiting()))
 })
 

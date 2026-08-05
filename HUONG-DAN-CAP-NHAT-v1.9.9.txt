@@ -1,0 +1,20 @@
+HƯỚNG DẪN CẬP NHẬT v1.9.9
+==========================
+
+1. Sao lưu file .env đang sử dụng.
+2. Giải nén full source v1.9.9.
+3. Chép file .env cũ vào thư mục source mới.
+4. Mở PowerShell/CMD trong thư mục source và chạy:
+
+   npm install
+   npm run build
+
+5. Khởi động lại website:
+
+   RESTART-SERVICE.bat
+
+6. Trên trình duyệt nhấn Ctrl + F5.
+7. Nếu đang dùng PWA trên điện thoại, đóng hoàn toàn ứng dụng rồi mở lại.
+
+Không cần chạy SQL.
+Không cần triển khai lại Edge Function.
