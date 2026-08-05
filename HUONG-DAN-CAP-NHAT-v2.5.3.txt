@@ -1,0 +1,9 @@
+BAN CAP NHAT v2.5.3
+
+- Tai xe co the bat/tat tu dong doc so KM bang AI.
+- Mac dinh tat de thao tac nhanh.
+- Lua chon duoc ghi nho tren dien thoai.
+- Khi tat, van chup va luu anh, sau do nhap KM thu cong.
+- Co nut AI DOC ANH NAY de dung AI khi can.
+
+Cap nhat source, giu lai .env va xoa cache/PWA cu sau khi khoi dong lai.

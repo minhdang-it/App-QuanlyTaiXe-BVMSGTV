@@ -1,0 +1,15 @@
+BẢN CẬP NHẬT v2.5.2
+
+Nội dung chính:
+- Tối ưu toàn bộ giao diện quản trị trên mobile.
+- Bỏ khối giới thiệu vai trò lớn đang chiếm diện tích.
+- Gom gọn phần quản trị người dùng và dữ liệu.
+- Ưu tiên cảnh báo và nội dung cần xử lý lên đầu.
+- Chuẩn hóa card, form, bảng, bộ lọc, modal và thanh menu dưới.
+
+Cách cập nhật:
+1. Ghi đè source mới lên source cũ.
+2. Giữ lại file .env hiện tại.
+3. Bản dist đã được cập nhật sẵn.
+4. Khởi động lại service nếu đang chạy bằng Windows Service.
+5. Xóa cache hoặc gỡ PWA cũ rồi cài lại để nhận giao diện mới.

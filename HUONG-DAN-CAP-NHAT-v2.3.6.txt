@@ -1,0 +1,18 @@
+BAN CAP NHAT v2.3.6
+
+Noi dung chinh:
+- Hover icon menu thu gon se hien ten nut.
+- Icon Chi phi doi sang kieu do la.
+- Nhan vai tro dua vao goc menu.
+- Ten Benh vien mat Sai Gon Tra Vinh doi sang mau do.
+- Mobile: Lam moi du lieu thu gon cho nam cung hang voi thong bao, user, dang xuat.
+- Chu Truc tuyen hien thi gon tren 1 hang.
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Giu lai file .env cu neu dang trien khai production.
+3. Neu can build lai:
+   npm install
+   npm run build
+4. Neu dang chay service Windows thi restart service.
+5. Xoa cache trinh duyet / PWA de nhan CSS va JS moi.

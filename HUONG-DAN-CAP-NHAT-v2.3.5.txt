@@ -1,0 +1,19 @@
+BAN CAP NHAT v2.3.5
+
+Noi dung chinh:
+- Dua 2 module Trung tam ... va Bao mat ... ra khu vuc Tong quan.
+- Logo bam duoc de quay ve trang chu.
+- Ten user ro hon.
+- Nut menu khi thu gon chi con icon.
+- Nut Dang xuat doi mau do.
+- Bo icon moi hien dai hon.
+- Mobile gon hon, uu tien thong tin can chu y len truoc.
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Giu lai file .env cu neu dang trien khai production.
+3. Neu can build lai:
+   npm install
+   npm run build
+4. Neu dang chay service Windows thi restart service.
+5. Xoa cache trinh duyet / PWA de nhan CSS va JS moi.

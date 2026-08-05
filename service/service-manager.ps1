@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet('Start', 'Restart', 'Stop', 'Status')]
     [string]$Action = 'Start',
     [switch]$Build
@@ -20,8 +20,12 @@ $ServerFile = Join-Path $PSScriptRoot 'static-server.mjs'
 $DistDir = Join-Path $RootDir 'dist'
 $IndexFile = Join-Path $DistDir 'index.html'
 $Port = 8080
+$HttpsPort = 8443
+$CertFile = Join-Path $RootDir '.certs\msg-car-cert.pem'
+$KeyFile = Join-Path $RootDir '.certs\msg-car-key.pem'
+$HttpsEnabled = (Test-Path -LiteralPath $CertFile) -and (Test-Path -LiteralPath $KeyFile)
 $HealthUrl = "http://127.0.0.1:$Port/__health"
-$HomeUrl = "http://localhost:$Port"
+$HomeUrl = if ($HttpsEnabled) { "https://localhost:$HttpsPort" } else { "http://localhost:$Port" }
 
 function Write-Info([string]$Message) {
     Write-Host "[MSG-CAR] $Message" -ForegroundColor Cyan
@@ -207,9 +211,20 @@ function Show-NetworkUrls {
             Select-Object -ExpandProperty IPAddress -Unique
 
         foreach ($address in $addresses) {
-            Write-Success "May khac trong LAN: http://$address`:$Port"
+            if ($HttpsEnabled) {
+                Write-Success "Dien thoai/LAN (GPS + thong bao): https://$address`:$HttpsPort"
+                Write-Info "HTTP se tu chuyen sang HTTPS: http://$address`:$Port"
+            } else {
+                Write-WarningMessage "LAN chua co HTTPS: http://$address`:$Port (GPS va thong bao se bi chan)"
+            }
         }
     } catch {}
+
+    if ($HttpsEnabled) {
+        Write-Success "HTTPS da bat. Chung chi: $CertFile"
+    } else {
+        Write-WarningMessage 'Chua co chung chi HTTPS. Hay chay TAO-HTTPS-NOI-BO.bat.'
+    }
 }
 
 function Start-WebService {
@@ -238,15 +253,30 @@ function Start-WebService {
         Throw-ServiceError "Cong $Port dang bi tien trinh khac su dung. PID=$portOwner, Process=$ownerName. Hay tat tien trinh do hoac doi cong."
     }
 
+    if ($HttpsEnabled) {
+        $httpsPortOwner = Get-PortOwnerPid -LocalPort $HttpsPort
+        if ($null -ne $httpsPortOwner) {
+            $ownerProcess = Get-Process -Id $httpsPortOwner -ErrorAction SilentlyContinue
+            $ownerName = if ($null -ne $ownerProcess) { $ownerProcess.ProcessName } else { 'khong xac dinh' }
+            Throw-ServiceError "Cong HTTPS $HttpsPort dang bi tien trinh khac su dung. PID=$httpsPortOwner, Process=$ownerName."
+        }
+    }
+
     Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $ErrorLogFile -Force -ErrorAction SilentlyContinue
 
     Write-Info 'Dang khoi dong website chay nen...'
     $oldPort = $env:PORT
     $oldRootDir = $env:ROOT_DIR
+    $oldHttpsPort = $env:HTTPS_PORT
+    $oldCertFile = $env:TLS_CERT_FILE
+    $oldKeyFile = $env:TLS_KEY_FILE
     try {
         $env:PORT = [string]$Port
+        $env:HTTPS_PORT = [string]$HttpsPort
         $env:ROOT_DIR = $DistDir
+        $env:TLS_CERT_FILE = $CertFile
+        $env:TLS_KEY_FILE = $KeyFile
         $quotedServerFile = '"' + $ServerFile + '"'
         $process = Start-Process `
             -FilePath $node `
@@ -260,6 +290,9 @@ function Start-WebService {
     finally {
         if ($null -eq $oldPort) { Remove-Item Env:PORT -ErrorAction SilentlyContinue } else { $env:PORT = $oldPort }
         if ($null -eq $oldRootDir) { Remove-Item Env:ROOT_DIR -ErrorAction SilentlyContinue } else { $env:ROOT_DIR = $oldRootDir }
+        if ($null -eq $oldHttpsPort) { Remove-Item Env:HTTPS_PORT -ErrorAction SilentlyContinue } else { $env:HTTPS_PORT = $oldHttpsPort }
+        if ($null -eq $oldCertFile) { Remove-Item Env:TLS_CERT_FILE -ErrorAction SilentlyContinue } else { $env:TLS_CERT_FILE = $oldCertFile }
+        if ($null -eq $oldKeyFile) { Remove-Item Env:TLS_KEY_FILE -ErrorAction SilentlyContinue } else { $env:TLS_KEY_FILE = $oldKeyFile }
     }
 
     if ($null -eq $process) {

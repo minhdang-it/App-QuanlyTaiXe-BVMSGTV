@@ -1,0 +1,19 @@
+BẢN SOURCE v2.5.5 - BẮT BUỘC BUILD LẠI
+
+Thư mục dist cũ đã được loại bỏ để tránh triển khai nhầm giao diện/logic v2.5.4.
+
+Sau khi chép lại file .env, chạy:
+
+  npm install
+  npm run build
+
+Sau đó khởi động hoặc restart dịch vụ.
+
+Cập nhật Supabase bắt buộc:
+- Mở Supabase > SQL Editor.
+- Chạy file: supabase/migrate-v2.5.5-expense-approval.sql
+
+Quy trình chi phí mới:
+1. Ban Giám đốc duyệt.
+2. Kế toán kiểm tra và duyệt.
+3. Kế toán xác nhận đã chi trả.

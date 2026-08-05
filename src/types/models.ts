@@ -2,7 +2,8 @@ export type UserRole = 'driver' | 'dispatcher' | 'accountant' | 'fleet' | 'direc
 
 export type VehicleStatus = 'available' | 'in_use' | 'maintenance' | 'out_of_service'
 export type TripStatus = 'assigned' | 'accepted' | 'ready' | 'active' | 'completed' | 'cancelled'
-export type ExpenseStatus = 'pending' | 'approved' | 'rejected' | 'paid'
+export type ExpenseStatus = 'pending_director' | 'pending_accountant' | 'approved' | 'rejected' | 'paid'
+export type ExpenseReviewAction = 'director_approve' | 'accountant_approve' | 'reject' | 'mark_paid'
 export type IncidentStatus = 'reported' | 'handling' | 'resolved'
 export type Severity = 'low' | 'medium' | 'high' | 'critical'
 
@@ -81,6 +82,9 @@ export interface Trip {
   start_lng?: number | null
   end_lat?: number | null
   end_lng?: number | null
+  current_lat?: number | null
+  current_lng?: number | null
+  location_updated_at?: string | null
   created_by?: string | null
   created_at: string
   updated_at: string
@@ -113,6 +117,12 @@ export interface Expense {
   status: ExpenseStatus
   reviewer_id?: string | null
   reviewed_at?: string | null
+  director_reviewer_id?: string | null
+  director_reviewed_at?: string | null
+  accountant_reviewer_id?: string | null
+  accountant_reviewed_at?: string | null
+  paid_by?: string | null
+  paid_at?: string | null
   rejection_reason?: string | null
   expense_date: string
   created_at: string

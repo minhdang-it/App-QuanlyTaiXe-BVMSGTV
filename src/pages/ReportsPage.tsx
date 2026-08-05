@@ -10,7 +10,7 @@ export function ReportsPage() {
 
   const report = useMemo(() => {
     const trips = data.trips.filter((trip) => trip.status === 'completed' && (trip.ended_at ?? trip.scheduled_start).slice(0, 7) === month)
-    const expenses = data.expenses.filter((expense) => expense.expense_date.slice(0, 7) === month && expense.status !== 'rejected')
+    const expenses = data.expenses.filter((expense) => expense.expense_date.slice(0, 7) === month && expense.status === 'paid')
     const purpose = (Object.keys(PURPOSE_LABELS) as TripPurpose[]).map((key) => {
       const purposeTrips = trips.filter((trip) => trip.purpose === key)
       const ids = new Set(purposeTrips.map((trip) => trip.id))

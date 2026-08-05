@@ -130,7 +130,7 @@ Không cần chạy lại SQL khi nâng cấp từ v1.2.1. Chỉ cần cập nh�
 - Vite.
 - Supabase Auth, PostgreSQL, Realtime và Storage.
 - IndexedDB qua thư viện `idb` để xếp hàng thao tác offline và lưu ảnh Demo không làm đầy `localStorage`.
-- Tesseract.js chạy OCR số kilomet ngay trên trình duyệt; ảnh không phải gửi đến dịch vụ OCR bên ngoài.
+- OCR lai: Tesseract.js đọc nhanh ngay trên điện thoại; Gemini Vision kiểm tra lại qua Supabase Edge Function khi đã triển khai. Gemini API key không nằm trong frontend.
 - PWA service worker viết trực tiếp, không phụ thuộc plugin.
 - CSS responsive, không phụ thuộc framework giao diện.
 
@@ -355,9 +355,13 @@ xe.matsaigontravinh.vn
 
 ## 11. OCR kilomet và lưu ảnh
 
-- Sau khi chụp, website tự tối ưu ảnh rồi chạy OCR và điền số kilomet.
+- Sau khi chụp, website tự tối ưu ảnh và chạy Tesseract OCR trực tiếp trên điện thoại.
+- Gemini Vision kiểm tra lại số ODO qua Supabase Edge Function `analyze-odometer`; hệ thống yêu cầu Gemini loại bỏ Trip A/B, giờ, nhiệt độ và các dãy số không phải ODO.
+- Khi hai kết quả giống nhau, giao diện đánh dấu đã đối chiếu. Khi khác nhau, tài xế phải nhìn ảnh và chọn kết quả đúng; hệ thống không tự quyết định.
+- Tài xế bắt buộc đánh dấu xác nhận số ODO trước khi lưu KM đầu hoặc KM cuối.
+- Gemini API key chỉ lưu trong Supabase Secret. Không đặt key trong `.env` Vite, React hoặc JavaScript frontend.
+- Cách triển khai chi tiết nằm trong `HUONG-DAN-GEMINI-OCR-v2.5.0.md` hoặc chạy `TRIEN-KHAI-GEMINI-OCR.bat`.
 - Lần OCR đầu tiên có thể lâu hơn vì trình duyệt cần tải bộ nhận diện; những lần sau sẽ nhanh hơn nhờ cache.
-- Khi ảnh rung, lóa, màn hình LED quá tối hoặc trong ảnh có nhiều dãy số, kết quả có thể sai. Tài xế bắt buộc đối chiếu ảnh trước khi bấm lưu.
 - Trong chế độ Demo, ảnh được lưu trong IndexedDB thay vì nhét Base64 vào `localStorage`, khắc phục lỗi không lưu được KM đầu do vượt dung lượng trình duyệt.
 
 ## 12. Giới hạn phiên bản 1
@@ -386,7 +390,8 @@ MSG-Car-Web/
 │   ├── lib/
 │   │   ├── backend.ts       Demo + Supabase + offline queue
 │   │   ├── image.ts         Nén và tiền xử lý ảnh
-│   │   ├── odometerOcr.ts   OCR và chọn dãy số KM phù hợp
+│   │   ├── odometerOcr.ts   OCR cục bộ và chọn dãy số KM phù hợp
+│   │   ├── odometerGemini.ts Gọi Gemini an toàn qua Supabase Edge Function
 │   │   ├── offline.ts       IndexedDB, hàng đợi và ảnh Demo
 │   │   └── supabase.ts
 │   ├── pages/
@@ -395,7 +400,8 @@ MSG-Car-Web/
 │   ├── main.tsx
 │   └── styles.css
 ├── supabase/
-│   ├── functions/manage-user/
+│   ├── functions/
+│   │   ├── analyze-odometer/ Gemini Vision kiểm tra số ODOmanage-user/
 │   ├── config.toml
 │   ├── schema.sql
 │   └── seed-vehicles.sql
@@ -477,3 +483,11 @@ Tất cả người dùng có thể mở **Hồ sơ cá nhân** từ menu, nút 
 ## Cập nhật v1.9.0
 
 Phiên bản v1.9.0 bổ sung màn hình đăng nhập mới và trung tâm thông báo realtime. Không cần chạy migration SQL. Sau khi cập nhật source chỉ cần chạy `npm run build` và khởi động lại service.
+
+---
+
+## v2.4.0 — GPS và thông báo bắt buộc cho tài xế
+
+Giao diện tài xế yêu cầu HTTPS, quyền GPS và quyền thông báo trước khi thao tác chuyến. Trên mạng LAN, chạy `TAO-HTTPS-NOI-BO.bat` bằng quyền Administrator, cài file `.certs\CA-GOC-MKCERT.crt` lên điện thoại quản lý và mở website bằng `https://<IP-MAY-CHU>:8443`.
+
+Hướng dẫn đầy đủ: `HUONG-DAN-HTTPS-GPS-THONG-BAO-v2.4.0.md`.

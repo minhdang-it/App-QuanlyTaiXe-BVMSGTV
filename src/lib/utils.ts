@@ -85,33 +85,59 @@ export interface ConfirmedLocation {
   accuracy: number
 }
 
-export async function requestCurrentLocation(): Promise<ConfirmedLocation> {
-  if (!navigator.geolocation) throw new Error('Thiết bị hoặc trình duyệt không hỗ trợ định vị GPS.')
-  if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-    throw new Error('Định vị chỉ hoạt động trên website HTTPS. Hãy mở đúng địa chỉ bảo mật của hệ thống.')
-  }
+export function isTrustedWebContext() {
+  return window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname)
+}
 
-  return await new Promise((resolve, reject) => {
+export function getSuggestedSecureUrl() {
+  const configured = String(import.meta.env.VITE_PUBLIC_HTTPS_URL || '').trim()
+  if (configured) return configured
+  const hostname = window.location.hostname || 'localhost'
+  const pathname = window.location.pathname || '/'
+  return `https://${hostname}:8443${pathname}`
+}
+
+function getPosition(options: PositionOptions): Promise<ConfirmedLocation> {
+  return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
         accuracy: position.coords.accuracy,
       }),
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          reject(new Error('Bạn chưa cho phép truy cập vị trí. Hãy bật quyền Vị trí cho trình duyệt rồi thử lại.'))
-          return
-        }
-        if (error.code === error.TIMEOUT) {
-          reject(new Error('Không lấy được vị trí trong thời gian cho phép. Hãy ra nơi thoáng hơn rồi thử lại.'))
-          return
-        }
-        reject(new Error('Không xác định được vị trí hiện tại. Hãy kiểm tra GPS và kết nối mạng.'))
-      },
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+      reject,
+      options,
     )
   })
+}
+
+export async function requestCurrentLocation(): Promise<ConfirmedLocation> {
+  if (!navigator.geolocation) throw new Error('Thiết bị hoặc trình duyệt không hỗ trợ định vị GPS.')
+  if (!isTrustedWebContext()) {
+    throw new Error(`GPS bị trình duyệt chặn vì website đang dùng HTTP. Hãy mở địa chỉ HTTPS: ${getSuggestedSecureUrl()}`)
+  }
+
+  try {
+    return await getPosition({ enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 })
+  } catch (firstError) {
+    const error = firstError as GeolocationPositionError
+    if (error.code === error.PERMISSION_DENIED) {
+      throw new Error('Quyền Vị trí đang bị chặn. Hãy mở Cài đặt trang web của trình duyệt, chọn Vị trí → Cho phép rồi thử lại.')
+    }
+
+    try {
+      return await getPosition({ enableHighAccuracy: false, timeout: 12_000, maximumAge: 60_000 })
+    } catch (secondError) {
+      const fallbackError = secondError as GeolocationPositionError
+      if (fallbackError.code === fallbackError.PERMISSION_DENIED) {
+        throw new Error('Quyền Vị trí đang bị chặn. Hãy mở Cài đặt trang web của trình duyệt, chọn Vị trí → Cho phép rồi thử lại.')
+      }
+      if (fallbackError.code === fallbackError.TIMEOUT) {
+        throw new Error('Không lấy được GPS trong thời gian cho phép. Hãy bật Độ chính xác cao, ra nơi thoáng hơn rồi bấm Lấy lại vị trí.')
+      }
+      throw new Error('Không xác định được vị trí hiện tại. Hãy kiểm tra GPS, chế độ tiết kiệm pin và kết nối mạng.')
+    }
+  }
 }
 
 export async function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {

@@ -15,6 +15,7 @@ const requiredFiles = [
   'src/App.tsx',
   'supabase/schema.sql',
   'supabase/functions/manage-user/index.ts',
+  'supabase/functions/analyze-odometer/index.ts',
 ]
 
 function assert(condition, message) {
@@ -79,5 +80,12 @@ assert(driverSource.includes('Xác nhận địa điểm xuất phát'), 'Thiế
 assert(driverSource.includes('googleMapsDirectionsUrl'), 'Thiếu tích hợp Google Maps dẫn đường')
 assert(driverSource.includes('start_lat: location.lat'), 'Thiếu lưu vĩ độ khi bắt đầu chuyến')
 assert(driverSource.includes('start_lng: location.lng'), 'Thiếu lưu kinh độ khi bắt đầu chuyến')
+
+
+const odometerGeminiSource = fs.readFileSync(path.join(root, 'src/lib/odometerGemini.ts'), 'utf8')
+assert(odometerGeminiSource.includes("functions.invoke('analyze-odometer'"), 'Thiếu gọi Edge Function Gemini OCR')
+const odometerFunctionSource = fs.readFileSync(path.join(root, 'supabase/functions/analyze-odometer/index.ts'), 'utf8')
+assert(odometerFunctionSource.includes('GEMINI_API_KEY'), 'Edge Function thiếu GEMINI_API_KEY')
+assert(!odometerGeminiSource.includes('GEMINI_API_KEY'), 'Frontend không được chứa Gemini API key')
 
 console.log(`Điều phối xe BVMSGTV source verification: OK (${sourceFiles.length} tệp TypeScript)`)

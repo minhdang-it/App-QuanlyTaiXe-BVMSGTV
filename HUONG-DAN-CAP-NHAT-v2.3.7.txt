@@ -1,0 +1,17 @@
+BAN CAP NHAT v2.3.7
+
+Noi dung chinh:
+- Sua tooltip hover khi sidebar thu gon.
+- Bo phan noi dung bi trung tren trang Tong quan.
+- Them URL path rieng cho tung module.
+- Them breadcrumb va title theo tung trang.
+- Ho tro nut Back / Forward cua trinh duyet.
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Giu lai file .env cu.
+3. Chay:
+   npm install
+   npm run build
+4. Restart Windows Service neu dang su dung.
+5. Tai lai trang. Service Worker da duoc tang phien ban cache.

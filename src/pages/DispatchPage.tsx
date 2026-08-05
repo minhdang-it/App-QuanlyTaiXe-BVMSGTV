@@ -210,6 +210,9 @@ function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete 
   const expenses = data.expenses.filter((item) => item.trip_id === trip.id)
   const incidents = data.incidents.filter((item) => item.trip_id === trip.id)
   const distance = trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : null
+  const liveLat = trip.current_lat ?? trip.start_lat
+  const liveLng = trip.current_lng ?? trip.start_lng
+  const hasLiveLocation = liveLat != null && liveLng != null
   const canEdit = canManage && !['active', 'completed'].includes(trip.status)
   const canDelete = canManage
     && !['active', 'completed'].includes(trip.status)
@@ -226,6 +229,34 @@ function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete 
       <StatusBadge status={trip.status} />
     </div>
 
+    {trip.status === 'active' && <section className="active-trip-live-card">
+      <div className="active-trip-live-head">
+        <div>
+          <span className="live-pulse-dot" aria-hidden="true" />
+          <div><strong>Vị trí xe đang chạy</strong><small>{trip.location_updated_at ? `GPS cập nhật: ${formatDateTime(trip.location_updated_at)}` : 'Đang chờ dữ liệu GPS từ điện thoại tài xế'}</small></div>
+        </div>
+        <StatusBadge status={trip.status} />
+      </div>
+      {hasLiveLocation ? <>
+        <div className="trip-detail-live-map">
+          <iframe
+            title={`Vị trí hiện tại xe ${vehicle?.plate_number ?? ''}`}
+            src={`https://maps.google.com/maps?q=${liveLat},${liveLng}&z=16&output=embed`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+          <div className="trip-detail-logo-marker" aria-label="Vị trí xe">
+            <img src="/logo-bvmsgtv-v201.png" alt="Logo Bệnh viện Mắt Sài Gòn Trà Vinh" />
+            <span>{vehicle?.plate_number ?? 'Xe BV'}</span>
+          </div>
+        </div>
+        <div className="active-trip-live-actions">
+          <code>{liveLat!.toFixed(6)}, {liveLng!.toFixed(6)}</code>
+          <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: liveLat!, lng: liveLng! })}>Mở vị trí trên Google Maps</a>
+        </div>
+      </> : <div className="active-trip-no-location">Chưa nhận được vị trí. Hãy kiểm tra GPS, HTTPS và quyền vị trí trên điện thoại tài xế.</div>}
+    </section>}
+
     <div className="detail-grid trip-detail-grid">
       <div><span>Giờ dự kiến xuất phát</span><strong>{formatDateTime(trip.scheduled_start)}</strong></div>
       <div><span>Dự kiến về</span><strong>{formatDateTime(trip.expected_end)}</strong></div>
@@ -241,7 +272,7 @@ function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete 
       <div><span>Cập nhật cuối</span><strong>{formatDateTime(trip.updated_at)}</strong></div>
     </div>
 
-    {(trip.start_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}>📍 Xem điểm bắt đầu</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}>🏁 Xem điểm kết thúc</a>}</div></section>}
+    {(trip.start_lat != null || trip.current_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}>📍 Điểm bắt đầu</a>}{trip.status === 'active' && (trip.current_lat ?? trip.start_lat) != null && (trip.current_lng ?? trip.start_lng) != null && <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: (trip.current_lat ?? trip.start_lat)!, lng: (trip.current_lng ?? trip.start_lng)! })}>⌖ Vị trí hiện tại</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}>🏁 Điểm kết thúc</a>}</div>{trip.location_updated_at && <small className="location-updated-label">Cập nhật GPS gần nhất: {formatDateTime(trip.location_updated_at)}</small>}</section>}
 
     {(trip.start_odometer_image_url || trip.end_odometer_image_url) && <section className="trip-detail-section"><h3>Ảnh đồng hồ kilomet</h3><div className="trip-media-grid">{trip.start_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.start_odometer_image_url}><img src={trip.start_odometer_image_url} alt="Đồng hồ KM đầu" /><span>Ảnh KM đầu</span></a>}{trip.end_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.end_odometer_image_url}><img src={trip.end_odometer_image_url} alt="Đồng hồ KM cuối" /><span>Ảnh KM cuối</span></a>}</div></section>}
 

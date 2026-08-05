@@ -7,11 +7,13 @@ import type {
   CreateTripInput,
   CreateUserInput,
   Expense,
+  ExpenseReviewAction,
   Incident,
   Maintenance,
   Profile,
   Trip,
   UpdateUserInput,
+  UserRole,
   Vehicle,
 } from '../types/models'
 import { demoData } from './demoData'
@@ -41,11 +43,12 @@ export interface BackendApi {
   subscribe(onChange: () => void): () => void
   createTrip(input: CreateTripInput, creatorId: string): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
+  updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
-  reviewExpense(id: string, status: 'approved' | 'rejected' | 'paid', reviewerId: string, reason?: string): Promise<Expense>
+  reviewExpense(id: string, action: ExpenseReviewAction, reviewerId: string, reviewerRole: UserRole, reason?: string): Promise<Expense>
   createIncident(input: Omit<Incident, 'id' | 'created_at' | 'image_url' | 'audio_url'>, media?: MediaPayload): Promise<Incident>
   updateIncident(id: string, changes: Partial<Incident>): Promise<Incident>
   createVehicle(input: Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>): Promise<Vehicle>
@@ -66,6 +69,79 @@ function readLiveCache(): AppData | null {
 function writeLiveCache(data: AppData) {
   try { localStorage.setItem(LIVE_CACHE_KEY, JSON.stringify(data)) } catch {
     // Local storage may be full if the browser has a very small quota.
+  }
+}
+
+
+function expenseReviewTransition(expense: Expense, action: ExpenseReviewAction, reviewerId: string, reviewerRole: UserRole, reason?: string) {
+  const now = new Date().toISOString()
+  const isAdmin = reviewerRole === 'admin'
+
+  if (action === 'director_approve') {
+    if (!isAdmin && reviewerRole !== 'director') throw new Error('Chỉ Ban Giám đốc được duyệt bước đầu.')
+    if (expense.status !== 'pending_director') throw new Error('Chi phí không còn ở bước chờ Ban Giám đốc duyệt.')
+    return {
+      expectedStatus: 'pending_director' as const,
+      changes: {
+        status: 'pending_accountant' as const,
+        director_reviewer_id: reviewerId,
+        director_reviewed_at: now,
+        reviewer_id: reviewerId,
+        reviewed_at: now,
+        rejection_reason: null,
+        updated_at: now,
+      },
+    }
+  }
+
+  if (action === 'accountant_approve') {
+    if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được duyệt bước thanh toán.')
+    if (expense.status !== 'pending_accountant') throw new Error('Chi phí chưa được Ban Giám đốc duyệt hoặc đã được xử lý.')
+    return {
+      expectedStatus: 'pending_accountant' as const,
+      changes: {
+        status: 'approved' as const,
+        accountant_reviewer_id: reviewerId,
+        accountant_reviewed_at: now,
+        reviewer_id: reviewerId,
+        reviewed_at: now,
+        rejection_reason: null,
+        updated_at: now,
+      },
+    }
+  }
+
+  if (action === 'mark_paid') {
+    if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được xác nhận chi trả.')
+    if (expense.status !== 'approved') throw new Error('Chi phí chưa hoàn tất hai bước duyệt.')
+    return {
+      expectedStatus: 'approved' as const,
+      changes: {
+        status: 'paid' as const,
+        paid_by: reviewerId,
+        paid_at: now,
+        reviewer_id: reviewerId,
+        reviewed_at: now,
+        updated_at: now,
+      },
+    }
+  }
+
+  if (!reason?.trim()) throw new Error('Cần nhập lý do từ chối.')
+  const canReject = isAdmin
+    || (reviewerRole === 'director' && expense.status === 'pending_director')
+    || (reviewerRole === 'accountant' && expense.status === 'pending_accountant')
+  if (!canReject) throw new Error('Bạn không có quyền từ chối chi phí ở bước hiện tại.')
+
+  return {
+    expectedStatus: expense.status,
+    changes: {
+      status: 'rejected' as const,
+      reviewer_id: reviewerId,
+      reviewed_at: now,
+      rejection_reason: reason.trim(),
+      updated_at: now,
+    },
   }
 }
 
@@ -297,6 +373,13 @@ const demoBackend: BackendApi = {
     }
     return updated
   },
+  async updateTripLocation(id, lat, lng) {
+    return await this.updateTrip(id, {
+      current_lat: lat,
+      current_lng: lng,
+      location_updated_at: new Date().toISOString(),
+    })
+  },
   async deleteTrip(id) {
     const data = readDemoData()
     const trip = data.trips.find((item) => item.id === id)
@@ -332,11 +415,12 @@ const demoBackend: BackendApi = {
     demoUpdate('expenses', (items) => [record, ...items])
     return record
   },
-  async reviewExpense(id, status, reviewerId, reason) {
+  async reviewExpense(id, action, reviewerId, reviewerRole, reason) {
     let record: Expense | undefined
     demoUpdate('expenses', (items) => items.map((item) => {
       if (item.id !== id) return item
-      record = { ...item, status, reviewer_id: reviewerId, reviewed_at: new Date().toISOString(), rejection_reason: reason, updated_at: new Date().toISOString() }
+      const transition = expenseReviewTransition(item, action, reviewerId, reviewerRole, reason)
+      record = { ...item, ...transition.changes }
       return record
     }))
     if (!record) throw new Error('Không tìm thấy chi phí.')
@@ -694,6 +778,24 @@ const supabaseBackend: BackendApi = {
       return data as Trip
     }, optimistic)
   },
+  async updateTripLocation(id, lat, lng) {
+    const client = await requireSupabase()
+    const payload = {
+      current_lat: lat,
+      current_lng: lng,
+      location_updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    const { data, error } = await client
+      .from('trips')
+      .update(payload)
+      .eq('id', id)
+      .eq('status', 'active')
+      .select()
+      .single()
+    if (error) throw error
+    return data as Trip
+  },
   async deleteTrip(id) {
     if (!navigator.onLine) throw new Error('Cần kết nối mạng để xóa chuyến đi.')
     const client = await requireSupabase()
@@ -742,12 +844,26 @@ const supabaseBackend: BackendApi = {
       return data as Expense
     }, optimistic, file)
   },
-  async reviewExpense(id, status, reviewerId, reason) {
+  async reviewExpense(id, action, reviewerId, reviewerRole, reason) {
     const client = await requireSupabase()
-    const changes = { status, reviewer_id: reviewerId, reviewed_at: new Date().toISOString(), rejection_reason: reason ?? null, updated_at: new Date().toISOString() }
-    const optimistic = { id, ...changes } as Expense
-    return await performOrQueue('expenses.update', { id, ...changes }, async () => {
-      const { data, error } = await client.from('expenses').update(changes).eq('id', id).select().single()
+    let current = readLiveCache()?.expenses.find((expense) => expense.id === id) ?? null
+    if (navigator.onLine) {
+      const { data, error } = await client.from('expenses').select('*').eq('id', id).single()
+      if (error) throw error
+      current = data as Expense
+    }
+    if (!current) throw new Error('Không tìm thấy chi phí trong dữ liệu hiện tại.')
+
+    const transition = expenseReviewTransition(current, action, reviewerId, reviewerRole, reason)
+    const optimistic = { ...current, ...transition.changes } as Expense
+    return await performOrQueue('expenses.update', { id, ...transition.changes }, async () => {
+      const { data, error } = await client
+        .from('expenses')
+        .update(transition.changes)
+        .eq('id', id)
+        .eq('status', transition.expectedStatus)
+        .select()
+        .single()
       if (error) throw error
       return data as Expense
     }, optimistic)

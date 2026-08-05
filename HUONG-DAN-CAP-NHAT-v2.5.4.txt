@@ -1,0 +1,10 @@
+BAN CAP NHAT v2.5.4
+
+1. Ghi de source moi len source cu.
+2. Giu lai file .env va chung chi HTTPS dang su dung.
+3. Co the dung truc tiep thu muc dist da cap nhat san.
+4. Neu build lai tren may chu:
+   npm install
+   npm run build
+5. Restart service Windows.
+6. Xoa cache/PWA cu hoac tai lai manh de nhan Service Worker v254.

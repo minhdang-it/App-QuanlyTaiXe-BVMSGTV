@@ -1,0 +1,17 @@
+BAN CAP NHAT v2.5.5
+
+BAT BUOC CAP NHAT SUPABASE:
+1. Mo Supabase -> SQL Editor.
+2. Chay file:
+   supabase/migrate-v2.5.5-expense-approval.sql
+3. Cap nhat source va build lai:
+   npm install
+   npm run build
+4. Restart service neu dang chay Windows Service.
+5. Xoa cache/PWA cu hoac tai lai manh de nhan Service Worker v255.
+
+QUY TRINH CHI PHI:
+- Tai xe gui -> Cho Ban Giam doc.
+- Ban Giam doc duyet -> Cho Ke toan.
+- Ke toan duyet -> Cho chi tra.
+- Ke toan xac nhan da chi -> Hoan tat.

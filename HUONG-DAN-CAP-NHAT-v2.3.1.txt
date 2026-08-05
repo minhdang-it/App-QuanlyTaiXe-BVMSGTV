@@ -1,0 +1,16 @@
+BAN CAP NHAT v2.3.1
+
+Noi dung chinh:
+- Sua layout quan tri bi lon xon tren PC va mobile.
+- Sidebar rong hon, menu ro hon.
+- Topbar mobile gon hon, nut khong con de len nhau.
+- Bottom nav mobile co the cuon ngang de tranh roi mat.
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Giu lai file .env cu neu dang trien khai production.
+3. Neu can build lai:
+   npm install
+   npm run build
+4. Neu dang chay service Windows thi restart service.
+5. Sau khi cap nhat, xoa cache trinh duyet/PWA de nhan CSS moi.

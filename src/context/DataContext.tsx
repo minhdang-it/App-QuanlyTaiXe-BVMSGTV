@@ -5,6 +5,7 @@ import type {
   CreateTripInput,
   CreateUserInput,
   Expense,
+  ExpenseReviewAction,
   Incident,
   Maintenance,
   Trip,
@@ -26,11 +27,12 @@ interface DataContextValue {
   updateProfile(id: string, changes: Partial<import('../types/models').Profile>): Promise<import('../types/models').Profile>
   createTrip(input: CreateTripInput): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
+  updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
-  reviewExpense(id: string, status: 'approved' | 'rejected' | 'paid', reason?: string): Promise<Expense>
+  reviewExpense(id: string, action: ExpenseReviewAction, reason?: string): Promise<Expense>
   createIncident(input: Omit<Incident, 'id' | 'created_at' | 'image_url' | 'audio_url'>, media?: MediaPayload): Promise<Incident>
   updateIncident(id: string, changes: Partial<Incident>): Promise<Incident>
   createVehicle(input: Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>): Promise<Vehicle>
@@ -80,6 +82,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [refresh, user])
 
   useEffect(() => {
+    if (!user) return
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refresh()
+    }
+    const timer = window.setInterval(refreshWhenVisible, 30_000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
+    }
+  }, [refresh, user])
+
+  useEffect(() => {
     const onOnline = async () => {
       setOnline(true)
       setPending(await backend.syncPending())
@@ -100,6 +117,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return result
   }, [refresh])
 
+  const updateTripLocation = useCallback(async (id: string, lat: number, lng: number) => {
+    const updated = await backend.updateTripLocation(id, lat, lng)
+    setData((current) => ({
+      ...current,
+      trips: current.trips.map((trip) => trip.id === id ? { ...trip, ...updated } : trip),
+    }))
+    return updated
+  }, [])
+
   const value = useMemo<DataContextValue>(() => ({
     data,
     loading,
@@ -112,18 +138,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateProfile: (id, changes) => run(() => backend.updateProfile(id, changes)),
     createTrip: (input) => run(() => backend.createTrip(input, user!.id)),
     updateTrip: (id, changes) => run(() => backend.updateTrip(id, changes)),
+    updateTripLocation,
     deleteTrip: (id) => run(() => backend.deleteTrip(id)),
     createChecklist: (input) => run(() => backend.createChecklist(input)),
     submitOdometer: (trip, phase, odometer, file) => run(() => backend.submitOdometer(trip, phase, odometer, file)),
     createExpense: (input, file) => run(() => backend.createExpense(input, file)),
-    reviewExpense: (id, status, reason) => run(() => backend.reviewExpense(id, status, user!.id, reason)),
+    reviewExpense: (id, action, reason) => run(() => backend.reviewExpense(id, action, user!.id, user!.profile.role, reason)),
     createIncident: (input, media) => run(() => backend.createIncident(input, media)),
     updateIncident: (id, changes) => run(() => backend.updateIncident(id, changes)),
     createVehicle: (input) => run(() => backend.createVehicle(input)),
     updateVehicle: (id, changes) => run(() => backend.updateVehicle(id, changes)),
     createMaintenance: (input) => run(() => backend.createMaintenance(input)),
     updateMaintenance: (id, changes) => run(() => backend.updateMaintenance(id, changes)),
-  }), [data, error, loading, online, pending, refresh, run, user])
+  }), [data, error, loading, online, pending, refresh, run, updateTripLocation, user])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

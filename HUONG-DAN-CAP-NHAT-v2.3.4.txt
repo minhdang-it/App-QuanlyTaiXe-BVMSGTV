@@ -1,0 +1,17 @@
+BAN CAP NHAT v2.3.4
+
+Noi dung chinh:
+- Mobile bo nut Menu o tren.
+- Nut Lam moi du lieu co bieu tuong nho hon.
+- Menu duoi tren mobile to hon, chu lon hon, de bam hon.
+- PC dua nut an/ hien menu vao trong sidebar.
+- Thanh menu doi sang tong mau sang hon.
+
+Cach cap nhat:
+1. Ghi de source moi len source cu.
+2. Giu lai file .env cu neu dang trien khai production.
+3. Neu can build lai:
+   npm install
+   npm run build
+4. Neu dang chay service Windows thi restart service.
+5. Xoa cache trinh duyet / PWA de nhan CSS va JS moi.

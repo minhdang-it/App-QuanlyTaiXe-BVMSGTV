@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './context/AuthContext'
 import { DataProvider, useData } from './context/DataContext'
-import { AppShell, type PageKey } from './components/AppShell'
+import { AppShell, PAGE_PATHS, pageFromPath, type PageKey } from './components/AppShell'
 import { Loading } from './components/Loading'
 import { LoginPage } from './pages/LoginPage'
 import { DriverPage } from './pages/DriverPage'
@@ -18,7 +18,27 @@ import { NotificationProvider } from './context/NotificationContext'
 
 export default function App() {
   const { user, loading } = useAuth()
-  const [page, setPage] = useState<PageKey>('dashboard')
+  const [page, setPageState] = useState<PageKey>(() => pageFromPath(window.location.pathname))
+
+  useEffect(() => {
+    const handlePopState = () => setPageState(pageFromPath(window.location.pathname))
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  function setPage(nextPage: PageKey) {
+    setPageState(nextPage)
+    const nextPath = PAGE_PATHS[nextPage]
+    if (window.location.pathname !== nextPath) window.history.pushState({ page: nextPage }, '', nextPath)
+  }
+
+  useEffect(() => {
+    if (!user || user.profile.role === 'driver') return
+    const expectedPath = PAGE_PATHS[page]
+    if (window.location.pathname !== expectedPath) {
+      window.history.replaceState({ page }, '', expectedPath)
+    }
+  }, [page, user])
 
   if (loading) return <Loading label="Đang kiểm tra phiên đăng nhập..." />
   if (!user) return <LoginPage />
@@ -37,9 +57,14 @@ const rolePages: Record<string, PageKey[]> = {
 
 function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKey; setPage: (page: PageKey) => void }) {
   const { loading } = useData()
+  const safePage = rolePages[role]?.includes(page) ? page : 'dashboard'
+
+  useEffect(() => {
+    if (role !== 'driver' && safePage !== page) setPage(safePage)
+  }, [page, role, safePage, setPage])
+
   if (loading) return <Loading label="Đang tải dữ liệu đội xe..." />
   if (role === 'driver') return <DriverPage />
-  const safePage = rolePages[role]?.includes(page) ? page : 'dashboard'
   return <AppShell page={safePage} onPage={setPage}><Page page={safePage} /></AppShell>
 }
 

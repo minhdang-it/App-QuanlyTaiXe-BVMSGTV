@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_ICONS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDateTime, googleMapsDirectionsUrl, googleMapsLocationUrl, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
+import { formatCurrency, formatDateTime, getSuggestedSecureUrl, googleMapsDirectionsUrl, googleMapsLocationUrl, isTrustedWebContext, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
 import type { ExpenseType, IncidentType, Profile, Severity, Trip, UpdateUserInput } from '../types/models'
 import { Modal } from '../components/Modal'
 import { MediaInput } from '../components/MediaInput'
@@ -11,19 +11,116 @@ import { NetworkBanner } from '../components/NetworkBanner'
 import { EmptyState } from '../components/EmptyState'
 import { AudioRecorder } from '../components/AudioRecorder'
 import { BrandLogo } from '../components/BrandLogo'
-import { readOdometerFromImage } from '../lib/odometerOcr'
+import { readOdometerFromImage, type OdometerOcrResult } from '../lib/odometerOcr'
+import { isGeminiOdometerAvailable, readOdometerWithGemini, type GeminiOdometerResult } from '../lib/odometerGemini'
 import { NotificationCenter } from '../components/NotificationCenter'
+import { useNotifications } from '../context/NotificationContext'
 
 const coordinatorPhone = import.meta.env.VITE_COORDINATOR_PHONE || '0900000000'
+const ODOMETER_AUTO_READ_KEY = 'bvmsgtv_odometer_auto_read'
+
+function getSavedOdometerAutoRead() {
+  try {
+    return window.localStorage.getItem(ODOMETER_AUTO_READ_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
 
 type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | null
+type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported'
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateUser } = useData()
+  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser } = useData()
+  const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [locationPermission, setLocationPermission] = useState<DriverLocationPermission>('checking')
+  const [permissionBusy, setPermissionBusy] = useState<'location' | 'notification' | null>(null)
+  const secureContextReady = isTrustedWebContext()
+  const driverSetupReady = secureContextReady && locationPermission === 'granted' && browserPermission === 'granted'
+
+  async function checkLocationPermission() {
+    if (!secureContextReady || !navigator.geolocation) {
+      setLocationPermission(navigator.geolocation ? 'prompt' : 'unsupported')
+      return
+    }
+    if (!navigator.permissions?.query) {
+      setLocationPermission((current) => current === 'granted' ? 'granted' : 'prompt')
+      return
+    }
+    try {
+      const status = await navigator.permissions.query({ name: 'geolocation' })
+      setLocationPermission(status.state as DriverLocationPermission)
+      status.onchange = () => setLocationPermission(status.state as DriverLocationPermission)
+    } catch {
+      setLocationPermission('prompt')
+    }
+  }
+
+  async function enableDriverLocation() {
+    setPermissionBusy('location')
+    setMessage(null)
+    try {
+      await requestCurrentLocation()
+      setLocationPermission('granted')
+      setMessage('Đã bật vị trí GPS cho ứng dụng tài xế.')
+    } catch (error) {
+      await checkLocationPermission()
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPermissionBusy(null)
+    }
+  }
+
+  async function enableDriverNotifications() {
+    setPermissionBusy('notification')
+    setMessage(null)
+    try {
+      const permission = await requestBrowserPermission()
+      if (permission === 'granted') {
+        if ('serviceWorker' in navigator) {
+          try {
+            const registration = await navigator.serviceWorker.ready
+            await registration.showNotification('Thông báo tài xế đã được bật', {
+              body: 'Ứng dụng sẽ cảnh báo khi có chuyến mới hoặc chuyến bị thay đổi.',
+              icon: '/icons/icon-192.png',
+              badge: '/icons/icon-192.png',
+              tag: 'driver-notification-enabled',
+              vibrate: [180, 80, 180],
+            } as NotificationOptions & { vibrate?: number[] })
+          } catch {
+            // Quyền đã được cấp; thông báo thử có thể bị trình duyệt hạn chế.
+          }
+        }
+        setMessage('Đã bật thông báo chuyến xe trên thiết bị.')
+      } else if (permission === 'denied') {
+        setMessage('Thông báo đang bị chặn. Hãy mở Cài đặt trang web → Thông báo → Cho phép, sau đó bấm Kiểm tra lại.')
+      } else {
+        setMessage('Trình duyệt hiện tại không hỗ trợ thông báo hoặc website chưa chạy bằng HTTPS.')
+      }
+    } finally {
+      setPermissionBusy(null)
+    }
+  }
+
+  async function recheckDriverPermissions() {
+    refreshBrowserPermission()
+    await checkLocationPermission()
+  }
+
+  useEffect(() => {
+    void checkLocationPermission()
+    const refresh = () => { void recheckDriverPermissions() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [secureContextReady])
 
   const trips = useMemo(() => data.trips
     .filter((trip) => trip.driver_id === user!.id && trip.status !== 'cancelled')
@@ -32,6 +129,86 @@ export function DriverPage() {
   const currentTrip = trips.find((trip) => ['assigned', 'accepted', 'ready', 'active'].includes(trip.status)) ?? null
   const todayCompleted = trips.filter((trip) => trip.status === 'completed' && todayKey(new Date(trip.ended_at ?? trip.updated_at)) === todayKey())
   const vehicle = data.vehicles.find((item) => item.id === currentTrip?.vehicle_id) ?? data.vehicles.find((item) => item.regular_driver_id === user!.id) ?? null
+
+  useEffect(() => {
+    if (!driverSetupReady || !currentTrip || currentTrip.status !== 'assigned' || !('serviceWorker' in navigator)) return
+    const alertKey = `driver-trip-alerted:${currentTrip.id}:${currentTrip.updated_at}`
+    if (localStorage.getItem(alertKey)) return
+    localStorage.setItem(alertKey, new Date().toISOString())
+    void navigator.serviceWorker.ready.then((registration) => registration.showNotification('Bạn có chuyến xe mới cần xác nhận', {
+      body: `${currentTrip.pickup} → ${currentTrip.destination}. Bấm vào ứng dụng để nhận chuyến.`,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: `driver-trip-${currentTrip.id}`,
+      requireInteraction: true,
+      vibrate: [350, 120, 350, 120, 600],
+      data: { url: window.location.href },
+    } as NotificationOptions & { vibrate?: number[] })).catch(() => undefined)
+    if ('vibrate' in navigator) navigator.vibrate([350, 120, 350, 120, 600])
+  }, [currentTrip?.id, currentTrip?.status, currentTrip?.updated_at, currentTrip?.pickup, currentTrip?.destination, driverSetupReady])
+
+
+  const lastLocationSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null)
+
+  useEffect(() => {
+    if (!currentTrip || currentTrip.status !== 'active' || !navigator.geolocation || !secureContextReady) return
+    let stopped = false
+    let sending = false
+    let fallbackTimer: number | undefined
+
+    const distanceMeters = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const radius = 6_371_000
+      const toRadians = (value: number) => value * Math.PI / 180
+      const dLat = toRadians(bLat - aLat)
+      const dLng = toRadians(bLng - aLng)
+      const lat1 = toRadians(aLat)
+      const lat2 = toRadians(bLat)
+      const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+      return 2 * radius * Math.asin(Math.sqrt(haversine))
+    }
+
+    const submitPosition = async (lat: number, lng: number, force = false) => {
+      if (stopped || sending) return
+      const now = Date.now()
+      const previous = lastLocationSentRef.current
+      const elapsed = previous ? now - previous.time : Number.POSITIVE_INFINITY
+      const moved = previous ? distanceMeters(previous.lat, previous.lng, lat, lng) : Number.POSITIVE_INFINITY
+      const shouldSend = force || !previous || (elapsed >= 12_000 && moved >= 8) || elapsed >= 45_000
+      if (!shouldSend) return
+
+      sending = true
+      try {
+        await updateTripLocation(currentTrip.id, lat, lng)
+        lastLocationSentRef.current = { lat, lng, time: Date.now() }
+      } catch {
+        // Giữ ứng dụng hoạt động; lần cập nhật kế tiếp sẽ thử lại.
+      } finally {
+        sending = false
+      }
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => void submitPosition(position.coords.latitude, position.coords.longitude),
+      () => undefined,
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 },
+    )
+
+    void requestCurrentLocation()
+      .then((position) => submitPosition(position.lat, position.lng, true))
+      .catch(() => undefined)
+
+    fallbackTimer = window.setInterval(() => {
+      void requestCurrentLocation()
+        .then((position) => submitPosition(position.lat, position.lng, true))
+        .catch(() => undefined)
+    }, 60_000)
+
+    return () => {
+      stopped = true
+      navigator.geolocation.clearWatch(watchId)
+      if (fallbackTimer) window.clearInterval(fallbackTimer)
+    }
+  }, [currentTrip?.id, currentTrip?.status, secureContextReady, updateTripLocation])
 
   async function guarded(work: () => Promise<void>, success: string) {
     setSaving(true)
@@ -65,6 +242,9 @@ export function DriverPage() {
         started_at: new Date().toISOString(),
         start_lat: location.lat,
         start_lng: location.lng,
+        current_lat: location.lat,
+        current_lng: location.lng,
+        location_updated_at: new Date().toISOString(),
       })
       setDialog(null)
       setMessage('Đã bắt đầu chuyến. Google Maps đang được mở để dẫn đường.')
@@ -80,6 +260,7 @@ export function DriverPage() {
   }
 
   async function primaryTripAction() {
+    if (!driverSetupReady) return setMessage('Cần hoàn tất bật HTTPS, GPS và thông báo trước khi thao tác chuyến xe.')
     if (!currentTrip) return setMessage('Hiện chưa có chuyến được giao.')
     if (currentTrip.status === 'assigned') {
       await guarded(async () => { await updateTrip(currentTrip.id, { status: 'accepted' }) }, 'Đã xác nhận nhận chuyến.')
@@ -124,7 +305,17 @@ export function DriverPage() {
         </button>
       </header>
 
-      <section className="driver-content driver-content-modern">
+      {!driverSetupReady ? <DriverPermissionGate
+        secure={secureContextReady}
+        secureUrl={getSuggestedSecureUrl()}
+        locationPermission={locationPermission}
+        notificationPermission={browserPermission}
+        busy={permissionBusy}
+        message={message}
+        onEnableLocation={() => void enableDriverLocation()}
+        onEnableNotifications={() => void enableDriverNotifications()}
+        onRecheck={() => void recheckDriverPermissions()}
+      /> : <section className="driver-content driver-content-modern">
         <section className="driver-welcome-card">
           <div>
             <span className="driver-section-label">CA LÀM VIỆC HÔM NAY</span>
@@ -177,13 +368,13 @@ export function DriverPage() {
           <div><span>Chuyến hoàn thành</span><strong>{todayCompleted.length}</strong></div>
           <div><span>Xe phụ trách</span><strong>{vehicle?.plate_number ?? '—'}</strong></div>
         </section>
-      </section>
+      </section>}
 
-      <nav className="driver-bottom-nav" aria-label="Điều hướng tài xế">
+      {driverSetupReady && <nav className="driver-bottom-nav" aria-label="Điều hướng tài xế">
         <button className="active"><span>⌂</span><small>Trang chính</small></button>
         <button onClick={() => setDialog('profile')}><span>👤</span><small>Tài khoản</small></button>
         <a href={`tel:${coordinatorPhone}`}><span>☎</span><small>Điều phối</small></a>
-      </nav>
+      </nav>}
 
       {dialog === 'profile' && user && <DriverProfileModal
         profile={user.profile}
@@ -208,7 +399,7 @@ export function DriverPage() {
         await submitOdometer(currentTrip, phase, odometer, file)
       }, `Đã lưu kilomet ${phase === 'start' ? 'đầu' : 'cuối'} chuyến.`)} />}
       {dialog === 'expense' && vehicle && <ExpenseModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, amount, description, file, fuelLiters) => guarded(async () => {
-        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending', expense_date: todayKey() }, file)
+        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_director', expense_date: todayKey() }, file)
       }, 'Chi phí đã gửi và đang chờ kế toán duyệt.')} />}
       {dialog === 'incident' && vehicle && <IncidentModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, severity, description, file, audio) => guarded(async () => {
         await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'reported' }, { file, secondFile: audio })
@@ -216,6 +407,73 @@ export function DriverPage() {
     </main>
   )
 
+}
+
+function DriverPermissionGate({
+  secure,
+  secureUrl,
+  locationPermission,
+  notificationPermission,
+  busy,
+  message,
+  onEnableLocation,
+  onEnableNotifications,
+  onRecheck,
+}: {
+  secure: boolean
+  secureUrl: string
+  locationPermission: DriverLocationPermission
+  notificationPermission: NotificationPermission | 'unsupported'
+  busy: 'location' | 'notification' | null
+  message: string | null
+  onEnableLocation: () => void
+  onEnableNotifications: () => void
+  onRecheck: () => void
+}) {
+  const locationReady = locationPermission === 'granted'
+  const notificationReady = notificationPermission === 'granted'
+
+  return <section className="driver-permission-screen">
+    <div className="driver-permission-card">
+      <div className="driver-permission-hero">
+        <span className="driver-permission-lock">🛡</span>
+        <div>
+          <span className="driver-section-label">THIẾT LẬP BẮT BUỘC</span>
+          <h1>Sẵn sàng nhận chuyến</h1>
+          <p>Tài xế cần bật đủ kết nối bảo mật, GPS và thông báo để không bỏ lỡ chuyến xe.</p>
+        </div>
+      </div>
+
+      <div className="driver-permission-steps">
+        <article className={secure ? 'ready' : 'blocked'}>
+          <span>{secure ? '✓' : '1'}</span>
+          <div><strong>Kết nối HTTPS bảo mật</strong><small>{secure ? 'Địa chỉ hiện tại đã đủ điều kiện dùng GPS và thông báo.' : 'Địa chỉ HTTP hiện tại bị trình duyệt chặn GPS và thông báo.'}</small></div>
+          {!secure && <button type="button" onClick={() => window.location.assign(secureUrl)}>MỞ HTTPS</button>}
+        </article>
+
+        <article className={locationReady ? 'ready' : locationPermission === 'denied' ? 'blocked' : ''}>
+          <span>{locationReady ? '✓' : '2'}</span>
+          <div><strong>Quyền vị trí GPS</strong><small>{locationReady ? 'Đã cho phép lấy vị trí khi bắt đầu và trong chuyến.' : locationPermission === 'denied' ? 'Quyền đang bị chặn trong Cài đặt trang web.' : 'Bật GPS để xác nhận điểm xuất phát và cập nhật vị trí xe.'}</small></div>
+          {!locationReady && <button type="button" disabled={!secure || busy === 'location'} onClick={onEnableLocation}>{busy === 'location' ? 'ĐANG LẤY...' : 'BẬT VỊ TRÍ'}</button>}
+        </article>
+
+        <article className={notificationReady ? 'ready' : notificationPermission === 'denied' ? 'blocked' : ''}>
+          <span>{notificationReady ? '✓' : '3'}</span>
+          <div><strong>Thông báo chuyến xe</strong><small>{notificationReady ? 'Đã bật cảnh báo khi có chuyến mới hoặc thay đổi.' : notificationPermission === 'denied' ? 'Thông báo đang bị chặn trong Cài đặt trang web.' : 'Bắt buộc bật để tài xế không bỏ lỡ chuyến được giao.'}</small></div>
+          {!notificationReady && <button type="button" disabled={!secure || busy === 'notification'} onClick={onEnableNotifications}>{busy === 'notification' ? 'ĐANG BẬT...' : 'BẬT THÔNG BÁO'}</button>}
+        </article>
+      </div>
+
+      {message && <div className="driver-permission-message">{message}</div>}
+      {!secure && <div className="driver-secure-url"><span>Địa chỉ cần mở trên điện thoại</span><code>{secureUrl}</code></div>}
+      {(locationPermission === 'denied' || notificationPermission === 'denied') && <div className="driver-permission-help">
+        <strong>Cách bật lại quyền đã chặn</strong>
+        <p>Nhấn biểu tượng ổ khóa hoặc thông tin trang cạnh thanh địa chỉ → Quyền trang web → cho phép Vị trí và Thông báo. Sau đó quay lại ứng dụng và bấm kiểm tra.</p>
+      </div>}
+      <button type="button" className="driver-permission-recheck" onClick={onRecheck}>↻ KIỂM TRA LẠI QUYỀN</button>
+      <p className="driver-permission-footnote">Ứng dụng chỉ mở chức năng chuyến xe sau khi ba mục trên đều hoàn tất.</p>
+    </div>
+  </section>
 }
 
 function DriverProfileModal({
@@ -352,7 +610,14 @@ function StartTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; savin
   }
 
   useEffect(() => {
-    void locate()
+    if (!isTrustedWebContext()) {
+      setLocationError('Website hiện tại đang dùng HTTP nên trình duyệt không cho phép lấy GPS.')
+      return
+    }
+    if (!navigator.permissions?.query) return
+    void navigator.permissions.query({ name: 'geolocation' }).then((status) => {
+      if (status.state === 'granted') void locate()
+    }).catch(() => undefined)
   }, [])
 
   return <Modal title="Xác nhận địa điểm xuất phát" onClose={onClose}>
@@ -366,12 +631,13 @@ function StartTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; savin
 
     <div className={`location-confirm-card ${location ? 'success' : locationError ? 'error' : ''}`}>
       <div className="location-confirm-head">
-        <div><strong>{locating ? 'Đang lấy vị trí GPS...' : location ? 'Đã xác định vị trí hiện tại' : 'Chưa xác định vị trí'}</strong><span>{location ? `Độ chính xác khoảng ${Math.round(location.accuracy)} m` : 'Cần bật GPS và cấp quyền Vị trí cho trình duyệt.'}</span></div>
-        <button type="button" className="secondary-button compact" disabled={locating || saving} onClick={() => void locate()}>{locating ? 'ĐANG LẤY...' : location ? 'LẤY LẠI' : 'LẤY VỊ TRÍ'}</button>
+        <div><strong>{locating ? 'Đang lấy vị trí GPS...' : location ? 'Đã xác định vị trí hiện tại' : 'Chưa xác định vị trí'}</strong><span>{location ? `Độ chính xác khoảng ${Math.round(location.accuracy)} m` : isTrustedWebContext() ? 'Bấm Lấy vị trí và cho phép quyền GPS khi trình duyệt hỏi.' : 'Website HTTP không thể sử dụng GPS trên điện thoại.'}</span></div>
+        <button type="button" className="secondary-button compact" disabled={locating || saving || !isTrustedWebContext()} onClick={() => void locate()}>{locating ? 'ĐANG LẤY...' : location ? 'LẤY LẠI' : 'LẤY VỊ TRÍ'}</button>
       </div>
       {location && <div className="location-coordinates"><code>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</code><a href={googleMapsLocationUrl(location)} target="_blank" rel="noreferrer">Xem vị trí hiện tại</a></div>}
       {location && location.accuracy > 200 && <div className="form-warning">GPS đang có sai số lớn. Nên ra khu vực thoáng và bấm “Lấy lại” trước khi bắt đầu.</div>}
       {locationError && <div className="form-error">{locationError}</div>}
+      {!isTrustedWebContext() && <button type="button" className="secure-open-button" onClick={() => window.location.assign(getSuggestedSecureUrl())}>MỞ ĐỊA CHỈ HTTPS</button>}
     </div>
 
     <label className="confirmation-check">
@@ -400,57 +666,170 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
   const [ocrState, setOcrState] = useState<'idle' | 'reading' | 'success' | 'warning' | 'error'>('idle')
   const [ocrProgress, setOcrProgress] = useState(0)
   const [ocrMessage, setOcrMessage] = useState('')
-  const [ocrConfidence, setOcrConfidence] = useState<number | null>(null)
+  const [localResult, setLocalResult] = useState<OdometerOcrResult | null>(null)
+  const [geminiResult, setGeminiResult] = useState<GeminiOdometerResult | null>(null)
+  const [geminiState, setGeminiState] = useState<'idle' | 'reading' | 'success' | 'warning' | 'error'>('idle')
+  const [geminiMessage, setGeminiMessage] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [selectedSource, setSelectedSource] = useState<'local' | 'gemini' | 'verified' | 'manual' | null>(null)
+  const [autoReadEnabled, setAutoReadEnabled] = useState(getSavedOdometerAutoRead)
 
   const baseline = phase === 'start' ? vehicleOdometer : (trip.start_odometer ?? vehicleOdometer)
+  const geminiAvailable = isGeminiOdometerAvailable()
+  const verifyEveryPhoto = String(import.meta.env.VITE_ODOMETER_GEMINI_VERIFY_ALL ?? 'true').toLowerCase() !== 'false'
+
+  function resetRecognition() {
+    setOcrState('idle')
+    setOcrProgress(0)
+    setOcrMessage('')
+    setLocalResult(null)
+    setGeminiResult(null)
+    setGeminiState('idle')
+    setGeminiMessage('')
+    setConfirmed(false)
+    setSelectedSource(null)
+  }
 
   function selectPhase(next: 'start' | 'end') {
     setPhase(next)
     setOdometer(String(next === 'start' ? trip.start_odometer ?? '' : trip.end_odometer ?? ''))
-    setOcrState('idle')
-    setOcrMessage('')
-    setOcrConfidence(null)
+    setFile(null)
+    resetRecognition()
+  }
+
+  function isSuspicious(value: number | null) {
+    return value != null && baseline > 0 && (value < baseline - 50 || value > baseline + 15_000)
+  }
+
+  function chooseValue(value: number | null, source: 'local' | 'gemini' | 'verified') {
+    if (value == null) return
+    setOdometer(String(value))
+    setSelectedSource(source)
+    setConfirmed(false)
+  }
+
+  async function runGemini(nextFile: File, local: OdometerOcrResult | null, manual = false) {
+    if (!geminiAvailable) {
+      if (manual) {
+        setGeminiState('error')
+        setGeminiMessage('Gemini chưa được triển khai trên Supabase. OCR cục bộ vẫn hoạt động.')
+      }
+      return
+    }
+
+    setGeminiState('reading')
+    setGeminiMessage('Gemini đang phân biệt số ODO với Trip, giờ và các dãy số khác...')
+    try {
+      const result = await readOdometerWithGemini(nextFile, {
+        baseline,
+        phase,
+        localValue: local?.value ?? null,
+        localConfidence: local?.confidence ?? 0,
+        localCandidates: local?.candidates ?? [],
+      })
+      setGeminiResult(result)
+
+      const localValue = local?.value ?? null
+      if (result.value != null && localValue != null && result.value === localValue) {
+        chooseValue(result.value, 'verified')
+        setGeminiState(result.needsReview ? 'warning' : 'success')
+        setGeminiMessage(`OCR cục bộ và Gemini cùng đọc ${result.value.toLocaleString('vi-VN')} km. ${result.reason}`)
+        setOcrState(result.needsReview ? 'warning' : 'success')
+        setOcrMessage('Hai bộ nhận diện đã đối chiếu cùng một kết quả. Tài xế vẫn cần nhìn ảnh và xác nhận.')
+        return
+      }
+
+      if (result.value != null && localValue == null) {
+        chooseValue(result.value, 'gemini')
+        setGeminiState(result.needsReview ? 'warning' : 'success')
+        setGeminiMessage(`Gemini đọc ${result.value.toLocaleString('vi-VN')} km. ${result.reason}`)
+        setOcrState(result.needsReview ? 'warning' : 'success')
+        setOcrMessage('OCR cục bộ không đọc được; hệ thống đang đề xuất kết quả từ Gemini.')
+        return
+      }
+
+      if (result.value == null) {
+        setGeminiState('warning')
+        setGeminiMessage(result.reason || 'Gemini chưa xác định được dãy số ODO.')
+        if (localValue != null) {
+          setOcrState('warning')
+          setOcrMessage(`OCR cục bộ đọc ${localValue.toLocaleString('vi-VN')} km nhưng Gemini chưa xác nhận. Vui lòng kiểm tra ảnh kỹ.`)
+        }
+        return
+      }
+
+      setGeminiState('warning')
+      setGeminiMessage(`Hai kết quả khác nhau: Gemini ${result.value.toLocaleString('vi-VN')} km, OCR cục bộ ${localValue?.toLocaleString('vi-VN') ?? 'không có'}. Hãy nhìn ảnh và chọn đúng số.`)
+      setOcrState('warning')
+      setOcrMessage('Hệ thống không tự quyết định khi hai bộ nhận diện không trùng nhau.')
+      setConfirmed(false)
+    } catch (reason) {
+      setGeminiState('error')
+      setGeminiMessage(reason instanceof Error ? reason.message : 'Không kết nối được Gemini. OCR cục bộ vẫn có thể sử dụng.')
+    }
+  }
+
+  async function runRecognition(nextFile: File) {
+    resetRecognition()
+    setOcrState('reading')
+    setOcrProgress(0.03)
+    setOcrMessage('OCR cục bộ đang nhận diện số kilomet...')
+    try {
+      const result = await readOdometerFromImage(nextFile, baseline, (progress, status) => {
+        setOcrProgress(Math.max(0.03, progress))
+        setOcrMessage(status === 'recognizing text' ? 'Đang đọc dãy số trên cụm đồng hồ...' : 'Đang chuẩn bị bộ nhận diện trên thiết bị...')
+      })
+      setLocalResult(result)
+
+      if (result.value != null) {
+        chooseValue(result.value, 'local')
+        const suspicious = isSuspicious(result.value)
+        setOcrState(suspicious || result.confidence < 55 ? 'warning' : 'success')
+        setOcrMessage(suspicious
+          ? `OCR đọc ${result.value.toLocaleString('vi-VN')} km nhưng chênh lệch lớn so với hồ sơ xe.`
+          : `OCR cục bộ đọc ${result.value.toLocaleString('vi-VN')} km.`)
+      } else {
+        setOcrState('warning')
+        setOcrMessage('OCR cục bộ chưa đọc rõ số KM. Gemini sẽ thử phân tích ảnh.')
+      }
+
+      const shouldVerify = verifyEveryPhoto
+        || result.value == null
+        || result.confidence < 75
+        || isSuspicious(result.value)
+        || result.candidates.length > 1
+      if (shouldVerify) await runGemini(nextFile, result)
+    } catch (reason) {
+      setOcrState('error')
+      setOcrMessage(reason instanceof Error ? `OCR cục bộ thất bại: ${reason.message}` : 'OCR cục bộ không đọc được ảnh.')
+      await runGemini(nextFile, null)
+    }
   }
 
   async function processPhoto(nextFile: File | null) {
     setFile(nextFile)
-    setOcrConfidence(null)
-    if (!nextFile) {
-      setOcrState('idle')
-      setOcrProgress(0)
-      setOcrMessage('')
-      return
-    }
+    resetRecognition()
+    if (!nextFile || !autoReadEnabled) return
+    await runRecognition(nextFile)
+  }
 
-    setOcrState('reading')
-    setOcrProgress(0.03)
-    setOcrMessage('Đang nhận diện số kilomet...')
+  function changeAutoRead(enabled: boolean) {
+    setAutoReadEnabled(enabled)
     try {
-      const result = await readOdometerFromImage(nextFile, baseline, (progress, status) => {
-        setOcrProgress(Math.max(0.03, progress))
-        setOcrMessage(status === 'recognizing text' ? 'Đang đọc dãy số trên cụm đồng hồ...' : 'Đang chuẩn bị bộ nhận diện...')
-      })
-      setOcrConfidence(result.confidence)
-      if (result.value != null) {
-        setOdometer(String(result.value))
-        const suspicious = baseline > 0 && (result.value < baseline - 50 || result.value > baseline + 15_000)
-        setOcrState(suspicious || result.confidence < 45 ? 'warning' : 'success')
-        setOcrMessage(suspicious
-          ? `Đã đọc ${result.value.toLocaleString('vi-VN')} km nhưng chênh lệch lớn so với hồ sơ xe. Vui lòng kiểm tra lại.`
-          : `Đã tự điền ${result.value.toLocaleString('vi-VN')} km. Vui lòng nhìn ảnh và xác nhận trước khi lưu.`)
-      } else {
-        setOcrState('warning')
-        setOcrMessage('Chưa đọc rõ số KM. Hãy chụp gần hơn, tránh phản sáng hoặc nhập số thủ công.')
-      }
-    } catch (reason) {
-      setOcrState('error')
-      setOcrMessage(reason instanceof Error ? `Không đọc được tự động: ${reason.message}` : 'Không đọc được tự động. Vui lòng nhập số KM thủ công.')
+      window.localStorage.setItem(ODOMETER_AUTO_READ_KEY, String(enabled))
+    } catch {
+      // Trình duyệt có thể chặn localStorage ở chế độ riêng tư.
+    }
+    if (enabled && file && ocrState === 'idle' && geminiState === 'idle') {
+      void runRecognition(file)
     }
   }
 
   const numericOdometer = Number(odometer)
   const invalidValue = !odometer.trim() || !Number.isSafeInteger(numericOdometer) || numericOdometer < 0
   const invalidOrder = phase === 'end' && numericOdometer < (trip.start_odometer ?? 0)
+  const aiBusy = ocrState === 'reading' || geminiState === 'reading'
+  const mismatch = localResult?.value != null && geminiResult?.value != null && localResult.value !== geminiResult.value
 
   return <Modal title="Chụp đồng hồ kilomet" onClose={onClose}>
     <div className="segment-control">
@@ -459,24 +838,72 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
     </div>
 
     <div className="odometer-guide">
-      <strong>📸 Cách chụp để tự đọc chính xác</strong>
-      <span>Đưa dãy số ODO/KM vào giữa ảnh, chụp gần, giữ máy thẳng và tránh ánh sáng phản chiếu.</span>
+      <strong>📸 Chụp riêng vùng số ODO</strong>
+      <span>Đưa dãy số ODO/TOTAL vào giữa ảnh, chụp gần và giữ máy thẳng. Ảnh vẫn được lưu dù tài xế tắt AI.</span>
     </div>
 
-    <MediaInput label="Chụp cụm đồng hồ — hệ thống sẽ tự đọc KM" onChange={processPhoto} />
+    <label className={`odometer-ai-toggle ${autoReadEnabled ? 'enabled' : ''}`}>
+      <span className="odometer-ai-toggle-copy">
+        <strong>Tự động đọc số KM bằng AI</strong>
+        <small>{autoReadEnabled ? 'Sau khi chụp, OCR và Gemini tự chạy.' : 'Đang tắt để thao tác nhanh; tài xế nhập KM thủ công.'}</small>
+      </span>
+      <span className="odometer-ai-switch" aria-hidden="true"><i /></span>
+      <input type="checkbox" checked={autoReadEnabled} disabled={aiBusy} onChange={(event) => changeAutoRead(event.target.checked)} />
+    </label>
+
+    <MediaInput label={autoReadEnabled ? 'Chụp cụm đồng hồ — AI sẽ tự đọc' : 'Chụp cụm đồng hồ — nhập KM thủ công'} onChange={processPhoto} />
+
+    {file && !autoReadEnabled && ocrState === 'idle' && <div className="odometer-manual-mode">
+      <div><strong>Ảnh đã sẵn sàng</strong><span>AI tự động đang tắt. Nhập số KM bên dưới để lưu ngay, hoặc dùng AI khi ảnh khó nhìn.</span></div>
+      <button type="button" className="secondary-button compact" onClick={() => void runRecognition(file)}>AI ĐỌC ẢNH NÀY</button>
+    </div>}
 
     {ocrState !== 'idle' && <div className={`ocr-status ${ocrState}`}>
       {ocrState === 'reading' && <div className="ocr-progress"><span style={{ width: `${Math.round(ocrProgress * 100)}%` }} /></div>}
-      <div><strong>{ocrState === 'reading' ? 'AI OCR đang đọc ảnh' : ocrState === 'success' ? 'Đã nhận diện KM' : ocrState === 'warning' ? 'Cần kiểm tra lại' : 'OCR chưa thành công'}</strong><span>{ocrMessage}</span></div>
-      {ocrConfidence != null && <small>Độ tin cậy tham khảo: {Math.round(ocrConfidence)}%</small>}
+      <div><strong>{ocrState === 'reading' ? 'OCR cục bộ đang đọc ảnh' : ocrState === 'success' ? 'OCR cục bộ đã đọc KM' : ocrState === 'warning' ? 'OCR cần đối chiếu' : 'OCR cục bộ chưa thành công'}</strong><span>{ocrMessage}</span></div>
+      {localResult && <small>Độ tin cậy OCR: {Math.round(localResult.confidence)}% · {localResult.candidates.length} dãy số tìm thấy</small>}
     </div>}
 
+    {file && <div className={`gemini-verify-card ${geminiState}`}>
+      <div className="gemini-verify-head">
+        <div><strong>✦ Gemini kiểm tra lại ODO</strong><span>{geminiMessage || (geminiAvailable ? 'Gemini sẽ kiểm tra số ODO và loại bỏ Trip/giờ/nhiệt độ.' : 'Chưa triển khai Edge Function Gemini.')}</span></div>
+        {geminiResult && <small>{Math.round(geminiResult.confidence)}%</small>}
+      </div>
+      {geminiState === 'reading' && <div className="ocr-progress"><span style={{ width: '72%' }} /></div>}
+      {geminiResult && <div className="gemini-meta-row">
+        <span>Loại: <strong>{geminiResult.displayType === 'odometer' ? 'ODO tổng' : geminiResult.displayType === 'trip' ? 'Trip' : 'Chưa rõ'}</strong></span>
+        <span>Ảnh: <strong>{geminiResult.quality === 'clear' ? 'Rõ' : geminiResult.quality === 'glare' ? 'Bị lóa' : geminiResult.quality === 'blur' ? 'Bị mờ' : geminiResult.quality === 'cropped' ? 'Bị cắt' : geminiResult.quality === 'dark' ? 'Thiếu sáng' : 'Chưa rõ'}</strong></span>
+      </div>}
+      <button type="button" className="secondary-button compact gemini-retry-button" disabled={geminiState === 'reading'} onClick={() => file && void runGemini(file, localResult, true)}>{geminiState === 'reading' ? 'Gemini đang đọc...' : geminiResult ? 'GEMINI ĐỌC LẠI' : 'DÙNG GEMINI KIỂM TRA'}</button>
+    </div>}
+
+    {(localResult?.value != null || geminiResult?.value != null) && <div className="ocr-comparison-grid">
+      {localResult?.value != null && <article className={selectedSource === 'local' ? 'selected' : selectedSource === 'verified' ? 'verified' : ''}>
+        <span>OCR trên điện thoại</span>
+        <strong>{localResult.value.toLocaleString('vi-VN')} km</strong>
+        <small>Tin cậy {Math.round(localResult.confidence)}%</small>
+        <button type="button" onClick={() => chooseValue(localResult.value, geminiResult?.value === localResult.value ? 'verified' : 'local')}>CHỌN SỐ NÀY</button>
+      </article>}
+      {geminiResult?.value != null && <article className={selectedSource === 'gemini' ? 'selected' : selectedSource === 'verified' ? 'verified' : ''}>
+        <span>Gemini Vision</span>
+        <strong>{geminiResult.value.toLocaleString('vi-VN')} km</strong>
+        <small>Tin cậy {Math.round(geminiResult.confidence)}%</small>
+        <button type="button" onClick={() => chooseValue(geminiResult.value, localResult?.value === geminiResult.value ? 'verified' : 'gemini')}>CHỌN SỐ NÀY</button>
+      </article>}
+    </div>}
+
+    {mismatch && <div className="form-warning"><strong>Kết quả không trùng nhau.</strong> Không lưu theo AI một cách tự động. Tài xế phải nhìn trực tiếp dãy số ODO trong ảnh và chọn đúng kết quả.</div>}
+
     <label>Số kilomet xác nhận
-      <input type="number" inputMode="numeric" min="0" step="1" value={odometer} onChange={(e) => setOdometer(e.target.value.replace(/\D/g, ''))} placeholder="Hệ thống tự điền hoặc nhập thủ công" />
+      <input type="number" inputMode="numeric" min="0" step="1" value={odometer} onChange={(e) => { setOdometer(e.target.value.replace(/\D/g, '')); setSelectedSource('manual'); setConfirmed(false) }} placeholder="AI tự điền hoặc nhập thủ công" />
     </label>
-    <p className="form-help">Số KM được OCR tự điền từ ảnh. Tài xế cần kiểm tra lại vì màn hình bị lóa hoặc ảnh rung có thể làm nhận diện sai.</p>
+    <label className="odometer-confirmation-check">
+      <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+      <span>Tôi đã nhìn ảnh đồng hồ và xác nhận <strong>{invalidValue ? 'số KM bên trên' : `${numericOdometer.toLocaleString('vi-VN')} km`}</strong> là số ODO chính xác.</span>
+    </label>
+    <p className="form-help">Chế độ AI được ghi nhớ trên điện thoại. Dù nhập thủ công hay dùng AI, tài xế vẫn phải xác nhận số ODO trước khi lưu.</p>
     {invalidOrder && <div className="form-error">Kilomet cuối không được nhỏ hơn kilomet đầu {Number(trip.start_odometer).toLocaleString('vi-VN')} km.</div>}
-    <button className="primary-button full" disabled={saving || ocrState === 'reading' || invalidValue || invalidOrder || !file} onClick={() => onSubmit(phase, numericOdometer, file)}>{saving ? 'Đang lưu ảnh và kilomet...' : `LƯU ${phase === 'start' ? 'KM ĐẦU' : 'KM CUỐI'}`}</button>
+    <button className="primary-button full" disabled={saving || aiBusy || invalidValue || invalidOrder || !file || !confirmed} onClick={() => onSubmit(phase, numericOdometer, file)}>{saving ? 'Đang lưu ảnh và kilomet...' : `LƯU ${phase === 'start' ? 'KM ĐẦU' : 'KM CUỐI'}`}</button>
   </Modal>
 }
 

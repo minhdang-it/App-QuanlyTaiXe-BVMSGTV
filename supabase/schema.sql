@@ -70,6 +70,9 @@ create table if not exists public.trips (
   start_lng double precision,
   end_lat double precision,
   end_lng double precision,
+  current_lat double precision,
+  current_lng double precision,
+  location_updated_at timestamptz,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -91,7 +94,10 @@ create table if not exists public.trips (
 -- biểu thức index/exclusion constraint vì phép toán này được đánh dấu STABLE.
 -- Lưu khoảng thời gian vào một cột thật và đồng bộ bằng trigger để GiST chỉ index cột.
 alter table public.trips
-  add column if not exists scheduled_period tstzrange;
+  add column if not exists scheduled_period tstzrange,
+  add column if not exists current_lat double precision,
+  add column if not exists current_lng double precision,
+  add column if not exists location_updated_at timestamptz;
 
 create or replace function public.sync_trip_scheduled_period()
 returns trigger
@@ -173,9 +179,15 @@ create table if not exists public.expenses (
   fuel_unit_price numeric(12,2) check (fuel_unit_price is null or fuel_unit_price > 0),
   description text,
   receipt_url text,
-  status text not null default 'pending' check (status in ('pending','approved','rejected','paid')),
+  status text not null default 'pending_director' check (status in ('pending_director','pending_accountant','approved','rejected','paid')),
   reviewer_id uuid references public.profiles(id) on delete set null,
   reviewed_at timestamptz,
+  director_reviewer_id uuid references public.profiles(id) on delete set null,
+  director_reviewed_at timestamptz,
+  accountant_reviewer_id uuid references public.profiles(id) on delete set null,
+  accountant_reviewed_at timestamptz,
+  paid_by uuid references public.profiles(id) on delete set null,
+  paid_at timestamptz,
   rejection_reason text,
   expense_date date not null default current_date,
   created_at timestamptz not null default now(),
@@ -250,6 +262,7 @@ drop trigger if exists trips_updated_at on public.trips;
 create trigger trips_updated_at before update on public.trips for each row execute function public.set_updated_at();
 drop trigger if exists expenses_updated_at on public.expenses;
 create trigger expenses_updated_at before update on public.expenses for each row execute function public.set_updated_at();
+
 drop trigger if exists maintenances_updated_at on public.maintenances;
 create trigger maintenances_updated_at before update on public.maintenances for each row execute function public.set_updated_at();
 
@@ -319,8 +332,49 @@ language sql
 stable
 security definer set search_path = public
 as $$
-  select coalesce(public.current_role() in ('accountant','admin'), false);
+  select coalesce(public.current_role() in ('director','accountant','admin'), false);
 $$;
+
+create or replace function public.protect_expense_workflow()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  role_name text := public.current_role();
+begin
+  if old.status = new.status then
+    return new;
+  end if;
+
+  if old.status = 'pending_director' and new.status = 'pending_accountant' and role_name in ('director','admin') then
+    return new;
+  end if;
+
+  if old.status = 'pending_accountant' and new.status = 'approved' and role_name in ('accountant','admin') then
+    return new;
+  end if;
+
+  if old.status = 'approved' and new.status = 'paid' and role_name in ('accountant','admin') then
+    return new;
+  end if;
+
+  if new.status = 'rejected' and (
+    (old.status = 'pending_director' and role_name in ('director','admin'))
+    or (old.status = 'pending_accountant' and role_name in ('accountant','admin'))
+  ) then
+    if coalesce(trim(new.rejection_reason), '') = '' then
+      raise exception 'Cần nhập lý do từ chối chi phí';
+    end if;
+    return new;
+  end if;
+
+  raise exception 'Chuyển trạng thái chi phí không hợp lệ hoặc không đúng thẩm quyền';
+end;
+$$;
+
+drop trigger if exists protect_expense_workflow on public.expenses;
+create trigger protect_expense_workflow before update on public.expenses for each row execute function public.protect_expense_workflow();
 
 create or replace function public.protect_trip_update()
 returns trigger language plpgsql security definer set search_path = public as $$
@@ -506,7 +560,8 @@ create policy "expenses driver insert" on public.expenses for insert to authenti
   )
 );
 drop policy if exists "expenses accountant update" on public.expenses;
-create policy "expenses accountant update" on public.expenses for update to authenticated using (public.can_review_expense()) with check (public.can_review_expense());
+drop policy if exists "expenses approval update" on public.expenses;
+create policy "expenses approval update" on public.expenses for update to authenticated using (public.can_review_expense()) with check (public.can_review_expense());
 
 drop policy if exists "incidents own or management read" on public.incidents;
 create policy "incidents own or management read" on public.incidents for select to authenticated using (driver_id = auth.uid() or public.is_management());

@@ -61,7 +61,7 @@ export const demoData: AppData = {
   expenses: [
     {
       id: 'expense-1', trip_id: 'trip-2', vehicle_id: 'vehicle-3', driver_id: 'driver-1', type: 'fuel', amount: 550000, fuel_liters: 22, fuel_unit_price: 25000,
-      description: 'Đổ xăng chuyến đón bệnh nhân', receipt_url: null, status: 'pending', expense_date: now.toISOString().slice(0, 10),
+      description: 'Đổ xăng chuyến đón bệnh nhân', receipt_url: null, status: 'pending_director', expense_date: now.toISOString().slice(0, 10),
       created_at: now.toISOString(), updated_at: now.toISOString(),
     },
   ],

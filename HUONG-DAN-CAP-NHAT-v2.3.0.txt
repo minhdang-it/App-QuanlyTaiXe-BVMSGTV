@@ -1,0 +1,16 @@
+BẢN CẬP NHẬT v2.3.0
+
+1. Sao lưu file .env hiện tại.
+2. Ghi đè source mới lên source cũ.
+3. Mở Supabase SQL Editor và chạy file:
+   supabase/migrate-v2.3-live-location.sql
+4. Chép lại file .env.
+5. Build lại nếu cần:
+   npm install
+   npm run build
+6. Khởi động lại service Windows bằng RESTART-SERVICE.bat.
+7. Xóa cache trình duyệt hoặc PWA cũ.
+
+LƯU Ý
+- Không chạy file migration thì giao diện vẫn mở được, nhưng cập nhật vị trí hiện tại trên Supabase sẽ báo thiếu cột.
+- Điện thoại tài xế cần bật GPS và cho phép trình duyệt truy cập vị trí.

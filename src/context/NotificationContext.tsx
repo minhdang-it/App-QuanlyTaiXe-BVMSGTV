@@ -29,6 +29,7 @@ interface NotificationContextValue {
   clearAll(): void
   dismissToast(id: string): void
   requestBrowserPermission(): Promise<NotificationPermission | 'unsupported'>
+  refreshBrowserPermission(): NotificationPermission | 'unsupported'
 }
 
 interface EventSnapshot {
@@ -111,7 +112,7 @@ function roleCanSeeIncidentEvents(role: UserRole) {
 }
 
 function roleCanSeeExpenseEvents(role: UserRole) {
-  return ['accountant', 'admin'].includes(role)
+  return ['director', 'accountant', 'admin'].includes(role)
 }
 
 function roleCanSeeMaintenanceEvents(role: UserRole) {
@@ -240,13 +241,15 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
 
   for (const expense of Object.values(current.expenses)) {
     const before = previous.expenses[expense.id]
-    if (!before && expense.status === 'pending' && roleCanSeeExpenseEvents(role) && expense.driver_id !== userId) {
+    const amountText = `${EXPENSE_LABELS[expense.type]} · ${expense.amount.toLocaleString('vi-VN')}đ`
+
+    if (!before && expense.status === 'pending_director' && ['director', 'admin'].includes(role) && expense.driver_id !== userId) {
       results.push({
         id: `expense-new-${expense.id}`,
         kind: 'expense',
-        priority: 'normal',
-        title: 'Có chi phí chờ duyệt',
-        message: `${EXPENSE_LABELS[expense.type]} · ${expense.amount.toLocaleString('vi-VN')}đ`,
+        priority: 'important',
+        title: 'Chi phí chờ Ban Giám đốc duyệt',
+        message: amountText,
         createdAt: now,
         read: false,
         target: 'expenses',
@@ -254,17 +257,39 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
       continue
     }
 
-    if (before && role === 'driver' && expense.driver_id === userId && before.status !== expense.status) {
-      results.push({
-        id: `expense-status-${expense.id}-${expense.status}`,
-        kind: 'expense',
-        priority: expense.status === 'rejected' ? 'important' : 'normal',
-        title: expense.status === 'approved' ? 'Chi phí đã được duyệt' : expense.status === 'paid' ? 'Chi phí đã thanh toán' : 'Chi phí bị từ chối',
-        message: `${EXPENSE_LABELS[expense.type]} · ${expense.amount.toLocaleString('vi-VN')}đ`,
-        createdAt: now,
-        read: false,
-        target: 'expenses',
-      })
+    if (before && before.status !== expense.status) {
+      if (expense.status === 'pending_accountant' && ['accountant', 'admin'].includes(role)) {
+        results.push({
+          id: `expense-accountant-${expense.id}`,
+          kind: 'expense',
+          priority: 'important',
+          title: 'Chi phí đã được Ban Giám đốc duyệt',
+          message: `${amountText} · Chờ Kế toán kiểm tra`,
+          createdAt: now,
+          read: false,
+          target: 'expenses',
+        })
+      }
+
+      if (role === 'driver' && expense.driver_id === userId) {
+        const title = expense.status === 'pending_accountant'
+          ? 'Ban Giám đốc đã duyệt chi phí'
+          : expense.status === 'approved'
+            ? 'Kế toán đã duyệt chi phí'
+            : expense.status === 'paid'
+              ? 'Chi phí đã được chi trả'
+              : 'Chi phí bị từ chối'
+        results.push({
+          id: `expense-status-${expense.id}-${expense.status}`,
+          kind: 'expense',
+          priority: expense.status === 'rejected' ? 'important' : 'normal',
+          title,
+          message: amountText,
+          createdAt: now,
+          read: false,
+          target: 'expenses',
+        })
+      }
     }
   }
 
@@ -336,19 +361,37 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(notificationKey, JSON.stringify(next.slice(0, MAX_NOTIFICATIONS)))
   }, [notificationKey])
 
-  const showBrowserNotification = useCallback((item: AppNotification) => {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const showBrowserNotification = useCallback(async (item: AppNotification) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !window.isSecureContext) return
     if (!document.hidden && item.priority !== 'urgent') return
+
+    const vibrationPattern = item.priority === 'urgent' ? [300, 120, 300, 120, 500] : [220, 100, 220]
+    const options = {
+      body: item.message,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: item.id,
+      data: { target: item.target ?? 'dashboard' },
+      requireInteraction: item.priority === 'urgent',
+      vibrate: vibrationPattern,
+    } as NotificationOptions & { vibrate?: number[] }
+
     try {
-      const popup = new Notification(item.title, {
-        body: item.message,
-        icon: '/logo-bvmsgtv.png',
-        badge: '/logo-bvmsgtv.png',
-        tag: item.id,
-      })
-      window.setTimeout(() => popup.close(), 9000)
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready
+        await registration.showNotification(item.title, options)
+      } else {
+        const popup = new Notification(item.title, options)
+        window.setTimeout(() => popup.close(), 10_000)
+      }
+      if (item.priority !== 'normal' && 'vibrate' in navigator) navigator.vibrate(vibrationPattern)
     } catch {
-      // Một số trình duyệt chỉ cho hiển thị thông báo qua Service Worker.
+      try {
+        const popup = new Notification(item.title, options)
+        window.setTimeout(() => popup.close(), 10_000)
+      } catch {
+        // Trình duyệt không cho phép hiển thị thông báo ở chế độ hiện tại.
+      }
     }
   }, [])
 
@@ -374,7 +417,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const next = [...unique, ...current].slice(0, MAX_NOTIFICATIONS)
         persistNotifications(next)
         setToastNotifications((toasts) => [...unique, ...toasts].slice(0, 3))
-        unique.forEach(showBrowserNotification)
+        unique.forEach((item) => { void showBrowserNotification(item) })
         return next
       })
     }
@@ -415,15 +458,25 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setToastNotifications((items) => items.filter((item) => item.id !== id))
   }, [])
 
-  const requestBrowserPermission = useCallback(async () => {
-    if (!('Notification' in window)) {
-      setBrowserPermission('unsupported')
-      return 'unsupported' as const
-    }
-    const permission = await Notification.requestPermission()
+  const refreshBrowserPermission = useCallback(() => {
+    const permission = 'Notification' in window ? Notification.permission : 'unsupported' as const
     setBrowserPermission(permission)
     return permission
   }, [])
+
+  const requestBrowserPermission = useCallback(async () => {
+    if (!('Notification' in window) || !window.isSecureContext) {
+      setBrowserPermission('unsupported')
+      return 'unsupported' as const
+    }
+    try {
+      const permission = await Notification.requestPermission()
+      setBrowserPermission(permission)
+      return permission
+    } catch {
+      return refreshBrowserPermission()
+    }
+  }, [refreshBrowserPermission])
 
   const value = useMemo<NotificationContextValue>(() => ({
     notifications,
@@ -435,7 +488,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     clearAll,
     dismissToast,
     requestBrowserPermission,
-  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, notifications, requestBrowserPermission, toastNotifications])
+    refreshBrowserPermission,
+  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, notifications, refreshBrowserPermission, requestBrowserPermission, toastNotifications])
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>
 }

@@ -2,3 +2,6 @@
 # The function validates the signed-in user's access token inside the handler.
 [functions.manage-user]
 verify_jwt = false
+
+[functions.analyze-odometer]
+verify_jwt = false

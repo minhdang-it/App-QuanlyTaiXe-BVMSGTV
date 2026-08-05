@@ -1,0 +1,18 @@
+BAN CAP NHAT v2.4.0
+
+NOI DUNG CHINH
+- Nang cap giao dien Tai xe mobile.
+- Bat buoc kiem tra HTTPS, GPS va Thong bao truoc khi nhan/thuc hien chuyen.
+- Sua luong lay GPS va thong bao loi chi tiet hon.
+- Them thong bao uu tien khi tai xe co chuyen moi.
+- Them server HTTPS cong 8443.
+- Them script TAO-HTTPS-NOI-BO.bat.
+
+CAP NHAT
+1. Chep de source moi, giu lai file .env cu.
+2. Cai mkcert tren may chu Windows.
+3. Chay TAO-HTTPS-NOI-BO.bat bang quyen Administrator.
+4. Chep .certs\CA-GOC-MKCERT.crt sang dien thoai va cai CA.
+5. Mo https://IP-MAY-CHU:8443 tren dien thoai.
+6. Bat Vi tri va Thong bao trong man hinh thiet lap bat buoc.
+7. Go PWA HTTP cu va cai lai PWA tu dia chi HTTPS.
