@@ -1,0 +1,53 @@
+# Thay __DOMAIN__ bằng tên miền thật, ví dụ xe.example.vn
+# Thay __SUPABASE_HOST__ bằng project-ref.supabase.co nếu bật CSP sau khi kiểm thử.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    root /var/www/__DOMAIN__/current;
+    index index.html;
+
+    access_log /var/log/nginx/__DOMAIN__.access.log;
+    error_log  /var/log/nginx/__DOMAIN__.error.log warn;
+
+    server_tokens off;
+    charset utf-8;
+
+    # PWA/SPA: không cache HTML và Service Worker quá lâu.
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        try_files $uri =404;
+    }
+
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        try_files $uri =404;
+    }
+
+    # Assets Vite có hash trong tên nên có thể cache dài hạn.
+    location ~* \.(?:js|css|png|jpg|jpeg|webp|svg|ico|woff2?)$ {
+        try_files $uri =404;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable" always;
+        access_log off;
+    }
+
+    # Hỗ trợ các URL SPA như /tong-quan, /dieu-xe, /chi-phi...
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(self), geolocation=(self), microphone=(self)" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    # Chỉ bật CSP sau khi đã kiểm thử OCR, Supabase Realtime, ảnh và microphone.
+    # add_header Content-Security-Policy "default-src 'self'; connect-src 'self' https://__SUPABASE_HOST__ wss://__SUPABASE_HOST__; img-src 'self' data: blob: https://__SUPABASE_HOST__; media-src 'self' blob: https://__SUPABASE_HOST__; worker-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline';" always;
+}

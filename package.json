@@ -1,7 +1,7 @@
 {
   "name": "dieu-phoi-xe-bvmsgtv",
   "private": true,
-  "version": "2.5.5",
+  "version": "2.6.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "check": "tsc -b --pretty false",
     "verify:source": "node scripts/verify-source.mjs",
-    "verify": "npm run verify:source && npm run check && npm run build"
+    "verify": "npm run verify:source && npm run check && npm run build",
+    "verify:package": "node scripts/verify-source.mjs --package"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

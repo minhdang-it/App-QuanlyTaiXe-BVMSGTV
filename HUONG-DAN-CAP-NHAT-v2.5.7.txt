@@ -1,0 +1,8 @@
+BAN CAP NHAT v2.5.7
+
+- Khung logo mobile kéo đều hết chiều ngang.
+- Làm mới, Thông báo, Hồ sơ và Đăng xuất nằm chung một hàng.
+- Nút Đăng xuất hiển thị chữ.
+
+Cập nhật source, giữ lại .env, chạy npm install và npm run build.
+Sau đó restart dịch vụ và xóa cache/PWA cũ.

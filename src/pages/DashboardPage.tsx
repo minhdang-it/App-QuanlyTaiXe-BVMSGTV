@@ -1,11 +1,14 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { EXPENSE_LABELS, ROLE_LABELS, PURPOSE_LABELS, VEHICLE_STATUS_LABELS } from '../lib/constants'
+import { EXPENSE_LABELS, INCIDENT_LABELS, ROLE_LABELS, PURPOSE_LABELS, VEHICLE_STATUS_LABELS } from '../lib/constants'
 import { daysUntil, formatCurrency, formatDateTime, googleMapsLocationUrl, isSameLocalDay } from '../lib/utils'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import type { AppData, Trip, UserRole } from '../types/models'
+import { Modal } from '../components/Modal'
+import { TripDetailModal } from './DispatchPage'
+import { ImagePreview } from '../components/ImagePreview'
+import type { AppData, Expense, Incident, Trip, UserRole } from '../types/models'
 
 type OfficeRole = Exclude<UserRole, 'driver'>
 
@@ -20,74 +23,20 @@ type DashboardMetrics = {
   pendingExpenses: number
 }
 
-const roleBrief: Record<OfficeRole, { eyebrow: string; title: string; description: string; securityTitle: string; securityText: string; cards: Array<{ icon: string; title: string; detail: string }> }> = {
-  dispatcher: {
-    eyebrow: 'BỘ PHẬN ĐIỀU PHỐI',
-    title: 'Điều phối chuyến xe nhanh, rõ và trực quan.',
-    description: 'Tập trung điều xe, theo dõi vị trí xe đang chạy, xử lý chậm chuyến và nắm bắt toàn bộ lịch xe trong ngày.',
-    securityTitle: 'Bảo mật điều phối',
-    securityText: 'Chỉ hiển thị module phục vụ điều hành chuyến, không làm rối thông tin của các bộ phận khác.',
-    cards: [
-      { icon: '↗', title: 'Điều xe nhanh', detail: 'Tạo chuyến, gán tài xế và phương tiện trong vài thao tác.' },
-      { icon: '⌖', title: 'Theo dõi vị trí', detail: 'Nắm nhanh xe nào đang chạy và điểm đến hiện tại.' },
-      { icon: '⏱', title: 'Kiểm soát tiến độ', detail: 'Phát hiện chuyến trễ giờ để xử lý sớm.' },
-    ],
-  },
-  accountant: {
-    eyebrow: 'BỘ PHẬN KẾ TOÁN',
-    title: 'Theo dõi chi phí đội xe rõ ràng và minh bạch.',
-    description: 'Tập trung vào nhiên liệu, cầu đường, hóa đơn phát sinh và vị trí các chuyến đang liên quan chứng từ để quyết toán nhanh.',
-    securityTitle: 'Bảo mật kế toán',
-    securityText: 'Kế toán chỉ tập trung vào chi phí, báo cáo và vị trí xe đang phát sinh chi phí vận hành.',
-    cards: [
-      { icon: '₫', title: 'Chi phí tức thời', detail: 'Xem nhanh các khoản xăng dầu, cầu đường và gửi xe.' },
-      { icon: '▣', title: 'Báo cáo tổng hợp', detail: 'Nắm tình hình chi phí theo ngày, xe và loại khoản mục.' },
-      { icon: '⌘', title: 'Chứng từ rõ ràng', detail: 'Theo dõi hóa đơn và tình trạng duyệt để xử lý chính xác.' },
-    ],
-  },
-  fleet: {
-    eyebrow: 'BỘ PHẬN ĐỘI XE',
-    title: 'Quản lý đội xe hiện đại và chủ động hơn.',
-    description: 'Kiểm soát hồ sơ xe, tình trạng kỹ thuật, bảo dưỡng định kỳ và theo dõi phương tiện đang hoạt động ngoài thực địa.',
-    securityTitle: 'Bảo mật đội xe',
-    securityText: 'Chỉ mở quyền phù hợp với hồ sơ xe, sự cố, bảo dưỡng và vị trí vận hành của phương tiện.',
-    cards: [
-      { icon: '⚙', title: 'Bảo dưỡng chủ động', detail: 'Nhắc lịch bảo dưỡng và theo dõi hạn đăng kiểm, bảo hiểm.' },
-      { icon: '!', title: 'Xử lý sự cố', detail: 'Ưu tiên các xe có cảnh báo cần can thiệp nhanh.' },
-      { icon: '◫', title: 'Tình trạng xe', detail: 'Biết ngay xe nào sẵn sàng, xe nào đang hoạt động hoặc sửa chữa.' },
-    ],
-  },
-  director: {
-    eyebrow: 'BAN LÃNH ĐẠO',
-    title: 'Màn hình lãnh đạo: rõ chỉ số, rõ vị trí, rõ quyết định.',
-    description: 'Ưu tiên cái nhìn tổng quan cho lãnh đạo: xe đang chạy, tiến độ chuyến, cảnh báo vận hành và số liệu chi phí nổi bật.',
-    securityTitle: 'Bảo mật lãnh đạo',
-    securityText: 'Ban lãnh đạo xem dữ liệu cô đọng, ưu tiên điều hành và ra quyết định tức thời.',
-    cards: [
-      { icon: '⌘', title: 'Bức tranh tổng thể', detail: 'Nắm nhanh tình trạng đội xe và hoạt động trong ngày.' },
-      { icon: '⌖', title: 'Xe đang vận hành', detail: 'Theo dõi vị trí chuyến đang chạy để chỉ đạo kịp thời.' },
-      { icon: '⚠', title: 'Cảnh báo ưu tiên', detail: 'Giấy tờ, sự cố và chậm chuyến được hiển thị rõ ràng.' },
-    ],
-  },
-  admin: {
-    eyebrow: 'QUẢN TRỊ HỆ THỐNG',
-    title: 'Toàn quyền kiểm soát người dùng và dữ liệu hệ thống.',
-    description: 'Theo dõi phân quyền, đồng bộ dữ liệu, quản lý bộ phận và đảm bảo từng đơn vị có giao diện phù hợp, an toàn.',
-    securityTitle: 'Bảo mật hệ thống',
-    securityText: 'Quản trị viên kiểm soát phân quyền, trạng thái đồng bộ và tính toàn vẹn của toàn bộ hệ thống.',
-    cards: [
-      { icon: '◎', title: 'Phân quyền rõ ràng', detail: 'Mỗi đơn vị nhìn đúng chức năng và dữ liệu được cấp.' },
-      { icon: '↻', title: 'Dữ liệu cập nhật', detail: 'Theo dõi đồng bộ và chủ động làm mới ngay khi cần.' },
-      { icon: '🛡', title: 'Kiểm soát bảo mật', detail: 'Tăng độ an toàn cho tài khoản và quyền truy cập toàn hệ thống.' },
-    ],
-  },
+function localizedExpenseDescription(item: Expense) {
+  const description = item.description?.trim()
+  if (!description) return EXPENSE_LABELS[item.type]
+  const normalized = description.toLocaleLowerCase('vi-VN')
+  const englishLabels: Record<string, string> = { fuel: 'Xăng dầu', washing: 'Rửa xe', toll: 'Cầu đường', parking: 'Gửi xe', repair: 'Sửa chữa', other: 'Chi phí khác' }
+  return englishLabels[normalized] ?? description
 }
 
 export function DashboardPage() {
   const { data } = useData()
   const { user } = useAuth()
   const role = (user?.profile.role ?? 'dispatcher') as OfficeRole
-  const overview = roleBrief[role]
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
+  const [selectedActivity, setSelectedActivity] = useState<{ kind: 'expense'; item: Expense } | { kind: 'incident'; item: Incident } | null>(null)
 
   const metrics = useMemo<DashboardMetrics>(() => {
     const todayTrips = data.trips.filter((trip) => isSameLocalDay(trip.scheduled_start))
@@ -132,32 +81,13 @@ export function DashboardPage() {
     .filter((trip) => trip.status === 'active')
     .sort((a, b) => new Date(b.location_updated_at ?? b.started_at ?? b.updated_at).getTime() - new Date(a.location_updated_at ?? a.started_at ?? a.updated_at).getTime()), [data.trips])
 
+  const recentActivities = useMemo(() => [
+    ...data.incidents.map((item) => ({ kind: 'incident' as const, item, time: item.created_at })),
+    ...data.expenses.map((item) => ({ kind: 'expense' as const, item, time: item.created_at })),
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 6), [data.expenses, data.incidents])
+
   return (
     <div className="dashboard-grid executive-dashboard-grid">
-      <section className={`dashboard-executive-hero role-${role}`}>
-        <div className="dashboard-hero-main">
-          <span className="section-eyebrow">{overview.eyebrow}</span>
-          <h2>{overview.title}</h2>
-          <p>{overview.description}</p>
-          <div className="hero-chip-row">
-            <span>Vai trò: <strong>{ROLE_LABELS[role]}</strong></span>
-            <span>Xe đang chạy: <strong>{activeTrips.length}</strong></span>
-            <span>Chờ duyệt chi phí: <strong>{metrics.pendingExpenses}</strong></span>
-          </div>
-        </div>
-        <div className="dashboard-hero-security">
-          <div className="security-mark">🛡</div>
-          <strong>{overview.securityTitle}</strong>
-          <p>{overview.securityText}</p>
-          <ul>
-            <li>Giao diện chuyên biệt cho từng bộ phận</li>
-            <li>Hiển thị vị trí hiện tại khi chuyến đã bắt đầu</li>
-            <li>Phù hợp để ban lãnh đạo cập nhật tình hình tức thì</li>
-          </ul>
-        </div>
-      </section>
-
-      <DepartmentWorkspace role={role} data={data} metrics={metrics} activeTrips={activeTrips} />
 
       <section className="metric-grid compact-metric-grid">
         <Metric icon="🚘" label="Tổng số xe" value={metrics.totalVehicles} />
@@ -167,15 +97,17 @@ export function DashboardPage() {
         <Metric icon="✓" label="Chuyến hoàn thành" value={metrics.completed} tone="success" />
         <Metric icon="⏰" label="Chuyến trễ giờ" value={metrics.delayed} tone={metrics.delayed ? 'danger' : undefined} />
         <Metric icon="💵" label="Chi phí đã duyệt hôm nay" value={formatCurrency(metrics.expense)} wide />
-        <Metric icon="🧾" label="Chi phí chờ duyệt" value={metrics.pendingExpenses} tone={metrics.pendingExpenses ? 'warning' : undefined} />
+        <Metric icon="🧾" label="Chi phí chờ duyệt" value={metrics.pendingExpenses} tone={metrics.pendingExpenses ? 'warning' : undefined} wide />
       </section>
+
+      <DepartmentWorkspace role={role} data={data} metrics={metrics} activeTrips={activeTrips} />
 
       <section className="panel trip-panel modern-panel-span-2">
         <div className="panel-header"><div><h2>Lịch xe hôm nay</h2><p>Toàn bộ hành trình đã điều trong ngày</p></div><span className="count-pill">{todayTrips.length} chuyến</span></div>
         {todayTrips.length ? <div className="table-wrap"><table><thead><tr><th>Giờ</th><th>Xe / Tài xế</th><th>Hành trình</th><th>Loại chuyến</th><th>Trạng thái</th></tr></thead><tbody>{todayTrips.map((trip) => {
           const vehicle = data.vehicles.find((v) => v.id === trip.vehicle_id)
           const driver = data.profiles.find((p) => p.id === trip.driver_id)
-          return <tr key={trip.id}><td><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong></td><td><strong>{vehicle?.plate_number}</strong><small>{driver?.full_name}</small></td><td><strong>{trip.destination}</strong><small>{trip.pickup}</small></td><td>{PURPOSE_LABELS[trip.purpose]}</td><td><StatusBadge status={trip.status} /></td></tr>
+          return <tr className="clickable-table-row" tabIndex={0} role="button" aria-label={`Xem chi tiết chuyến ${vehicle?.plate_number ?? ''}`} onClick={() => setSelectedTrip(trip)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedTrip(trip) }} key={trip.id}><td><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong></td><td><strong>{vehicle?.plate_number}</strong><small>{driver?.full_name}</small></td><td><strong>{trip.destination}</strong><small>{trip.pickup}</small></td><td>{PURPOSE_LABELS[trip.purpose]}</td><td><StatusBadge status={trip.status} /></td></tr>
         })}</tbody></table></div> : <EmptyState icon="📅" title="Hôm nay chưa có lịch xe" />}
       </section>
 
@@ -187,15 +119,73 @@ export function DashboardPage() {
       </section>
 
       <section className="panel activity-panel">
-        <div className="panel-header"><div><h2>Hoạt động gần đây</h2><p>Cập nhật mới nhất từ đội xe</p></div></div>
-        <div className="timeline">
-          {data.incidents.slice(0, 3).map((item) => <div className="timeline-item" key={item.id}><span className="timeline-dot danger" /><div><strong>Báo sự cố</strong><p>{item.description || item.type}</p><small>{formatDateTime(item.created_at)}</small></div></div>)}
-          {data.expenses.slice(0, 3).map((item) => <div className="timeline-item" key={item.id}><span className="timeline-dot" /><div><strong>Chi phí {formatCurrency(item.amount)}</strong><p>{item.description || item.type}</p><small>{formatDateTime(item.created_at)}</small></div></div>)}
-          {!data.incidents.length && !data.expenses.length && <EmptyState title="Chưa có hoạt động" />}
+        <div className="panel-header"><div><h2>Hoạt động gần đây</h2><p>Bấm vào từng hoạt động để xem đầy đủ thông tin</p></div></div>
+        <div className="timeline interactive-timeline">
+          {recentActivities.map((activity) => activity.kind === 'incident'
+            ? <button type="button" className="timeline-item timeline-action" onClick={() => setSelectedActivity(activity)} key={`incident-${activity.item.id}`}><span className="timeline-dot danger" /><div><strong>{INCIDENT_LABELS[activity.item.type]}</strong><p>{activity.item.description || 'Không có mô tả'}</p><small>{formatDateTime(activity.item.created_at)}</small></div><span className="timeline-chevron">›</span></button>
+            : <button type="button" className="timeline-item timeline-action" onClick={() => setSelectedActivity(activity)} key={`expense-${activity.item.id}`}><span className="timeline-dot" /><div><strong>{EXPENSE_LABELS[activity.item.type]} · {formatCurrency(activity.item.amount)}</strong><p>{localizedExpenseDescription(activity.item)}</p><small>{formatDateTime(activity.item.created_at)}</small></div><span className="timeline-chevron">›</span></button>)}
+          {!recentActivities.length && <EmptyState title="Chưa có hoạt động" />}
         </div>
       </section>
+
+      {selectedTrip && <TripDetailModal trip={data.trips.find((item) => item.id === selectedTrip.id) ?? selectedTrip} canManage={false} onClose={() => setSelectedTrip(null)} onEdit={() => undefined} onCancel={() => undefined} onDelete={() => undefined} />}
+      {selectedActivity && <ActivityDetailModal activity={selectedActivity} data={data} onClose={() => setSelectedActivity(null)} onOpenTrip={(tripId) => { const trip = data.trips.find((item) => item.id === tripId); if (trip) { setSelectedActivity(null); setSelectedTrip(trip) } }} />}
     </div>
   )
+}
+
+
+function ActivityDetailModal({ activity, data, onClose, onOpenTrip }: {
+  activity: { kind: 'expense'; item: Expense } | { kind: 'incident'; item: Incident }
+  data: AppData
+  onClose: () => void
+  onOpenTrip: (tripId: string) => void
+}) {
+  const item = activity.item
+  const vehicle = data.vehicles.find((entry) => entry.id === item.vehicle_id)
+  const driver = data.profiles.find((entry) => entry.id === item.driver_id)
+  const trip = item.trip_id ? data.trips.find((entry) => entry.id === item.trip_id) : undefined
+
+  if (activity.kind === 'expense') {
+    const expense = activity.item
+    return <Modal title={`Chi tiết chi phí · ${EXPENSE_LABELS[expense.type]}`} onClose={onClose}>
+      <div className="activity-detail-summary expense-detail-summary"><span>{EXPENSE_LABELS[expense.type]}</span><strong>{formatCurrency(expense.amount)}</strong><StatusBadge status={expense.status} /></div>
+      <div className="detail-grid compact-detail-grid">
+        <div><span>Xe</span><strong>{vehicle?.plate_number || '—'}</strong></div>
+        <div><span>Tài xế</span><strong>{driver?.full_name || '—'}</strong></div>
+        <div><span>Ngày chi phí</span><strong>{formatDateTime(expense.expense_date)}</strong></div>
+        <div><span>Ngày gửi</span><strong>{formatDateTime(expense.created_at)}</strong></div>
+        {expense.type === 'fuel' && <><div><span>Số lít</span><strong>{expense.fuel_liters ? `${expense.fuel_liters} lít` : '—'}</strong></div><div><span>Đơn giá</span><strong>{expense.fuel_unit_price ? formatCurrency(expense.fuel_unit_price) : '—'}</strong></div></>}
+        <div className="detail-grid-wide"><span>Nội dung</span><strong>{localizedExpenseDescription(expense)}</strong></div>
+      </div>
+      {expense.receipt_url && <section className="activity-receipt-section">
+        <div className="activity-receipt-heading"><h3>Ảnh hóa đơn</h3><span>Bấm vào ảnh để xem toàn màn hình</span></div>
+        <ImagePreview src={expense.receipt_url} alt={`Hóa đơn ${EXPENSE_LABELS[expense.type]} ${formatCurrency(expense.amount)}`} />
+      </section>}
+      <div className="activity-detail-actions">
+        {trip && <button type="button" className="primary-button" onClick={() => onOpenTrip(trip.id)}>Xem chuyến liên quan</button>}
+      </div>
+    </Modal>
+  }
+
+  const incident = activity.item
+  return <Modal title={`Chi tiết sự cố · ${INCIDENT_LABELS[incident.type]}`} onClose={onClose}>
+    <div className="activity-detail-summary incident-detail-summary"><span>{INCIDENT_LABELS[incident.type]}</span><strong>{incident.severity === 'critical' ? 'Khẩn cấp' : incident.severity === 'high' ? 'Nghiêm trọng' : incident.severity === 'medium' ? 'Cần kiểm tra' : 'Mức nhẹ'}</strong><StatusBadge status={incident.status} /></div>
+    <div className="detail-grid compact-detail-grid">
+      <div><span>Xe</span><strong>{vehicle?.plate_number || '—'}</strong></div>
+      <div><span>Tài xế</span><strong>{driver?.full_name || '—'}</strong></div>
+      <div><span>Thời gian báo</span><strong>{formatDateTime(incident.created_at)}</strong></div>
+      <div><span>Đã xử lý</span><strong>{formatDateTime(incident.resolved_at)}</strong></div>
+      <div className="detail-grid-wide"><span>Mô tả</span><strong>{incident.description || 'Không có mô tả'}</strong></div>
+      {incident.resolution && <div className="detail-grid-wide"><span>Kết quả xử lý</span><strong>{incident.resolution}</strong></div>}
+    </div>
+    <div className="activity-detail-actions">
+      {incident.image_url && <a className="secondary-button" href={incident.image_url} target="_blank" rel="noreferrer">Xem ảnh</a>}
+      {incident.audio_url && <a className="secondary-button" href={incident.audio_url} target="_blank" rel="noreferrer">Nghe ghi âm</a>}
+      {incident.lat != null && incident.lng != null && <a className="secondary-button" href={googleMapsLocationUrl({ lat: incident.lat, lng: incident.lng })} target="_blank" rel="noreferrer">Xem vị trí</a>}
+      {trip && <button type="button" className="primary-button" onClick={() => onOpenTrip(trip.id)}>Xem chuyến liên quan</button>}
+    </div>
+  </Modal>
 }
 
 function DepartmentWorkspace({ role, data, metrics, activeTrips }: { role: OfficeRole; data: AppData; metrics: DashboardMetrics; activeTrips: Trip[] }) {

@@ -16,14 +16,11 @@ import type {
   UserRole,
   Vehicle,
 } from '../types/models'
-import { demoData } from './demoData'
-import { addPending, listPending, loadMediaBlob, pendingCount, removePending, saveMediaBlob, updatePending, type PendingAction } from './offline'
-import { isSupabaseConfigured, supabase } from './supabase'
-import { fileToDataUrl, getCurrentLocation, normalizePhone, uid } from './utils'
+import { addPending, listPending, pendingCount, removePending, updatePending, type PendingAction } from './offline'
+import { supabase } from './supabase'
+import { getCurrentLocation, normalizePhone, uid } from './utils'
 import { optimizeCapturedImage } from './image'
 
-const DEMO_DATA_KEY = 'msg-car-demo-data-v1'
-const DEMO_SESSION_KEY = 'msg-car-demo-session-v1'
 const LIVE_CACHE_KEY = 'msg-car-live-cache-v1'
 
 export interface MediaPayload {
@@ -32,7 +29,7 @@ export interface MediaPayload {
 }
 
 export interface BackendApi {
-  mode: 'demo' | 'supabase'
+  mode: 'supabase'
   login(phone: string, password: string): Promise<AuthUser>
   logout(): Promise<void>
   session(): Promise<AuthUser | null>
@@ -165,32 +162,6 @@ function applyOptimisticToLiveCache(operation: string, optimistic: unknown) {
   writeLiveCache(cache)
 }
 
-function readDemoData(): AppData {
-  const raw = localStorage.getItem(DEMO_DATA_KEY)
-  if (!raw) {
-    localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(demoData))
-    return structuredClone(demoData)
-  }
-  try {
-    return JSON.parse(raw) as AppData
-  } catch {
-    localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(demoData))
-    return structuredClone(demoData)
-  }
-}
-
-function writeDemoData(data: AppData) {
-  localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(data))
-  window.dispatchEvent(new CustomEvent('msg-car-demo-change'))
-}
-
-function demoUpdate<K extends keyof AppData>(key: K, updater: (items: AppData[K]) => AppData[K]) {
-  const data = readDemoData()
-  data[key] = updater(data[key])
-  writeDemoData(data)
-  return data
-}
-
 function phoneToE164(phone: string) {
   const digits = normalizePhone(phone).replace(/\D/g, '')
   if (digits.startsWith('84')) return `+${digits}`
@@ -219,276 +190,12 @@ async function friendlyFunctionError(error: unknown) {
     }
   }
   if (error instanceof FunctionsFetchError) {
-    return 'Không kết nối được Edge Function manage-user. Hãy deploy lại function bằng TRIEN-KHAI-MANAGE-USER.bat và kiểm tra đúng Supabase Project.'
+    return 'Không kết nối được Edge Function manage-user. Hãy deploy lại Edge Function manage-user và kiểm tra đúng Supabase Project.'
   }
   if (error instanceof FunctionsRelayError) {
     return `Supabase Edge Relay gặp lỗi: ${error.message}`
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-async function mediaToDemo(file?: File | null) {
-  if (!file) return null
-  const key = uid('demo-media')
-  await saveMediaBlob(key, file)
-  return `idb-media:${key}`
-}
-
-async function resolveDemoMedia(path?: string | null) {
-  if (!path?.startsWith('idb-media:')) return path ?? null
-  const blob = await loadMediaBlob(path.slice('idb-media:'.length))
-  return blob ? await fileToDataUrl(blob) : null
-}
-
-async function hydrateDemoData(data: AppData): Promise<AppData> {
-  const profiles = await Promise.all(data.profiles.map(async (profile) => {
-    const avatarPath = profile.avatar_path ?? profile.avatar_url ?? null
-    return { ...profile, avatar_path: avatarPath, avatar_url: await resolveDemoMedia(avatarPath) }
-  }))
-  const trips = await Promise.all(data.trips.map(async (trip) => ({
-    ...trip,
-    start_odometer_image_url: await resolveDemoMedia(trip.start_odometer_image_url),
-    end_odometer_image_url: await resolveDemoMedia(trip.end_odometer_image_url),
-  })))
-  const expenses = await Promise.all(data.expenses.map(async (expense) => ({ ...expense, receipt_url: await resolveDemoMedia(expense.receipt_url) })))
-  const incidents = await Promise.all(data.incidents.map(async (incident) => ({
-    ...incident,
-    image_url: await resolveDemoMedia(incident.image_url),
-    audio_url: await resolveDemoMedia(incident.audio_url),
-  })))
-  return { ...data, profiles, trips, expenses, incidents }
-}
-
-const demoBackend: BackendApi = {
-  mode: 'demo',
-  async login(phone, password) {
-    if (password !== '123456') throw new Error('Mật khẩu demo là 123456.')
-    const profile = readDemoData().profiles.find((item) => normalizePhone(item.phone) === normalizePhone(phone) && item.active)
-    if (!profile) throw new Error('Không tìm thấy tài khoản demo.')
-    const user = { id: profile.id, profile }
-    localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(user))
-    return user
-  },
-  async logout() {
-    localStorage.removeItem(DEMO_SESSION_KEY)
-  },
-  async session() {
-    const raw = localStorage.getItem(DEMO_SESSION_KEY)
-    return raw ? (JSON.parse(raw) as AuthUser) : null
-  },
-  async loadData() {
-    return await hydrateDemoData(readDemoData())
-  },
-  async createUser(input, avatarFile) {
-    const now = new Date().toISOString()
-    const record: Profile = {
-      id: uid('profile'),
-      full_name: input.full_name,
-      phone: input.phone,
-      role: input.role,
-      active: true,
-      avatar_url: avatarFile ? await fileToDataUrl(avatarFile) : null,
-      employee_code: input.employee_code?.trim() || null,
-      department: input.department?.trim() || null,
-      job_title: input.job_title?.trim() || null,
-      notes: input.notes?.trim() || null,
-      created_at: now,
-      updated_at: now,
-    }
-    demoUpdate('profiles', (items) => [record, ...items])
-    return record
-  },
-  async updateUser(input, avatarFile) {
-    let record: Profile | undefined
-    const avatarUrl = avatarFile ? await fileToDataUrl(avatarFile) : input.avatar_url
-    demoUpdate('profiles', (items) => items.map((item) => {
-      if (item.id !== input.id) return item
-      record = {
-        ...item,
-        full_name: input.full_name,
-        phone: input.phone,
-        role: input.role,
-        active: input.active,
-        avatar_url: avatarUrl ?? item.avatar_url ?? null,
-        employee_code: input.employee_code?.trim() || null,
-        department: input.department?.trim() || null,
-        job_title: input.job_title?.trim() || null,
-        notes: input.notes?.trim() || null,
-        updated_at: new Date().toISOString(),
-      }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy tài khoản.')
-    return record
-  },
-  async updateProfile(id, changes) {
-    let record: Profile | undefined
-    demoUpdate('profiles', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      record = { ...item, ...changes }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy tài khoản.')
-    return record
-  },
-  subscribe(onChange) {
-    const custom = () => onChange()
-    const storage = (event: StorageEvent) => {
-      if (event.key === DEMO_DATA_KEY) onChange()
-    }
-    window.addEventListener('msg-car-demo-change', custom)
-    window.addEventListener('storage', storage)
-    return () => {
-      window.removeEventListener('msg-car-demo-change', custom)
-      window.removeEventListener('storage', storage)
-    }
-  },
-  async createTrip(input, creatorId) {
-    const now = new Date().toISOString()
-    const trip: Trip = {
-      ...input,
-      id: uid('trip'),
-      status: 'assigned',
-      checklist_completed: false,
-      created_by: creatorId,
-      created_at: now,
-      updated_at: now,
-    }
-    demoUpdate('trips', (items) => [trip, ...items])
-    return trip
-  },
-  async updateTrip(id, changes) {
-    let updated: Trip | undefined
-    demoUpdate('trips', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      updated = { ...item, ...changes, updated_at: new Date().toISOString() }
-      return updated
-    }))
-    if (!updated) throw new Error('Không tìm thấy chuyến xe.')
-    if (changes.status === 'active') {
-      demoUpdate('vehicles', (items) => items.map((v) => v.id === updated?.vehicle_id ? { ...v, status: 'in_use' as const, updated_at: new Date().toISOString() } : v))
-    }
-    if (changes.status === 'completed') {
-      demoUpdate('vehicles', (items) => items.map((v) => v.id === updated?.vehicle_id ? { ...v, status: 'available' as const, odometer: updated?.end_odometer ?? v.odometer, updated_at: new Date().toISOString() } : v))
-    }
-    return updated
-  },
-  async updateTripLocation(id, lat, lng) {
-    return await this.updateTrip(id, {
-      current_lat: lat,
-      current_lng: lng,
-      location_updated_at: new Date().toISOString(),
-    })
-  },
-  async deleteTrip(id) {
-    const data = readDemoData()
-    const trip = data.trips.find((item) => item.id === id)
-    if (!trip) throw new Error('Không tìm thấy chuyến xe.')
-    if (trip.status === 'active' || trip.status === 'completed' || trip.start_odometer != null || trip.end_odometer != null || trip.start_odometer_image_url || trip.end_odometer_image_url) {
-      throw new Error('Không thể xóa chuyến đã phát sinh kilomet hoặc hành trình thực tế. Hãy hủy chuyến để giữ dữ liệu đối soát.')
-    }
-    if (data.expenses.some((item) => item.trip_id === id) || data.incidents.some((item) => item.trip_id === id)) {
-      throw new Error('Chuyến đã có chi phí hoặc sự cố liên quan nên không thể xóa.')
-    }
-    data.trips = data.trips.filter((item) => item.id !== id)
-    data.checklists = data.checklists.filter((item) => item.trip_id !== id)
-    writeDemoData(data)
-  },
-  async createChecklist(input) {
-    const record: Checklist = { ...input, id: uid('checklist'), created_at: new Date().toISOString() }
-    demoUpdate('checklists', (items) => [record, ...items])
-    const allOk = input.fuel_ok && input.tires_ok && input.lights_horn_ok && input.vehicle_clean && input.documents_ok
-    await this.updateTrip(input.trip_id, { checklist_completed: true, status: allOk ? 'ready' : 'accepted' })
-    return record
-  },
-  async submitOdometer(trip, phase, odometer, file) {
-    const location = await getCurrentLocation()
-    const image = await mediaToDemo(file)
-    const changes: Partial<Trip> = phase === 'start'
-      ? { start_odometer: odometer, start_odometer_image_url: image, start_lat: location?.lat, start_lng: location?.lng }
-      : { end_odometer: odometer, end_odometer_image_url: image, end_lat: location?.lat, end_lng: location?.lng }
-    return await this.updateTrip(trip.id, changes)
-  },
-  async createExpense(input, file) {
-    const now = new Date().toISOString()
-    const record: Expense = { ...input, id: uid('expense'), receipt_url: await mediaToDemo(file), created_at: now, updated_at: now }
-    demoUpdate('expenses', (items) => [record, ...items])
-    return record
-  },
-  async reviewExpense(id, action, reviewerId, reviewerRole, reason) {
-    let record: Expense | undefined
-    demoUpdate('expenses', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      const transition = expenseReviewTransition(item, action, reviewerId, reviewerRole, reason)
-      record = { ...item, ...transition.changes }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy chi phí.')
-    return record
-  },
-  async createIncident(input, media) {
-    const location = await getCurrentLocation()
-    const record: Incident = {
-      ...input,
-      id: uid('incident'),
-      image_url: await mediaToDemo(media?.file),
-      audio_url: await mediaToDemo(media?.secondFile),
-      lat: input.lat ?? location?.lat,
-      lng: input.lng ?? location?.lng,
-      created_at: new Date().toISOString(),
-    }
-    demoUpdate('incidents', (items) => [record, ...items])
-    if (record.severity === 'critical' || record.severity === 'high') {
-      demoUpdate('vehicles', (items) => items.map((v) => v.id === record.vehicle_id ? { ...v, status: 'maintenance' as const, updated_at: new Date().toISOString() } : v))
-    }
-    return record
-  },
-  async updateIncident(id, changes) {
-    let record: Incident | undefined
-    demoUpdate('incidents', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      record = { ...item, ...changes }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy sự cố.')
-    return record
-  },
-  async createVehicle(input) {
-    const now = new Date().toISOString()
-    const record: Vehicle = { ...input, id: uid('vehicle'), created_at: now, updated_at: now }
-    demoUpdate('vehicles', (items) => [record, ...items])
-    return record
-  },
-  async updateVehicle(id, changes) {
-    let record: Vehicle | undefined
-    demoUpdate('vehicles', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      record = { ...item, ...changes, updated_at: new Date().toISOString() }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy xe.')
-    return record
-  },
-  async createMaintenance(input) {
-    const now = new Date().toISOString()
-    const record: Maintenance = { ...input, id: uid('maintenance'), created_at: now, updated_at: now }
-    demoUpdate('maintenances', (items) => [record, ...items])
-    if (input.status === 'in_progress') await this.updateVehicle(input.vehicle_id, { status: 'maintenance' })
-    return record
-  },
-  async updateMaintenance(id, changes) {
-    let record: Maintenance | undefined
-    demoUpdate('maintenances', (items) => items.map((item) => {
-      if (item.id !== id) return item
-      record = { ...item, ...changes, updated_at: new Date().toISOString() }
-      return record
-    }))
-    if (!record) throw new Error('Không tìm thấy lịch bảo dưỡng.')
-    if (record.status === 'completed') await this.updateVehicle(record.vehicle_id, { status: 'available' })
-    return record
-  },
-  async syncPending() { return 0 },
-  async getPendingCount() { return 0 },
 }
 
 async function requireSupabase() {

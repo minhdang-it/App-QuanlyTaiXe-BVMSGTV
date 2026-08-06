@@ -1,0 +1,13 @@
+BẢN CẬP NHẬT v2.5.6
+
+1. Giữ lại file .env đang sử dụng.
+2. Ghi đè source v2.5.6 lên source cũ.
+3. Chạy:
+   npm install
+   npm run build
+4. Khởi động lại dịch vụ Windows.
+5. Xóa cache hoặc gỡ PWA cũ nếu giao diện chưa đổi.
+
+Lưu ý:
+- Gói này chứa source mới nhưng không kèm node_modules, .env và dist.
+- Cần build lại trên máy triển khai để tạo thư mục dist mới.

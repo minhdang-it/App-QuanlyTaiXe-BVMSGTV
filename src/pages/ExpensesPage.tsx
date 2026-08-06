@@ -5,6 +5,7 @@ import { EXPENSE_LABELS } from '../lib/constants'
 import { formatCurrency, formatDateTime } from '../lib/utils'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+import { ImagePreview } from '../components/ImagePreview'
 import type { ExpenseReviewAction, ExpenseStatus } from '../types/models'
 
 type ExpenseFilter = 'all' | ExpenseStatus
@@ -121,7 +122,7 @@ export function ExpensesPage() {
         <td><strong>{vehicle?.plate_number}</strong><small>{driver?.full_name}</small></td>
         <td><strong>{EXPENSE_LABELS[item.type]}</strong><small>{item.type === 'fuel' && item.fuel_liters ? `${item.fuel_liters} lít · ` : ''}{item.description}</small></td>
         <td className="money-cell">{formatCurrency(item.amount)}</td>
-        <td>{item.receipt_url ? <a href={item.receipt_url} target="_blank" rel="noreferrer" className="receipt-link">Xem ảnh</a> : '—'}</td>
+        <td>{item.receipt_url ? <ImagePreview compact src={item.receipt_url} alt={`Hóa đơn ${EXPENSE_LABELS[item.type]} ${formatCurrency(item.amount)}`} /> : '—'}</td>
         <td>
           <StatusBadge status={item.status} />
           {item.director_reviewed_at && <small>BGĐ: {formatDateTime(item.director_reviewed_at)}</small>}

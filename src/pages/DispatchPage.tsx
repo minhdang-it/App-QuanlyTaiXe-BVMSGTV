@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { defaultTripDateTime } from '../lib/demoData'
 import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
 import { formatCurrency, formatDateTime, googleMapsLocationUrl, toDateTimeLocal } from '../lib/utils'
 import type { CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+
+
+function nextDefaultTripDateTime() {
+  const date = new Date(Date.now() + 30 * 60 * 1000)
+  date.setMinutes(Math.ceil(date.getMinutes() / 15) * 15, 0, 0)
+  return toDateTimeLocal(date)
+}
 
 const statusFilters: Array<{ value: 'all' | TripStatus; label: string }> = [
   { value: 'all', label: 'Tất cả' },
@@ -194,7 +200,7 @@ export function DispatchPage() {
   </>
 }
 
-function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete }: {
+export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete }: {
   trip: Trip
   canManage: boolean
   onClose: () => void
@@ -297,7 +303,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
   const { data } = useData()
   const eligibleVehicles = data.vehicles.filter((vehicle) => vehicle.id === trip?.vehicle_id || !['maintenance', 'out_of_service'].includes(vehicle.status))
   const drivers = data.profiles.filter((profile) => profile.role === 'driver' && (profile.active || profile.id === trip?.driver_id))
-  const initialStart = trip?.scheduled_start ? toDateTimeLocal(new Date(trip.scheduled_start)) : defaultTripDateTime || toDateTimeLocal(new Date())
+  const initialStart = trip?.scheduled_start ? toDateTimeLocal(new Date(trip.scheduled_start)) : nextDefaultTripDateTime()
   const defaultEndDate = trip?.expected_end ? new Date(trip.expected_end) : new Date(new Date(initialStart).getTime() + 4 * 60 * 60 * 1000)
   const [form, setForm] = useState({
     vehicle_id: trip?.vehicle_id ?? eligibleVehicles[0]?.id ?? '',
