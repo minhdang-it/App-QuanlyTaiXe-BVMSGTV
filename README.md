@@ -78,3 +78,6 @@ Script yêu cầu Supabase URL và service-role/secret key tại thời điểm 
 ```bash
 npm run verify:source
 ```
+
+### Luồng đề nghị Trưởng khoa (v2.7.4)
+Trưởng khoa gửi đề nghị → Hành chính duyệt → Điều phối chọn xe/tài xế và tạo chuyến → Tài xế nhận chuyến. Hành chính không duyệt lại lần hai.

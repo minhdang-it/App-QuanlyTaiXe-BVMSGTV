@@ -5,6 +5,7 @@ import { NetworkBanner } from './NetworkBanner'
 import { useData } from '../context/DataContext'
 import { BrandLogo } from './BrandLogo'
 import { NotificationCenter } from './NotificationCenter'
+import { useNotifications, type NotificationTarget } from '../context/NotificationContext'
 
 export type PageKey = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users'
 
@@ -31,22 +32,22 @@ export function pageFromPath(pathname: string): PageKey {
 type RoleKey = 'department_head' | 'dispatcher' | 'accountant' | 'fleet' | 'director' | 'admin'
 type NavIconName = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users' | 'menu' | 'logout'
 
-const navigation: Array<{ key: PageKey; label: string; icon: NavIconName; hint: string; roles: string[] }> = [
-  { key: 'dashboard', label: 'Tổng quan', icon: 'dashboard', hint: 'Điều hành theo vai trò', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'requests', label: 'Đề nghị xe', icon: 'requests', hint: 'Gửi & duyệt kế hoạch', roles: ['department_head', 'dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'dispatch', label: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'vehicles', label: 'Hồ sơ xe', icon: 'vehicles', hint: 'Danh mục & trạng thái xe', roles: ['dispatcher', 'fleet', 'admin'] },
-  { key: 'expenses', label: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'director', 'admin'] },
-  { key: 'incidents', label: 'Sự cố', icon: 'incidents', hint: 'Xử lý cảnh báo', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'maintenance', label: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'reports', label: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'account', label: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', roles: ['department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'users', label: 'Tài khoản', icon: 'users', hint: 'Phân quyền hệ thống', roles: ['admin'] },
+const navigation: Array<{ key: PageKey; label: string; mobileLabel: string; icon: NavIconName; hint: string; roles: string[] }> = [
+  { key: 'dashboard', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: 'dashboard', hint: 'Điều hành theo vai trò', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'requests', label: 'Đề nghị từ khoa/phòng', mobileLabel: 'Đề nghị', icon: 'requests', hint: 'Gửi & Hành chính duyệt', roles: ['department_head', 'fleet', 'admin'] },
+  { key: 'dispatch', label: 'Điều xe', mobileLabel: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'vehicles', label: 'Hồ sơ xe', mobileLabel: 'Hồ sơ xe', icon: 'vehicles', hint: 'Danh mục & trạng thái xe', roles: ['dispatcher', 'fleet', 'admin'] },
+  { key: 'expenses', label: 'Chi phí', mobileLabel: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'director', 'admin'] },
+  { key: 'incidents', label: 'Sự cố', mobileLabel: 'Sự cố', icon: 'incidents', hint: 'Xử lý cảnh báo', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
+  { key: 'maintenance', label: 'Bảo dưỡng', mobileLabel: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
+  { key: 'reports', label: 'Báo cáo', mobileLabel: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'account', label: 'Hồ sơ', mobileLabel: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', roles: ['department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'users', label: 'Tài khoản', mobileLabel: 'Tài khoản', icon: 'users', hint: 'Phân quyền hệ thống', roles: ['admin'] },
 ]
 
 const pageDescriptions: Record<PageKey, string> = {
   dashboard: 'Màn hình điều hành trung tâm, hiển thị các chỉ số và cảnh báo quan trọng.',
-  requests: 'Trưởng khoa/đơn vị gửi đề nghị xe kèm kế hoạch và Hành chính đội xe duyệt trước khi điều xe.',
+  requests: 'Trưởng khoa/đơn vị gửi đề nghị xe; Hành chính đội xe duyệt trước khi Điều phối tạo chuyến.',
   dispatch: 'Theo dõi toàn bộ chuyến xe, vị trí xe hoạt động và lịch điều xe theo thời gian thực.',
   vehicles: 'Quản lý hồ sơ xe, tình trạng xe, đăng kiểm, bảo hiểm và phân công tài xế.',
   expenses: 'Quản lý chi phí phát sinh, hóa đơn, duyệt thanh toán và theo dõi nhiên liệu.',
@@ -124,6 +125,7 @@ function AppIcon({ name, className = '' }: { name: NavIconName; className?: stri
 export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (page: PageKey) => void; children: ReactNode }) {
   const { user, logout, mode } = useAuth()
   const { error, data, refresh, online } = useData()
+  const { unreadByTarget, markTargetRead } = useNotifications()
   const [loggingOut, setLoggingOut] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -132,6 +134,13 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
   const visible = navigation.filter((item) => item.roles.includes(currentProfile?.role ?? ''))
   const currentRole = (currentProfile?.role ?? 'dispatcher') as RoleKey
   const activeTrips = useMemo(() => data.trips.filter((trip) => trip.status === 'active').length, [data.trips])
+
+  const notificationCountFor = (key: PageKey) => unreadByTarget[key as NotificationTarget] ?? 0
+
+  function handlePageNavigation(key: PageKey) {
+    markTargetRead(key as NotificationTarget)
+    onPage(key)
+  }
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -143,6 +152,10 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
   useEffect(() => {
     if (!sidebarCollapsed) setHoverTooltip(null)
   }, [sidebarCollapsed])
+
+  useEffect(() => {
+    markTargetRead(page as NotificationTarget)
+  }, [markTargetRead, page])
 
   async function handleLogout() {
     if (loggingOut) return
@@ -209,9 +222,9 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
                 setHoverTooltip({ label: item.label, top: rect.top + rect.height / 2, left: rect.right + 12 })
               }}
               onBlur={() => setHoverTooltip(null)}
-              onClick={() => onPage(item.key)}
+              onClick={() => handlePageNavigation(item.key)}
             >
-              <span className="nav-icon-badge" aria-hidden="true"><AppIcon name={item.icon} /></span>
+              <span className="nav-icon-badge" aria-hidden="true"><AppIcon name={item.icon} />{notificationCountFor(item.key) > 0 && <b className="nav-feature-badge">{notificationCountFor(item.key) > 99 ? '99+' : notificationCountFor(item.key)}</b>}</span>
               <span className="nav-copy"><strong>{item.label}</strong><small>{item.hint}</small></span>
             </button>
           ))}
@@ -261,7 +274,7 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
               <strong className="refresh-label-full">{refreshing ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</strong>
               <strong className="refresh-label-short">{refreshing ? 'Đang tải' : 'Làm mới'}</strong>
             </button>
-            <NotificationCenter onNavigate={(target) => onPage(target as PageKey)} />
+            <NotificationCenter onNavigate={(target) => handlePageNavigation(target as PageKey)} />
             <button className="topbar-profile-button" onClick={() => onPage('account')} aria-label="Mở hồ sơ cá nhân">
               <span className="topbar-profile-avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="Ảnh đại diện" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</span>
               <span>Hồ sơ</span>
@@ -277,8 +290,8 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
       </main>
       <nav className="mobile-nav mobile-nav-modern">
         {visible.map((item) => (
-          <button type="button" key={item.key} className={page === item.key ? 'active' : ''} onClick={() => onPage(item.key)}>
-            <span className="mobile-nav-icon"><AppIcon name={item.icon} /></span><small>{item.label}</small>
+          <button type="button" key={item.key} className={page === item.key ? 'active' : ''} onClick={() => handlePageNavigation(item.key)} aria-label={item.label}>
+            <span className="mobile-nav-icon"><AppIcon name={item.icon} />{notificationCountFor(item.key) > 0 && <b className="mobile-feature-badge">{notificationCountFor(item.key) > 99 ? '99+' : notificationCountFor(item.key)}</b>}</span><small>{item.mobileLabel}</small>
           </button>
         ))}
       </nav>

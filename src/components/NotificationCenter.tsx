@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNotifications, type AppNotification, type NotificationTarget } from '../context/NotificationContext'
 
 const kindIcons: Record<AppNotification['kind'], string> = {
@@ -38,11 +39,16 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
 
   useEffect(() => {
     if (!open) return
-    const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
     }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
   }, [open])
 
   function openItem(item: AppNotification) {
@@ -58,7 +64,9 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
         {unreadCount > 0 && <strong>{unreadCount > 99 ? '99+' : unreadCount}</strong>}
       </button>
 
-      {open && <section className="notification-popover" aria-label="Trung tâm thông báo">
+      {open && typeof document !== 'undefined' && createPortal(<>
+        <button type="button" className="notification-overlay" onClick={() => setOpen(false)} aria-label="Đóng trung tâm thông báo" />
+<section className={`notification-popover notification-popover-portal ${compact ? 'compact' : ''}`} aria-label="Trung tâm thông báo">
         <header className="notification-popover-header">
           <div><span>TRUNG TÂM THÔNG BÁO</span><h2>Thông báo</h2></div>
           <button className="icon-button" onClick={() => setOpen(false)} aria-label="Đóng">✕</button>
@@ -82,7 +90,8 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
             {!item.read && <i />}
           </button>) : <div className="notification-empty"><span>🔕</span><strong>Chưa có thông báo</strong><p>Các chuyến mới, sự cố và thay đổi quan trọng sẽ xuất hiện tại đây.</p></div>}
         </div>
-      </section>}
+      </section>
+      </>, document.body)}
     </div>
 
     <div className="notification-toast-stack" aria-live="polite">

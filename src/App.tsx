@@ -50,10 +50,10 @@ export default function App() {
 
 const rolePages: Record<string, PageKey[]> = {
   department_head: ['requests', 'account'],
-  dispatcher: ['dashboard', 'requests', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  dispatcher: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
   accountant: ['dashboard', 'dispatch', 'expenses', 'reports', 'account'],
   fleet: ['dashboard', 'requests', 'dispatch', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
-  director: ['dashboard', 'requests', 'dispatch', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  director: ['dashboard', 'dispatch', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
   admin: ['dashboard', 'requests', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
 }
 

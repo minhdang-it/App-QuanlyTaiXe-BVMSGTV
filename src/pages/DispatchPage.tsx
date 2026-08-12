@@ -35,6 +35,7 @@ export function DispatchPage() {
   const canFleetReview = role === 'fleet' || role === 'admin'
   const canDirectorReview = role === 'director' || role === 'admin'
   const [showCreate, setShowCreate] = useState(false)
+  const [createRequestId, setCreateRequestId] = useState<string | null>(null)
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null)
   const [filter, setFilter] = useState<'all' | TripStatus>('all')
@@ -75,6 +76,10 @@ export function DispatchPage() {
       })
       .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime())
   }, [data.profiles, data.trips, data.vehicles, dateFrom, dateTo, filter, purpose, query])
+
+  const approvedDepartmentRequests = useMemo(() => data.vehicleRequests
+    .filter((request) => request.status === 'fleet_approved')
+    .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()), [data.vehicleRequests])
 
   async function cancelTrip(trip: Trip) {
     if (!window.confirm(`Hủy chuyến đi đến “${trip.destination}”?`)) return
@@ -160,8 +165,22 @@ export function DispatchPage() {
         <h2 className="toolbar-title">Quản lý và lịch sử chuyến đi</h2>
         <p className="toolbar-note">Xem lại hành trình, kilomet, chi phí và sự cố của từng chuyến.</p>
       </div>
-      {canManage && <button className="primary-button" onClick={() => setShowCreate(true)}>＋ TẠO CHUYẾN</button>}
+      {canManage && <button className="primary-button" onClick={() => { setCreateRequestId(null); setShowCreate(true) }}>＋ TẠO CHUYẾN</button>}
     </section>
+
+    {canManage && approvedDepartmentRequests.length > 0 && <section className="approved-request-queue">
+      <div className="panel-header">
+        <div><span className="eyebrow">ĐỀ NGHỊ ĐÃ ĐƯỢC HÀNH CHÍNH DUYỆT</span><h2>Chờ Điều phối tạo chuyến</h2><p>Bấm “Tạo chuyến” để lấy sẵn thông tin từ đề nghị của khoa/phòng.</p></div>
+        <span className="count-pill">{approvedDepartmentRequests.length} đề nghị</span>
+      </div>
+      <div className="approved-request-list">{approvedDepartmentRequests.map((request) => {
+        const requester = data.profiles.find((profile) => profile.id === request.requester_id)
+        return <article key={request.id} className="approved-request-row">
+          <div className="approved-request-main"><strong>{PURPOSE_LABELS[request.purpose]} · {request.destination}</strong><span>{request.department || requester?.department || 'Chưa rõ khoa/đơn vị'} · {formatDateTime(request.scheduled_start)}</span></div>
+          <div className="approved-request-actions"><span className="approval-route-chip">Hành chính đã duyệt</span><button type="button" className="primary-button compact" onClick={() => { setCreateRequestId(request.id); setShowCreate(true) }}>＋ Tạo chuyến</button></div>
+        </article>
+      })}</div>
+    </section>}
 
     {!canManage && <div className="readonly-notice">Bạn đang xem dữ liệu ở chế độ chỉ đọc. Điều phối tạo yêu cầu chuyến; Hành chính và Ban Giám đốc duyệt theo đúng quy trình phân quyền.</div>}
 
@@ -226,10 +245,13 @@ export function DispatchPage() {
       })}</div> : <EmptyState icon="🚐" title="Không có chuyến phù hợp" />}
     </section>
 
-    {showCreate && <TripFormModal onClose={() => setShowCreate(false)} onSubmit={async (input, planFile) => {
+    {showCreate && <TripFormModal initialRequestId={createRequestId ?? undefined} onClose={() => { setShowCreate(false); setCreateRequestId(null) }} onSubmit={async (input, planFile) => {
       await createTrip(input, planFile)
       setShowCreate(false)
-      setMessage({ text: 'Đã tạo yêu cầu điều xe. Chuyến đang chờ Hành chính đội xe duyệt.' })
+      setCreateRequestId(null)
+      setMessage({ text: input.vehicle_request_id
+        ? 'Đã tạo chuyến từ đề nghị đã được Hành chính duyệt. Tài xế đã nhận được chuyến.'
+        : 'Đã tạo yêu cầu điều xe. Chuyến đang chờ Hành chính đội xe duyệt.' })
     }} />}
 
     {editingTrip && <TripFormModal trip={editingTrip} onClose={() => setEditingTrip(null)} onSubmit={async (input) => {
@@ -362,28 +384,29 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
   </Modal>
 }
 
-function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () => void; onSubmit: (input: CreateTripInput, planFile?: File | null) => Promise<void> }) {
+function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: Trip; initialRequestId?: string; onClose: () => void; onSubmit: (input: CreateTripInput, planFile?: File | null) => Promise<void> }) {
   const { data } = useData()
   const eligibleVehicles = data.vehicles.filter((vehicle) => vehicle.id === trip?.vehicle_id || !['maintenance', 'out_of_service'].includes(vehicle.status))
   const drivers = data.profiles.filter((profile) => profile.role === 'driver' && !profile.deleted_at && (profile.active || profile.id === trip?.driver_id))
   const approvedRequests = data.vehicleRequests.filter((request) => request.status === 'fleet_approved')
-  const initialStart = trip?.scheduled_start ? toDateTimeLocal(new Date(trip.scheduled_start)) : nextDefaultTripDateTime()
-  const defaultEndDate = trip?.expected_end ? new Date(trip.expected_end) : new Date(new Date(initialStart).getTime() + 4 * 60 * 60 * 1000)
+  const initialRequest = !trip && initialRequestId ? approvedRequests.find((request) => request.id === initialRequestId) : undefined
+  const initialStart = trip?.scheduled_start ? toDateTimeLocal(new Date(trip.scheduled_start)) : initialRequest?.scheduled_start ? toDateTimeLocal(new Date(initialRequest.scheduled_start)) : nextDefaultTripDateTime()
+  const defaultEndDate = trip?.expected_end ? new Date(trip.expected_end) : initialRequest?.expected_end ? new Date(initialRequest.expected_end) : new Date(new Date(initialStart).getTime() + 4 * 60 * 60 * 1000)
   const [form, setForm] = useState({
     vehicle_id: trip?.vehicle_id ?? eligibleVehicles[0]?.id ?? '',
     driver_id: trip?.driver_id ?? drivers[0]?.id ?? '',
-    purpose: trip?.purpose ?? 'community_exam' as TripPurpose,
-    pickup: trip?.pickup ?? 'Bệnh viện Mắt Sài Gòn Trà Vinh',
-    destination: trip?.destination ?? '',
-    contact_name: trip?.contact_name ?? '',
-    contact_phone: trip?.contact_phone ?? '',
-    passenger_count: String(trip?.passenger_count ?? 1),
+    purpose: trip?.purpose ?? initialRequest?.purpose ?? 'community_exam' as TripPurpose,
+    pickup: trip?.pickup ?? initialRequest?.pickup ?? 'Bệnh viện Mắt Sài Gòn Trà Vinh',
+    destination: trip?.destination ?? initialRequest?.destination ?? '',
+    contact_name: trip?.contact_name ?? initialRequest?.contact_name ?? '',
+    contact_phone: trip?.contact_phone ?? initialRequest?.contact_phone ?? '',
+    passenger_count: String(trip?.passenger_count ?? initialRequest?.passenger_count ?? 1),
     scheduled_start: initialStart,
     expected_end: toDateTimeLocal(defaultEndDate),
-    notes: trip?.notes ?? '',
-    vehicle_request_id: trip?.vehicle_request_id ?? '',
-    existing_plan_path: trip?.plan_document_path ?? '',
-    approved_plan: Boolean(trip?.approved_plan),
+    notes: trip?.notes ?? initialRequest?.notes ?? '',
+    vehicle_request_id: trip?.vehicle_request_id ?? initialRequest?.id ?? '',
+    existing_plan_path: trip?.plan_document_path ?? initialRequest?.plan_document_path ?? '',
+    approved_plan: Boolean(trip?.approved_plan || initialRequest?.plan_document_path),
   })
   const [planFile, setPlanFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -430,6 +453,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
 
   function applyApprovedRequest(requestId: string) {
     const request = approvedRequests.find((item) => item.id === requestId)
+    setPlanFile(null)
     if (!request) { setForm({ ...form, vehicle_request_id: '', existing_plan_path: '', approved_plan: false }); return }
     setForm({
       ...form,
@@ -448,9 +472,10 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
     })
   }
 
+  const fromApprovedDepartmentRequest = Boolean(form.vehicle_request_id)
   const canUseFleetOnlyApproval = Boolean(form.existing_plan_path || planFile)
 
-  return <Modal title={trip ? 'Sửa thông tin chuyến đi' : 'Tạo yêu cầu điều xe'} onClose={onClose} wide><form className="form-grid" onSubmit={submit}>
+  return <Modal title={trip ? 'Sửa thông tin chuyến đi' : fromApprovedDepartmentRequest ? 'Tạo chuyến từ đề nghị đã duyệt' : 'Tạo yêu cầu điều xe'} onClose={onClose} wide><form className="form-grid" onSubmit={submit}>
     {!trip && <label className="span-2">Tạo từ đề nghị đã được Hành chính duyệt<select value={form.vehicle_request_id} onChange={(event) => applyApprovedRequest(event.target.value)}><option value="">Không chọn đề nghị</option>{approvedRequests.map((request) => <option key={request.id} value={request.id}>{PURPOSE_LABELS[request.purpose]} · {request.destination} · {formatDateTime(request.scheduled_start)}</option>)}</select></label>}
     <label>Chọn xe<select value={form.vehicle_id} onChange={(event) => setForm({ ...form, vehicle_id: event.target.value })} required>{eligibleVehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate_number} — {vehicle.vehicle_name}</option>)}</select></label>
     <label>Tài xế<select value={form.driver_id} onChange={(event) => setForm({ ...form, driver_id: event.target.value })} required>{drivers.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name}</option>)}</select></label>
@@ -462,12 +487,13 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
     <label className="span-2">Điểm đến<input value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder="Xã, bệnh viện hoặc địa chỉ" required /></label>
     <label>Người liên hệ<input value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} /></label>
     <label>Số điện thoại<input inputMode="tel" value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
-    {!trip && <label className="span-2">Văn bản / kế hoạch<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => { const file = event.target.files?.[0] ?? null; setPlanFile(file); setForm({ ...form, approved_plan: Boolean(file || form.existing_plan_path) }) }} /><small>{form.existing_plan_path ? 'Đang sử dụng kế hoạch từ đề nghị đã được Hành chính duyệt. Chuyến này sẽ không cần qua BGĐ duyệt.' : 'Nếu đính kèm kế hoạch/văn bản, Hành chính đội xe sẽ duyệt trực tiếp và giao chuyến cho tài xế.'}</small></label>}
-    {!trip && <div className={`approval-route-preview span-2 ${canUseFleetOnlyApproval ? 'bypass' : ''}`}><strong>Luồng duyệt:</strong> {canUseFleetOnlyApproval ? 'Điều phối → Hành chính đội xe → Tài xế' : 'Điều phối → Hành chính đội xe → Ban Giám đốc → Tài xế'}</div>}
+    {!trip && !fromApprovedDepartmentRequest && <label className="span-2">Văn bản / kế hoạch<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => { const file = event.target.files?.[0] ?? null; setPlanFile(file); setForm({ ...form, approved_plan: Boolean(file || form.existing_plan_path) }) }} /><small>Nếu đính kèm kế hoạch/văn bản, Hành chính đội xe sẽ duyệt trực tiếp và giao chuyến cho tài xế.</small></label>}
+    {!trip && fromApprovedDepartmentRequest && <div className="approved-request-confirmation span-2"><strong>✓ Đề nghị đã được Hành chính duyệt</strong><span>Kế hoạch và nội dung đề nghị đã được duyệt trước. Điều phối chỉ cần chọn xe, tài xế và tạo chuyến; hệ thống sẽ giao chuyến trực tiếp cho tài xế, không yêu cầu Hành chính duyệt lại.</span></div>}
+    {!trip && <div className={`approval-route-preview span-2 ${(fromApprovedDepartmentRequest || canUseFleetOnlyApproval) ? 'bypass' : ''}`}><strong>Luồng xử lý:</strong> {fromApprovedDepartmentRequest ? 'Trưởng khoa → Hành chính đã duyệt → Điều phối tạo chuyến → Tài xế' : canUseFleetOnlyApproval ? 'Điều phối → Hành chính đội xe → Tài xế' : 'Điều phối → Hành chính đội xe → Ban Giám đốc → Tài xế'}</div>}
     <label className="span-2">Ghi chú<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Vật tư cần mang, yêu cầu đón bệnh nhân..." /></label>
     {!eligibleVehicles.length && <div className="form-error span-2">Không có xe đủ điều kiện để xếp lịch.</div>}
     {!drivers.length && <div className="form-error span-2">Chưa có tài khoản tài xế đang hoạt động.</div>}
     {error && <div className="form-error span-2">{error}</div>}
-    <div className="form-actions span-2"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving || !eligibleVehicles.length || !drivers.length}>{saving ? 'Đang lưu...' : trip ? 'LƯU THAY ĐỔI' : 'GỬI HÀNH CHÍNH DUYỆT'}</button></div>
+    <div className="form-actions span-2"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving || !eligibleVehicles.length || !drivers.length}>{saving ? 'Đang lưu...' : trip ? 'LƯU THAY ĐỔI' : fromApprovedDepartmentRequest ? 'TẠO CHUYẾN & GIAO TÀI XẾ' : 'GỬI HÀNH CHÍNH DUYỆT'}</button></div>
   </form></Modal>
 }

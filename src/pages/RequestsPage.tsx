@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { PURPOSE_LABELS } from '../lib/constants'
-import { formatDateTime } from '../lib/utils'
+import { formatDateTime, getErrorMessage } from '../lib/utils'
 import type { CreateVehicleRequestInput, TripPurpose, VehicleRequest } from '../types/models'
 
 const EMPTY_REQUEST: CreateVehicleRequestInput = {
@@ -68,14 +68,21 @@ export function RequestsPage() {
   return <>
     {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)}>✕</button></div>}
 
-    <section className="request-hero-card">
+    {role === 'department_head' ? <section className="request-hero-card request-hero-compact">
       <div>
-        <span className="eyebrow">ĐỀ NGHỊ ĐIỀU HÀNH XE</span>
-        <h2>Trưởng khoa gửi kế hoạch → Hành chính đội xe duyệt</h2>
-        <p>Văn bản kế hoạch được đính kèm cùng đề nghị để Hành chính và Điều phối sử dụng khi tạo chuyến.</p>
+        <span className="eyebrow">ĐỀ NGHỊ TỪ KHOA / PHÒNG</span>
+        <h2>Gửi đề nghị sử dụng xe</h2>
+        <p>Trưởng khoa gửi nhu cầu xe kèm văn bản/kế hoạch. Hành chính đội xe sẽ kiểm tra và duyệt trước khi Điều phối tạo chuyến.</p>
       </div>
       {canCreate && <button className="primary-button" onClick={() => setCreating(true)}>＋ GỬI ĐỀ NGHỊ XE</button>}
-    </section>
+    </section> : <section className="toolbar request-review-heading">
+      <div>
+        <span className="eyebrow">ĐỀ NGHỊ TỪ KHOA / PHÒNG</span>
+        <h2 className="toolbar-title">{role === 'fleet' ? 'Hành chính duyệt đề nghị xe' : 'Theo dõi đề nghị xe'}</h2>
+        <p className="toolbar-note">{role === 'fleet' ? 'Các đề nghị do Trưởng khoa/đơn vị gửi sẽ xuất hiện tại đây để Hành chính duyệt hoặc từ chối.' : 'Quản trị theo dõi toàn bộ đề nghị; Điều phối nhận các đề nghị đã duyệt trực tiếp trong trang Điều xe.'}</p>
+      </div>
+      <span className="count-pill">{requests.length} đề nghị</span>
+    </section>}
 
     <section className="toolbar request-toolbar">
       <div className="filter-tabs">
@@ -120,7 +127,7 @@ export function RequestsPage() {
           </div>}
         </article>
       })}
-      {!requests.length && <div className="empty-state request-empty">Chưa có đề nghị điều xe phù hợp.</div>}
+      {!requests.length && <div className="empty-state request-empty">{role === 'department_head' ? 'Bạn chưa gửi đề nghị xe nào.' : role === 'fleet' ? 'Chưa có đề nghị nào từ khoa/phòng gửi đến Hành chính.' : 'Chưa có đề nghị xe từ khoa/phòng.'}</div>}
     </section>
 
     {creating && <CreateRequestModal
@@ -153,16 +160,26 @@ function CreateRequestModal({
     <form className="form-stack" onSubmit={async (event) => {
       event.preventDefault()
       if (!planFile) { setError('Vui lòng đính kèm văn bản/kế hoạch để Hành chính đội xe kiểm tra.'); return }
+      if (!form.scheduled_start) { setError('Vui lòng chọn thời gian khởi hành.'); return }
+      if (form.expected_end && form.expected_end <= form.scheduled_start) {
+        setError('Thời gian dự kiến về phải sau thời gian khởi hành. Vui lòng kiểm tra lại ngày và giờ.')
+        return
+      }
       setSaving(true); setError(null)
-      try { await onSubmit(form, planFile) } catch (err) { setError(err instanceof Error ? err.message : String(err)) } finally { setSaving(false) }
+      try { await onSubmit(form, planFile) } catch (err) { setError(getErrorMessage(err, 'Không thể gửi đề nghị điều hành xe.')) } finally { setSaving(false) }
     }}>
       <div className="form-grid">
         <label>Khoa / đơn vị<input value={form.department ?? ''} onChange={(event) => setForm({ ...form, department: event.target.value })} required /></label>
         <label>Mục đích<select value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as TripPurpose })}>{(Object.keys(PURPOSE_LABELS) as TripPurpose[]).map((key) => <option key={key} value={key}>{PURPOSE_LABELS[key]}</option>)}</select></label>
         <label>Điểm đón<input value={form.pickup} onChange={(event) => setForm({ ...form, pickup: event.target.value })} required /></label>
         <label>Điểm đến<input value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} required /></label>
-        <label>Thời gian khởi hành<input type="datetime-local" value={form.scheduled_start} onChange={(event) => setForm({ ...form, scheduled_start: event.target.value })} required /></label>
-        <label>Thời gian dự kiến về<input type="datetime-local" value={form.expected_end ?? ''} onChange={(event) => setForm({ ...form, expected_end: event.target.value })} /></label>
+        <label>Thời gian khởi hành<input type="datetime-local" value={form.scheduled_start} onChange={(event) => {
+          const scheduledStart = event.target.value
+          const expectedEnd = form.expected_end && form.expected_end <= scheduledStart ? '' : form.expected_end
+          setForm({ ...form, scheduled_start: scheduledStart, expected_end: expectedEnd })
+          setError(null)
+        }} required /></label>
+        <label>Thời gian dự kiến về<input type="datetime-local" min={form.scheduled_start || undefined} value={form.expected_end ?? ''} onChange={(event) => { setForm({ ...form, expected_end: event.target.value }); setError(null) }} /></label>
         <label>Người liên hệ<input value={form.contact_name ?? ''} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} /></label>
         <label>Số điện thoại<input inputMode="tel" value={form.contact_phone ?? ''} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
         <label>Số người<input type="number" min="0" value={form.passenger_count ?? 0} onChange={(event) => setForm({ ...form, passenger_count: Number(event.target.value) })} /></label>

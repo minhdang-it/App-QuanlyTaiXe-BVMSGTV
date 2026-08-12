@@ -20,7 +20,7 @@ import type {
 } from '../types/models'
 import { addPending, listPending, pendingCount, removePending, updatePending, type PendingAction } from './offline'
 import { supabase } from './supabase'
-import { getCurrentLocation, normalizePhone, uid } from './utils'
+import { getCurrentLocation, getErrorMessage, normalizePhone, uid } from './utils'
 import { optimizeCapturedImage } from './image'
 
 const LIVE_CACHE_KEY = 'msg-car-live-cache-v1'
@@ -514,7 +514,7 @@ const supabaseBackend: BackendApi = {
     const { data, error } = await client.from('vehicle_requests').insert(payload).select().single()
     if (error) {
       if (planPath) await removeStoredMedia(planPath)
-      throw error
+      throw new Error(getErrorMessage(error, 'Không thể tạo đề nghị điều hành xe.'))
     }
     return { ...(data as VehicleRequest), plan_document_path: planPath, plan_document_url: await signMedia(planPath), created_at: (data as VehicleRequest).created_at ?? now }
   },
@@ -533,17 +533,43 @@ const supabaseBackend: BackendApi = {
     const now = new Date().toISOString()
     const id = uid('trip')
     const { existing_plan_path, ...tripInput } = input
-    let planPath = existing_plan_path ?? null
+
+    // Nếu chuyến được tạo từ đề nghị của Trưởng khoa đã được Hành chính duyệt,
+    // không yêu cầu Hành chính duyệt lần thứ hai. Giữ lại người/thời gian duyệt
+    // từ đề nghị để bảo toàn dấu vết phê duyệt và giao chuyến thẳng cho tài xế.
+    let approvedRequest: {
+      status: string
+      plan_document_url?: string | null
+      fleet_reviewer_id?: string | null
+      fleet_reviewed_at?: string | null
+    } | null = null
+    if (input.vehicle_request_id) {
+      const { data: requestData, error: requestError } = await client
+        .from('vehicle_requests')
+        .select('status, plan_document_url, fleet_reviewer_id, fleet_reviewed_at')
+        .eq('id', input.vehicle_request_id)
+        .single()
+      if (requestError) throw requestError
+      if (!requestData || requestData.status !== 'fleet_approved') {
+        throw new Error('Đề nghị điều xe chưa được Hành chính duyệt hoặc đã được tạo thành chuyến.')
+      }
+      approvedRequest = requestData
+    }
+
+    let planPath = existing_plan_path ?? approvedRequest?.plan_document_url ?? null
     if (planFile) planPath = await uploadMedia(planFile, `${creatorId}/trip-plans`, `trip-${id}`)
+    const fromApprovedDepartmentRequest = Boolean(input.vehicle_request_id && approvedRequest)
     const approvedPlan = Boolean(planPath)
     const payload = {
       ...tripInput,
       id,
       created_by: creatorId,
-      status: 'pending_fleet',
-      approval_mode: approvedPlan ? 'fleet_only' : 'director_required',
+      status: fromApprovedDepartmentRequest ? 'assigned' : 'pending_fleet',
+      approval_mode: fromApprovedDepartmentRequest || approvedPlan ? 'fleet_only' : 'director_required',
       approved_plan: approvedPlan,
       plan_document_url: planPath,
+      fleet_reviewer_id: fromApprovedDepartmentRequest ? approvedRequest?.fleet_reviewer_id ?? null : null,
+      fleet_reviewed_at: fromApprovedDepartmentRequest ? approvedRequest?.fleet_reviewed_at ?? null : null,
       checklist_completed: false,
     }
     const optimistic: Trip = { ...payload, plan_document_path: planPath, created_at: now, updated_at: now } as Trip

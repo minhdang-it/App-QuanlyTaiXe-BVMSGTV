@@ -22,10 +22,12 @@ export interface AppNotification {
 interface NotificationContextValue {
   notifications: AppNotification[]
   unreadCount: number
+  unreadByTarget: Partial<Record<NotificationTarget, number>>
   toastNotifications: AppNotification[]
   browserPermission: NotificationPermission | 'unsupported'
   markRead(id: string): void
   markAllRead(): void
+  markTargetRead(target: NotificationTarget): void
   clearAll(): void
   dismissToast(id: string): void
   requestBrowserPermission(): Promise<NotificationPermission | 'unsupported'>
@@ -146,7 +148,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         results.push({ id: `request-owner-${request.id}-${request.status}`, kind: 'request', priority: request.status === 'rejected' ? 'important' : 'normal', title, message: route, createdAt: now, read: false, target: 'requests' })
       }
       if (request.status === 'fleet_approved' && ['dispatcher', 'admin'].includes(role)) {
-        results.push({ id: `request-dispatch-${request.id}`, kind: 'request', priority: 'important', title: 'Đề nghị xe đã được Hành chính duyệt', message: `${route} · Có thể tạo chuyến`, createdAt: now, read: false, target: 'requests' })
+        results.push({ id: `request-dispatch-${request.id}`, kind: 'request', priority: 'important', title: 'Đề nghị xe đã được Hành chính duyệt', message: `${route} · Có thể tạo chuyến`, createdAt: now, read: false, target: 'dispatch' })
       }
     }
   }
@@ -468,6 +470,21 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     })
   }, [persistNotifications])
 
+  const markTargetRead = useCallback((target: NotificationTarget) => {
+    setNotifications((items) => {
+      let changed = false
+      const next = items.map((item) => {
+        if (!item.read && item.target === target) {
+          changed = true
+          return { ...item, read: true }
+        }
+        return item
+      })
+      if (changed) persistNotifications(next)
+      return changed ? next : items
+    })
+  }, [persistNotifications])
+
   const markAllRead = useCallback(() => {
     setNotifications((items) => {
       const next = items.map((item) => ({ ...item, read: true }))
@@ -509,15 +526,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const value = useMemo<NotificationContextValue>(() => ({
     notifications,
     unreadCount: notifications.filter((item) => !item.read).length,
+    unreadByTarget: notifications.reduce<Partial<Record<NotificationTarget, number>>>((counts, item) => {
+      if (!item.read && item.target) counts[item.target] = (counts[item.target] ?? 0) + 1
+      return counts
+    }, {}),
     toastNotifications,
     browserPermission,
     markRead,
     markAllRead,
+    markTargetRead,
     clearAll,
     dismissToast,
     requestBrowserPermission,
     refreshBrowserPermission,
-  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, notifications, refreshBrowserPermission, requestBrowserPermission, toastNotifications])
+  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, markTargetRead, notifications, refreshBrowserPermission, requestBrowserPermission, toastNotifications])
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>
 }

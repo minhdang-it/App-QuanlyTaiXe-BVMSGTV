@@ -79,6 +79,32 @@ export async function fileToDataUrl(file?: Blob | null) {
   })
 }
 
+
+export function getErrorMessage(error: unknown, fallback = 'Có lỗi xảy ra. Vui lòng thử lại.') {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  if (error && typeof error === 'object') {
+    const value = error as Record<string, unknown>
+    const message = typeof value.message === 'string' ? value.message.trim() : ''
+    const details = typeof value.details === 'string' ? value.details.trim() : ''
+    const hint = typeof value.hint === 'string' ? value.hint.trim() : ''
+    const code = typeof value.code === 'string' ? value.code.trim() : ''
+    const combined = [message, details, hint].filter(Boolean).join(' · ')
+
+    if (/vehicle_request_time_order|expected_end.*scheduled_start|check constraint/i.test(combined)) {
+      return 'Thời gian dự kiến về phải sau thời gian khởi hành.'
+    }
+    if (/duplicate key|unique constraint/i.test(combined)) {
+      return 'Dữ liệu này đã tồn tại. Vui lòng kiểm tra lại trước khi gửi.'
+    }
+    if (/row-level security|permission denied|not authorized/i.test(combined)) {
+      return 'Tài khoản hiện tại chưa có quyền thực hiện thao tác này.'
+    }
+    if (combined) return code ? `${combined} (mã ${code})` : combined
+  }
+  return fallback
+}
+
 export interface ConfirmedLocation {
   lat: number
   lng: number
