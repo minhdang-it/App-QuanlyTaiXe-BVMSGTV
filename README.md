@@ -1,14 +1,14 @@
 # Điều phối xe – Bệnh viện Mắt Sài Gòn Trà Vinh
 
-## Cập nhật v2.7.0
+## Cập nhật v2.7.1
 
 - Thêm vai trò **Trưởng khoa / Trưởng đơn vị** và trang **Đề nghị xe** kèm văn bản kế hoạch.
-- Quy trình chuyến: Điều phối → Hành chính → BGĐ → Tài xế; hỗ trợ bỏ qua BGĐ cho công tác/đón bệnh nhân có văn bản đã phê duyệt.
+- Quy trình chuyến: Điều phối → Hành chính → BGĐ → Tài xế. Nếu chuyến có kèm kế hoạch/văn bản, Hành chính duyệt trực tiếp và giao cho tài xế, không qua BGĐ.
 - Sự cố và bảo dưỡng phải qua Ban Giám đốc duyệt.
 - Quản trị hệ thống có thể xóa mềm tài khoản, giữ nguyên lịch sử nghiệp vụ.
 - Chi phí có nút **Chi tiết** cho từng khoản và xem hóa đơn trực tiếp.
 
-Xem `CHANGELOG-v2.7.0.md` và `HUONG-DAN-CAP-NHAT-v2.7.0.md`.
+Xem `CHANGELOG-v2.7.1.md` và `HUONG-DAN-CAP-NHAT-v2.7.1.md`.
 
 Phiên bản source sạch **2.6.0**, tối ưu cho triển khai Ubuntu Server + Nginx.
 

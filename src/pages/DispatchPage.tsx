@@ -114,7 +114,7 @@ export function DispatchPage() {
 
   async function fleetApproveTrip(trip: Trip) {
     try {
-      const bypassDirector = trip.approval_mode === 'fleet_only' && trip.approved_plan && Boolean(trip.plan_document_path || trip.plan_document_url) && ['board_business', 'patient_pickup'].includes(trip.purpose)
+      const bypassDirector = trip.approval_mode === 'fleet_only' && trip.approved_plan && Boolean(trip.plan_document_path || trip.plan_document_url)
       await updateTrip(trip.id, {
         status: bypassDirector ? 'assigned' : 'pending_director',
         fleet_reviewer_id: user!.id,
@@ -322,7 +322,7 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
         <span className={['assigned','accepted','ready','active','completed'].includes(trip.status) ? 'done' : ''}>{trip.approval_mode === 'fleet_only' ? '3' : '4'}. Tài xế nhận chuyến</span>
       </div>
       {trip.plan_document_url && <a className="secondary-button compact" href={trip.plan_document_url} target="_blank" rel="noreferrer">📎 Xem văn bản kế hoạch</a>}
-      {trip.approval_mode === 'fleet_only' && <p className="approval-explain">Chuyến công tác/đón bệnh nhân có văn bản kế hoạch đã phê duyệt: Hành chính đội xe duyệt và bỏ qua bước BGĐ duyệt chuyến.</p>}
+      {trip.approval_mode === 'fleet_only' && <p className="approval-explain">Chuyến có kèm văn bản/kế hoạch: Hành chính đội xe duyệt trực tiếp và bỏ qua bước BGĐ duyệt chuyến.</p>}
       {trip.approval_rejection_reason && <div className="rejection-box"><strong>Lý do không duyệt:</strong> {trip.approval_rejection_reason}</div>}
     </section>
 
@@ -419,7 +419,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
         notes: form.notes.trim(),
         vehicle_request_id: form.vehicle_request_id || undefined,
         existing_plan_path: form.existing_plan_path || undefined,
-        approved_plan: form.approved_plan,
+        approved_plan: Boolean(form.existing_plan_path || planFile),
       }, planFile)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -435,7 +435,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
       ...form,
       vehicle_request_id: request.id,
       existing_plan_path: request.plan_document_path ?? '',
-      approved_plan: Boolean(request.plan_document_path && ['board_business', 'patient_pickup'].includes(request.purpose)),
+      approved_plan: Boolean(request.plan_document_path),
       purpose: request.purpose,
       pickup: request.pickup,
       destination: request.destination,
@@ -448,7 +448,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
     })
   }
 
-  const canUseFleetOnlyApproval = Boolean((form.existing_plan_path || planFile) && form.approved_plan && ['board_business', 'patient_pickup'].includes(form.purpose))
+  const canUseFleetOnlyApproval = Boolean(form.existing_plan_path || planFile)
 
   return <Modal title={trip ? 'Sửa thông tin chuyến đi' : 'Tạo yêu cầu điều xe'} onClose={onClose} wide><form className="form-grid" onSubmit={submit}>
     {!trip && <label className="span-2">Tạo từ đề nghị đã được Hành chính duyệt<select value={form.vehicle_request_id} onChange={(event) => applyApprovedRequest(event.target.value)}><option value="">Không chọn đề nghị</option>{approvedRequests.map((request) => <option key={request.id} value={request.id}>{PURPOSE_LABELS[request.purpose]} · {request.destination} · {formatDateTime(request.scheduled_start)}</option>)}</select></label>}
@@ -462,8 +462,7 @@ function TripFormModal({ trip, onClose, onSubmit }: { trip?: Trip; onClose: () =
     <label className="span-2">Điểm đến<input value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder="Xã, bệnh viện hoặc địa chỉ" required /></label>
     <label>Người liên hệ<input value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} /></label>
     <label>Số điện thoại<input inputMode="tel" value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
-    {!trip && <label className="span-2">Văn bản kế hoạch/phê duyệt<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => { setPlanFile(event.target.files?.[0] ?? null); if (event.target.files?.[0]) setForm({ ...form, approved_plan: false }) }} /><small>{form.existing_plan_path ? 'Đang sử dụng văn bản từ đề nghị đã được Hành chính duyệt.' : 'Đính kèm nếu đây là chuyến công tác hoặc đón bệnh nhân đã có kế hoạch phê duyệt.'}</small></label>}
-    {!trip && (form.existing_plan_path || planFile) && ['board_business', 'patient_pickup'].includes(form.purpose) && <label className="span-2 approval-checkbox"><input type="checkbox" checked={form.approved_plan} onChange={(event) => setForm({ ...form, approved_plan: event.target.checked })} /><span>Văn bản/kế hoạch này đã được cấp có thẩm quyền phê duyệt. Hành chính đội xe có thể duyệt chuyến và bỏ qua bước BGĐ duyệt.</span></label>}
+    {!trip && <label className="span-2">Văn bản / kế hoạch<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => { const file = event.target.files?.[0] ?? null; setPlanFile(file); setForm({ ...form, approved_plan: Boolean(file || form.existing_plan_path) }) }} /><small>{form.existing_plan_path ? 'Đang sử dụng kế hoạch từ đề nghị đã được Hành chính duyệt. Chuyến này sẽ không cần qua BGĐ duyệt.' : 'Nếu đính kèm kế hoạch/văn bản, Hành chính đội xe sẽ duyệt trực tiếp và giao chuyến cho tài xế.'}</small></label>}
     {!trip && <div className={`approval-route-preview span-2 ${canUseFleetOnlyApproval ? 'bypass' : ''}`}><strong>Luồng duyệt:</strong> {canUseFleetOnlyApproval ? 'Điều phối → Hành chính đội xe → Tài xế' : 'Điều phối → Hành chính đội xe → Ban Giám đốc → Tài xế'}</div>}
     <label className="span-2">Ghi chú<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Vật tư cần mang, yêu cầu đón bệnh nhân..." /></label>
     {!eligibleVehicles.length && <div className="form-error span-2">Không có xe đủ điều kiện để xếp lịch.</div>}

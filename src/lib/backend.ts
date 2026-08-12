@@ -535,7 +535,7 @@ const supabaseBackend: BackendApi = {
     const { existing_plan_path, ...tripInput } = input
     let planPath = existing_plan_path ?? null
     if (planFile) planPath = await uploadMedia(planFile, `${creatorId}/trip-plans`, `trip-${id}`)
-    const approvedPlan = Boolean(input.approved_plan && planPath && ['board_business', 'patient_pickup'].includes(input.purpose))
+    const approvedPlan = Boolean(planPath)
     const payload = {
       ...tripInput,
       id,

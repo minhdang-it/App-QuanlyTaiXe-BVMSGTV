@@ -2,7 +2,7 @@ import type { ExpenseType, IncidentType, TripPurpose, UserRole, VehicleStatus } 
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Tài xế',
-  department_head: 'Trưởng khoa / Trưởng đơn vị',
+  department_head: 'Trưởng khoa',
   dispatcher: 'Điều phối xe',
   accountant: 'Kế toán',
   fleet: 'Hành chính đội xe',

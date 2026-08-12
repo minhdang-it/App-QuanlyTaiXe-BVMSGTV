@@ -147,7 +147,7 @@ curl -I https://$DOMAIN/dieu-xe
 1. Mở **Đề nghị xe** và duyệt đề nghị.
 2. Vào **Điều xe** và kiểm tra chuyến **Chờ Hành chính**.
 3. Chuyến thường: bấm **Hành chính trình BGĐ**.
-4. Chuyến công tác/đón bệnh nhân có văn bản phê duyệt: kiểm tra có thể **Hành chính duyệt & giao tài xế**.
+4. Chuyến có kèm kế hoạch/văn bản: kiểm tra **Hành chính duyệt & giao tài xế**, không qua BGĐ.
 5. Kiểm tra Bảo dưỡng: tạo đề nghị → trạng thái Chờ BGĐ.
 
 ### Ban Giám đốc

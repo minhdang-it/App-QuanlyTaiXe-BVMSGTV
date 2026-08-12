@@ -953,8 +953,8 @@ begin
     if core_changed then raise exception 'Hành chính chỉ được duyệt, không được sửa nội dung yêu cầu điều xe'; end if;
     if old.status <> 'pending_fleet' then raise exception 'Chuyến không ở bước chờ Hành chính duyệt'; end if;
     if new.status = 'assigned' then
-      if old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null or old.purpose not in ('board_business','patient_pickup') then
-        raise exception 'Chỉ được bỏ qua BGĐ khi có văn bản kế hoạch đã phê duyệt cho chuyến công tác hoặc đón bệnh nhân';
+      if old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null then
+        raise exception 'Chỉ được bỏ qua BGĐ khi chuyến có kèm văn bản/kế hoạch';
       end if;
     elsif new.status not in ('pending_director','cancelled') then
       raise exception 'Chuyển trạng thái Hành chính duyệt không hợp lệ';
@@ -986,7 +986,7 @@ begin
   if role_name = 'admin' then
     -- Quản trị được hỗ trợ vận hành nhưng vẫn ghi nhận người duyệt theo bước.
     if old.status = 'pending_fleet' and new.status in ('pending_director','assigned','cancelled') then
-      if new.status = 'assigned' and (old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null or old.purpose not in ('board_business','patient_pickup')) then
+      if new.status = 'assigned' and (old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null) then
         raise exception 'Không đủ điều kiện bỏ qua BGĐ';
       end if;
       if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;

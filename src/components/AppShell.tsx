@@ -61,7 +61,7 @@ const roleMeta: Record<RoleKey, { title: string; subtitle: string; security: str
   department_head: {
     title: 'Đề nghị điều hành xe',
     subtitle: 'Gửi kế hoạch sử dụng xe và theo dõi trạng thái duyệt của Hành chính đội xe.',
-    security: 'Trưởng khoa/đơn vị chỉ xem các đề nghị do đơn vị mình gửi và hồ sơ cá nhân.',
+    security: 'Trưởng khoa chỉ xem các đề nghị do khoa/đơn vị mình gửi và hồ sơ cá nhân.',
   },
   dispatcher: {
     title: 'Trung tâm điều phối xe',

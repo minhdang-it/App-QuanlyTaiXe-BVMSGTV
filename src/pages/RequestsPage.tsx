@@ -71,7 +71,7 @@ export function RequestsPage() {
     <section className="request-hero-card">
       <div>
         <span className="eyebrow">ĐỀ NGHỊ ĐIỀU HÀNH XE</span>
-        <h2>Trưởng khoa / đơn vị gửi kế hoạch → Hành chính đội xe duyệt</h2>
+        <h2>Trưởng khoa gửi kế hoạch → Hành chính đội xe duyệt</h2>
         <p>Văn bản kế hoạch được đính kèm cùng đề nghị để Hành chính và Điều phối sử dụng khi tạo chuyến.</p>
       </div>
       {canCreate && <button className="primary-button" onClick={() => setCreating(true)}>＋ GỬI ĐỀ NGHỊ XE</button>}
@@ -93,7 +93,7 @@ export function RequestsPage() {
       {requests.map((item) => {
         const requester = data.profiles.find((profile) => profile.id === item.requester_id)
         const reviewer = data.profiles.find((profile) => profile.id === item.fleet_reviewer_id)
-        const canBypassDirector = Boolean(item.plan_document_url && ['board_business', 'patient_pickup'].includes(item.purpose))
+        const canBypassDirector = Boolean(item.plan_document_url)
         return <article key={item.id} className="request-card">
           <div className="request-card-head">
             <div><span className="eyebrow">{PURPOSE_LABELS[item.purpose]}</span><h3>{item.pickup} → {item.destination}</h3></div>
@@ -110,7 +110,7 @@ export function RequestsPage() {
             {item.plan_document_url
               ? <a className="secondary-button compact" href={item.plan_document_url} target="_blank" rel="noreferrer">📎 Xem văn bản kế hoạch</a>
               : <span className="request-no-document">Chưa đính kèm văn bản</span>}
-            {canBypassDirector && <span className="approval-route-chip">Có văn bản · kiểm tra điều kiện bỏ qua BGĐ khi tạo chuyến</span>}
+            {canBypassDirector && <span className="approval-route-chip">Có kế hoạch · Hành chính duyệt trực tiếp, không qua BGĐ</span>}
           </div>
           {item.fleet_reviewed_at && <small>Hành chính xử lý: {formatDateTime(item.fleet_reviewed_at)}{reviewer ? ` · ${reviewer.full_name}` : ''}</small>}
           {item.rejection_reason && <div className="rejection-box"><strong>Lý do từ chối:</strong> {item.rejection_reason}</div>}

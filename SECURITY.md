@@ -18,5 +18,5 @@
 - Trưởng khoa/đơn vị chỉ được xem đề nghị xe do chính mình tạo.
 - Điều phối không được tự duyệt chuyến do mình tạo.
 - Hành chính chỉ xử lý bước Hành chính; BGĐ chỉ xử lý bước BGĐ.
-- Bỏ qua BGĐ chỉ áp dụng cho chuyến công tác/đón bệnh nhân có văn bản kế hoạch đã phê duyệt và phải được Hành chính duyệt.
+- Bỏ qua BGĐ khi chuyến có kèm văn bản/kế hoạch; Hành chính đội xe là cấp duyệt trực tiếp trước khi giao tài xế.
 - Sự cố và bảo dưỡng dùng trigger database để chống bỏ qua workflow từ phía client.
