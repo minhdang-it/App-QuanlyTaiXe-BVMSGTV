@@ -6,7 +6,7 @@ import type { Profile, UpdateUserInput } from '../types/models'
 
 export function AccountPage() {
   const { user, mode, refreshUser, logout } = useAuth()
-  const { data, updateUser } = useData()
+  const { data, updateUser, changeOwnPassword } = useData()
   const profile = useMemo(
     () => data.profiles.find((item) => item.id === user?.id) ?? user?.profile ?? null,
     [data.profiles, user],
@@ -20,7 +20,21 @@ export function AccountPage() {
       profile={profile}
       mode={mode}
       onSubmit={async (input, avatar) => {
-        await updateUser(input, avatar)
+        const password = input.password?.trim() ?? ''
+        const currentAvatarPath = profile.avatar_path ?? null
+        const profileChanged = Boolean(avatar)
+          || input.full_name !== profile.full_name
+          || input.phone !== profile.phone
+          || input.avatar_url !== currentAvatarPath
+
+        // Đổi mật khẩu cá nhân không đi qua chức năng quản lý tài khoản của Quản trị viên.
+        // Nhờ vậy mọi tài khoản đang hoạt động đều có thể tự đổi mật khẩu của chính mình.
+        if (profileChanged) {
+          await updateUser({ ...input, password: undefined }, avatar)
+        }
+        if (password) {
+          await changeOwnPassword(password)
+        }
         await refreshUser()
       }}
       onLogout={logout}
@@ -172,7 +186,7 @@ function SelfAccountForm({
         </div>
 
         <div className="self-account-policy">
-          Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh do Quản trị viên cập nhật. Anh/chị chỉ có thể sửa hồ sơ và mật khẩu của chính mình.
+          Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh do Quản trị viên cập nhật. Mọi tài khoản đang hoạt động đều được tự đổi mật khẩu của chính mình.
         </div>
         {error && <div className="form-error">{error}</div>}
         {success && <div className="form-success">{success}</div>}

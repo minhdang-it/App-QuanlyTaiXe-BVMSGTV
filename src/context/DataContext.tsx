@@ -3,6 +3,7 @@ import type {
   AppData,
   Checklist,
   CreateTripInput,
+  CreateVehicleRequestInput,
   CreateUserInput,
   Expense,
   ExpenseReviewAction,
@@ -11,6 +12,7 @@ import type {
   Trip,
   UpdateUserInput,
   Vehicle,
+  VehicleRequest,
 } from '../types/models'
 import { backend, type MediaPayload } from '../lib/backend'
 import { useAuth } from './AuthContext'
@@ -24,8 +26,12 @@ interface DataContextValue {
   refresh(): Promise<void>
   createUser(input: CreateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
   updateUser(input: UpdateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
+  deleteUser(id: string): Promise<void>
+  changeOwnPassword(password: string): Promise<void>
   updateProfile(id: string, changes: Partial<import('../types/models').Profile>): Promise<import('../types/models').Profile>
-  createTrip(input: CreateTripInput): Promise<Trip>
+  createVehicleRequest(input: CreateVehicleRequestInput, planFile?: File | null): Promise<VehicleRequest>
+  updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
+  createTrip(input: CreateTripInput, planFile?: File | null): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
@@ -42,7 +48,7 @@ interface DataContextValue {
 }
 
 const emptyData: AppData = {
-  profiles: [], vehicles: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [],
+  profiles: [], vehicles: [], vehicleRequests: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [],
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -135,8 +141,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     refresh,
     createUser: (input, avatarFile) => run(() => backend.createUser(input, avatarFile)),
     updateUser: (input, avatarFile) => run(() => backend.updateUser(input, avatarFile)),
+    deleteUser: (id) => run(() => backend.deleteUser(id)),
+    changeOwnPassword: (password) => backend.changeOwnPassword(password),
     updateProfile: (id, changes) => run(() => backend.updateProfile(id, changes)),
-    createTrip: (input) => run(() => backend.createTrip(input, user!.id)),
+    createVehicleRequest: (input, planFile) => run(() => backend.createVehicleRequest(input, user!.id, planFile)),
+    updateVehicleRequest: (id, changes) => run(() => backend.updateVehicleRequest(id, changes)),
+    createTrip: (input, planFile) => run(() => backend.createTrip(input, user!.id, planFile)),
     updateTrip: (id, changes) => run(() => backend.updateTrip(id, changes)),
     updateTripLocation,
     deleteTrip: (id) => run(() => backend.deleteTrip(id)),

@@ -2,6 +2,7 @@ import type { ExpenseType, IncidentType, TripPurpose, UserRole, VehicleStatus } 
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Tài xế',
+  department_head: 'Trưởng khoa / Trưởng đơn vị',
   dispatcher: 'Điều phối xe',
   accountant: 'Kế toán',
   fleet: 'Hành chính đội xe',
@@ -13,7 +14,7 @@ export const PURPOSE_LABELS: Record<TripPurpose, string> = {
   patient_pickup: 'Đón bệnh nhân mổ',
   patient_return: 'Đưa bệnh nhân về',
   community_exam: 'Khám cộng đồng',
-  board_business: 'Công tác Ban Giám đốc',
+  board_business: 'Đi công tác',
   staff_transport: 'Vận chuyển nhân sự',
   medicine_supply: 'Vận chuyển thuốc, vật tư',
   marketing_care: 'Marketing và CSKH',
@@ -55,7 +56,3 @@ export const VEHICLE_STATUS_LABELS: Record<VehicleStatus, string> = {
   out_of_service: 'Ngừng sử dụng',
 }
 
-export const DRIVER_DEMO_PHONE = '0901000001'
-export const ADMIN_DEMO_PHONE = '0901000002'
-export const ACCOUNTANT_DEMO_PHONE = '0901000003'
-export const DIRECTOR_DEMO_PHONE = '0901000004'

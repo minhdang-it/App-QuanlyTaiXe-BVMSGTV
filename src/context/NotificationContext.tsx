@@ -2,11 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from './AuthContext'
 import { useData } from './DataContext'
 import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import type { AppData, Expense, Incident, Maintenance, Trip, UserRole } from '../types/models'
+import type { AppData, Expense, Incident, Maintenance, Trip, UserRole, VehicleRequest } from '../types/models'
 
-export type NotificationKind = 'trip' | 'incident' | 'expense' | 'maintenance' | 'system'
+export type NotificationKind = 'request' | 'trip' | 'incident' | 'expense' | 'maintenance' | 'system'
 export type NotificationPriority = 'normal' | 'important' | 'urgent'
-export type NotificationTarget = 'dashboard' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance'
+export type NotificationTarget = 'dashboard' | 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance'
 
 export interface AppNotification {
   id: string
@@ -33,6 +33,7 @@ interface NotificationContextValue {
 }
 
 interface EventSnapshot {
+  requests: Record<string, Pick<VehicleRequest, 'id' | 'requester_id' | 'status' | 'purpose' | 'pickup' | 'destination' | 'updated_at'>>
   trips: Record<string, Pick<Trip, 'id' | 'driver_id' | 'vehicle_id' | 'status' | 'pickup' | 'destination' | 'scheduled_start' | 'updated_at' | 'created_by' | 'purpose'>>
   incidents: Record<string, Pick<Incident, 'id' | 'driver_id' | 'vehicle_id' | 'type' | 'severity' | 'status' | 'created_at' | 'resolved_at'>>
   expenses: Record<string, Pick<Expense, 'id' | 'driver_id' | 'vehicle_id' | 'type' | 'amount' | 'status' | 'created_at' | 'updated_at'>>
@@ -43,6 +44,8 @@ const NotificationContext = createContext<NotificationContextValue | null>(null)
 const MAX_NOTIFICATIONS = 80
 
 const tripStatusLabels: Record<Trip['status'], string> = {
+  pending_fleet: 'Chờ Hành chính duyệt',
+  pending_director: 'Chờ Ban Giám đốc duyệt',
   assigned: 'Đã giao',
   accepted: 'Đã nhận',
   ready: 'Sẵn sàng',
@@ -52,6 +55,8 @@ const tripStatusLabels: Record<Trip['status'], string> = {
 }
 
 const maintenanceStatusLabels: Record<Maintenance['status'], string> = {
+  pending_director: 'Chờ Ban Giám đốc duyệt',
+  rejected: 'Không duyệt',
   scheduled: 'Đã lên lịch',
   in_progress: 'Đang thực hiện',
   completed: 'Hoàn thành',
@@ -60,6 +65,9 @@ const maintenanceStatusLabels: Record<Maintenance['status'], string> = {
 
 function snapshotOf(data: AppData): EventSnapshot {
   return {
+    requests: Object.fromEntries(data.vehicleRequests.map((item) => [item.id, {
+      id: item.id, requester_id: item.requester_id, status: item.status, purpose: item.purpose, pickup: item.pickup, destination: item.destination, updated_at: item.updated_at,
+    }])),
     trips: Object.fromEntries(data.trips.map((item) => [item.id, {
       id: item.id,
       driver_id: item.driver_id,
@@ -104,7 +112,7 @@ function snapshotOf(data: AppData): EventSnapshot {
 }
 
 function roleCanSeeTripEvents(role: UserRole) {
-  return ['dispatcher', 'director', 'admin'].includes(role)
+  return ['dispatcher', 'fleet', 'director', 'admin'].includes(role)
 }
 
 function roleCanSeeIncidentEvents(role: UserRole) {
@@ -116,12 +124,32 @@ function roleCanSeeExpenseEvents(role: UserRole) {
 }
 
 function roleCanSeeMaintenanceEvents(role: UserRole) {
-  return ['dispatcher', 'fleet', 'admin'].includes(role)
+  return ['dispatcher', 'fleet', 'director', 'admin'].includes(role)
 }
 
 function buildNotifications(previous: EventSnapshot, current: EventSnapshot, role: UserRole, userId: string): AppNotification[] {
   const now = new Date().toISOString()
   const results: AppNotification[] = []
+
+  for (const request of Object.values(current.requests)) {
+    const before = previous.requests?.[request.id]
+    const route = `${PURPOSE_LABELS[request.purpose]} · ${request.pickup} → ${request.destination}`
+    if (!before) {
+      if (request.status === 'pending_fleet' && ['fleet', 'admin'].includes(role)) {
+        results.push({ id: `request-new-${request.id}`, kind: 'request', priority: 'important', title: 'Có đề nghị điều hành xe mới', message: route, createdAt: now, read: false, target: 'requests' })
+      }
+      continue
+    }
+    if (before.status !== request.status) {
+      if (request.requester_id === userId && role === 'department_head') {
+        const title = request.status === 'fleet_approved' ? 'Hành chính đã duyệt đề nghị xe' : request.status === 'converted' ? 'Đề nghị đã được tạo thành chuyến' : request.status === 'rejected' ? 'Đề nghị xe không được duyệt' : 'Đề nghị xe đã được cập nhật'
+        results.push({ id: `request-owner-${request.id}-${request.status}`, kind: 'request', priority: request.status === 'rejected' ? 'important' : 'normal', title, message: route, createdAt: now, read: false, target: 'requests' })
+      }
+      if (request.status === 'fleet_approved' && ['dispatcher', 'admin'].includes(role)) {
+        results.push({ id: `request-dispatch-${request.id}`, kind: 'request', priority: 'important', title: 'Đề nghị xe đã được Hành chính duyệt', message: `${route} · Có thể tạo chuyến`, createdAt: now, read: false, target: 'requests' })
+      }
+    }
+  }
 
   for (const trip of Object.values(current.trips)) {
     const before = previous.trips[trip.id]

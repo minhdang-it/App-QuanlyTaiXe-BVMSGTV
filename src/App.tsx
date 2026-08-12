@@ -14,6 +14,7 @@ import { MaintenancePage } from './pages/MaintenancePage'
 import { ReportsPage } from './pages/ReportsPage'
 import { UsersPage } from './pages/UsersPage'
 import { AccountPage } from './pages/AccountPage'
+import { RequestsPage } from './pages/RequestsPage'
 import { NotificationProvider } from './context/NotificationContext'
 
 export default function App() {
@@ -48,16 +49,17 @@ export default function App() {
 
 
 const rolePages: Record<string, PageKey[]> = {
-  dispatcher: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  department_head: ['requests', 'account'],
+  dispatcher: ['dashboard', 'requests', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
   accountant: ['dashboard', 'dispatch', 'expenses', 'reports', 'account'],
-  fleet: ['dashboard', 'dispatch', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
-  director: ['dashboard', 'dispatch', 'expenses', 'incidents', 'reports', 'account'],
-  admin: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
+  fleet: ['dashboard', 'requests', 'dispatch', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
+  director: ['dashboard', 'requests', 'dispatch', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  admin: ['dashboard', 'requests', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
 }
 
 function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKey; setPage: (page: PageKey) => void }) {
   const { loading } = useData()
-  const safePage = rolePages[role]?.includes(page) ? page : 'dashboard'
+  const safePage = rolePages[role]?.includes(page) ? page : (rolePages[role]?.[0] ?? 'dashboard')
 
   useEffect(() => {
     if (role !== 'driver' && safePage !== page) setPage(safePage)
@@ -70,6 +72,7 @@ function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKe
 
 function Page({ page }: { page: PageKey }) {
   switch (page) {
+    case 'requests': return <RequestsPage />
     case 'dispatch': return <DispatchPage />
     case 'vehicles': return <VehiclesPage />
     case 'expenses': return <ExpensesPage />

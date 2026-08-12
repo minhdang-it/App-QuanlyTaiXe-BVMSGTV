@@ -1,8 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@^2'
 import { corsHeaders as sdkCorsHeaders } from 'npm:@supabase/supabase-js@^2/cors'
 
-const FUNCTION_VERSION = '1.8.0'
-const ROLES = ['driver', 'dispatcher', 'accountant', 'fleet', 'director', 'admin']
+const FUNCTION_VERSION = '2.0.0'
+const ROLES = ['driver', 'department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin']
 const corsHeaders = {
   ...sdkCorsHeaders,
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -59,6 +59,7 @@ async function findAuthUserByEmailOrPhone(
 
     const found = data.users.find((user) =>
       user.id !== excludeUserId
+      && !(user as { deleted_at?: string | null }).deleted_at
       && (
         user.email?.toLowerCase() === email.toLowerCase()
         || user.phone === phone
@@ -128,16 +129,50 @@ Deno.serve(async (request) => {
 
     const body = await request.json()
     const action = String(body.action ?? '')
-    if (!['create', 'update'].includes(action)) return json({ error: 'Thao tác không được hỗ trợ.' }, 400)
+    if (!['create', 'update', 'delete'].includes(action)) return json({ error: 'Thao tác không được hỗ trợ.' }, 400)
 
-    const targetId = action === 'update' ? String(body.id ?? '') : ''
+    const targetId = action === 'create' ? '' : String(body.id ?? '')
     const isSelfUpdate = action === 'update' && targetId === authData.user.id
     if (action === 'create' && caller.role !== 'admin') {
       return json({ error: 'Chỉ quản trị hệ thống mới được tạo tài khoản.' }, 403)
     }
-    if (action === 'update' && !targetId) return json({ error: 'Thiếu ID tài khoản cần cập nhật.' }, 400)
+    if (action === 'delete' && caller.role !== 'admin') return json({ error: 'Chỉ quản trị hệ thống mới được xóa tài khoản.' }, 403)
+    if (action !== 'create' && !targetId) return json({ error: 'Thiếu ID tài khoản cần xử lý.' }, 400)
     if (action === 'update' && caller.role !== 'admin' && !isSelfUpdate) {
       return json({ error: 'Anh/chị chỉ được cập nhật hồ sơ của chính mình.' }, 403)
+    }
+
+    if (action === 'delete') {
+      if (targetId === authData.user.id) return json({ error: 'Không thể tự xóa tài khoản đang đăng nhập.' }, 400)
+      const { data: targetProfile, error: targetError } = await adminClient
+        .from('profiles')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle()
+      if (targetError) return json({ error: targetError.message }, 400)
+      if (!targetProfile) return json({ error: 'Không tìm thấy tài khoản cần xóa.' }, 404)
+      if (targetProfile.deleted_at) return json({ ok: true, deleted: true, version: FUNCTION_VERSION })
+
+      if (targetProfile.role === 'admin' && targetProfile.active) {
+        await ensureNotLastAdmin(adminClient, targetId, 'admin', false)
+      }
+
+      const now = new Date().toISOString()
+      const deletedPhone = `deleted-${targetId}`
+      const { error: profileDeleteError } = await adminClient
+        .from('profiles')
+        .update({ active: false, deleted_at: now, phone: deletedPhone })
+        .eq('id', targetId)
+      if (profileDeleteError) return json({ error: `Không đánh dấu xóa được hồ sơ: ${profileDeleteError.message}` }, 400)
+
+      const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(targetId, true)
+      if (authDeleteError) {
+        await adminClient.from('profiles').update({ active: targetProfile.active, deleted_at: null, phone: targetProfile.phone }).eq('id', targetId)
+        return json({ error: `Không xóa được quyền đăng nhập: ${authDeleteError.message}` }, 400)
+      }
+
+      console.log(JSON.stringify({ event: 'manage_user_delete', actor_id: authData.user.id, target_id: targetId }))
+      return json({ ok: true, deleted: true, version: FUNCTION_VERSION })
     }
 
     const fullName = String(body.full_name ?? '').trim().slice(0, 160)
@@ -235,6 +270,7 @@ Deno.serve(async (request) => {
       .maybeSingle()
     if (currentProfileError) return json({ error: currentProfileError.message }, 400)
     if (!currentProfile) return json({ error: 'Không tìm thấy hồ sơ tài khoản.' }, 404)
+    if (currentProfile.deleted_at) return json({ error: 'Tài khoản này đã bị xóa.' }, 410)
 
     // Người dùng thường chỉ được sửa thông tin cá nhân và mật khẩu của chính mình.
     // Vai trò, trạng thái, mã nhân viên và thông tin công việc vẫn do quản trị viên kiểm soát.

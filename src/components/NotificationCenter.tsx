@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNotifications, type AppNotification, type NotificationTarget } from '../context/NotificationContext'
 
 const kindIcons: Record<AppNotification['kind'], string> = {
+  request: '📄',
   trip: '🚐',
   incident: '⚠️',
   expense: '🧾',

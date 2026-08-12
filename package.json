@@ -1,7 +1,7 @@
 {
   "name": "dieu-phoi-xe-bvmsgtv",
   "private": true,
-  "version": "2.6.1",
+  "version": "2.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +23,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "supabase": "^2.113.0",
     "typescript": "^5.9.3",
     "vite": "^8.1.5"
   },

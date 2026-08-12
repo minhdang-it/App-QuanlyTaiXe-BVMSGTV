@@ -32,7 +32,7 @@ type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | '
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser } = useData()
+  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword } = useData()
   const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -386,7 +386,19 @@ export function DriverPage() {
           await logout()
         }}
         onSubmit={(input, avatar) => guarded(async () => {
-          await updateUser(input, avatar)
+          const password = input.password?.trim() ?? ''
+          const currentAvatarPath = user.profile.avatar_path ?? null
+          const profileChanged = Boolean(avatar)
+            || input.full_name !== user.profile.full_name
+            || input.phone !== user.profile.phone
+            || input.avatar_url !== currentAvatarPath
+
+          if (profileChanged) {
+            await updateUser({ ...input, password: undefined }, avatar)
+          }
+          if (password) {
+            await changeOwnPassword(password)
+          }
           await refreshUser()
         }, input.password ? 'Đã cập nhật hồ sơ và đổi mật khẩu.' : 'Đã cập nhật hồ sơ cá nhân.')}
       />}
@@ -402,7 +414,7 @@ export function DriverPage() {
         await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_director', expense_date: todayKey() }, file)
       }, 'Chi phí đã gửi và đang chờ kế toán duyệt.')} />}
       {dialog === 'incident' && vehicle && <IncidentModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, severity, description, file, audio) => guarded(async () => {
-        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'reported' }, { file, secondFile: audio })
+        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_director' }, { file, secondFile: audio })
       }, 'Đã gửi báo cáo sự cố đến điều phối.')} />}
     </main>
   )
@@ -574,7 +586,7 @@ function DriverProfileModal({
         <label>Xác nhận mật khẩu<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Nhập lại mật khẩu mới" /></label>
       </div>
 
-      <div className="driver-profile-note">Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh do quản trị viên cập nhật.</div>
+      <div className="driver-profile-note">Vai trò, trạng thái, mã nhân viên, phòng ban và chức danh do quản trị viên cập nhật. Tài xế được tự đổi mật khẩu của chính mình.</div>
       {error && <div className="form-error">{error}</div>}
 
       <div className="driver-profile-actions">

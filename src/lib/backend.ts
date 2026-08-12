@@ -5,6 +5,7 @@ import type {
   AuthUser,
   Checklist,
   CreateTripInput,
+  CreateVehicleRequestInput,
   CreateUserInput,
   Expense,
   ExpenseReviewAction,
@@ -15,6 +16,7 @@ import type {
   UpdateUserInput,
   UserRole,
   Vehicle,
+  VehicleRequest,
 } from '../types/models'
 import { addPending, listPending, pendingCount, removePending, updatePending, type PendingAction } from './offline'
 import { supabase } from './supabase'
@@ -36,9 +38,13 @@ export interface BackendApi {
   loadData(): Promise<AppData>
   createUser(input: CreateUserInput, avatarFile?: File | null): Promise<Profile>
   updateUser(input: UpdateUserInput, avatarFile?: File | null): Promise<Profile>
+  deleteUser(id: string): Promise<void>
+  changeOwnPassword(password: string): Promise<void>
   updateProfile(id: string, changes: Partial<Profile>): Promise<Profile>
   subscribe(onChange: () => void): () => void
-  createTrip(input: CreateTripInput, creatorId: string): Promise<Trip>
+  createVehicleRequest(input: CreateVehicleRequestInput, requesterId: string, planFile?: File | null): Promise<VehicleRequest>
+  updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
+  createTrip(input: CreateTripInput, creatorId: string, planFile?: File | null): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
@@ -250,18 +256,27 @@ async function hydrateProfile(profile: Profile): Promise<Profile> {
 
 async function hydrateData(data: AppData): Promise<AppData> {
   const profiles = await Promise.all(data.profiles.map(hydrateProfile))
-  const trips = await Promise.all(data.trips.map(async (trip) => ({
-    ...trip,
-    start_odometer_image_url: await signMedia(trip.start_odometer_image_url),
-    end_odometer_image_url: await signMedia(trip.end_odometer_image_url),
-  })))
+  const vehicleRequests = await Promise.all(data.vehicleRequests.map(async (request) => {
+    const planPath = request.plan_document_path ?? request.plan_document_url ?? null
+    return { ...request, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+  }))
+  const trips = await Promise.all(data.trips.map(async (trip) => {
+    const planPath = trip.plan_document_path ?? trip.plan_document_url ?? null
+    return {
+      ...trip,
+      plan_document_path: planPath,
+      plan_document_url: await signMedia(planPath),
+      start_odometer_image_url: await signMedia(trip.start_odometer_image_url),
+      end_odometer_image_url: await signMedia(trip.end_odometer_image_url),
+    }
+  }))
   const expenses = await Promise.all(data.expenses.map(async (expense) => ({ ...expense, receipt_url: await signMedia(expense.receipt_url) })))
   const incidents = await Promise.all(data.incidents.map(async (incident) => ({
     ...incident,
     image_url: await signMedia(incident.image_url),
     audio_url: await signMedia(incident.audio_url),
   })))
-  return { ...data, profiles, trips, expenses, incidents }
+  return { ...data, profiles, vehicleRequests, trips, expenses, incidents }
 }
 
 async function supabaseLoadData(): Promise<AppData> {
@@ -269,17 +284,18 @@ async function supabaseLoadData(): Promise<AppData> {
   if (!navigator.onLine && cache) return cache
   try {
     const client = await requireSupabase()
-    const tables = ['profiles', 'vehicles', 'trips', 'checklists', 'expenses', 'incidents', 'maintenances'] as const
+    const tables = ['profiles', 'vehicles', 'vehicle_requests', 'trips', 'checklists', 'expenses', 'incidents', 'maintenances'] as const
     const results = await Promise.all(tables.map((table) => client.from(table).select('*').order('created_at', { ascending: false })))
     results.forEach((result) => { if (result.error) throw result.error })
     const hydrated = await hydrateData({
       profiles: (results[0].data ?? []) as Profile[],
       vehicles: (results[1].data ?? []) as Vehicle[],
-      trips: (results[2].data ?? []) as Trip[],
-      checklists: (results[3].data ?? []) as Checklist[],
-      expenses: (results[4].data ?? []) as Expense[],
-      incidents: (results[5].data ?? []) as Incident[],
-      maintenances: (results[6].data ?? []) as Maintenance[],
+      vehicleRequests: (results[2].data ?? []) as VehicleRequest[],
+      trips: (results[3].data ?? []) as Trip[],
+      checklists: (results[4].data ?? []) as Checklist[],
+      expenses: (results[5].data ?? []) as Expense[],
+      incidents: (results[6].data ?? []) as Incident[],
+      maintenances: (results[7].data ?? []) as Maintenance[],
     })
     writeLiveCache(hydrated)
     return hydrated
@@ -380,6 +396,17 @@ const supabaseBackend: BackendApi = {
     if (!profile || !profile.active) { await client.auth.signOut(); return null }
     return { id: data.session.user.id, profile: await hydrateProfile(profile as Profile) }
   },
+  async changeOwnPassword(password) {
+    const client = await requireSupabase()
+    const nextPassword = String(password ?? '').trim()
+    if (nextPassword.length < 6) throw new Error('Mật khẩu mới cần ít nhất 6 ký tự.')
+
+    const { data: userData, error: userError } = await client.auth.getUser()
+    if (userError || !userData.user) throw new Error('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại trước khi đổi mật khẩu.')
+
+    const { error } = await client.auth.updateUser({ password: nextPassword })
+    if (error) throw new Error(`Không đổi được mật khẩu: ${error.message}`)
+  },
   loadData: supabaseLoadData,
   async createUser(input, avatarFile) {
     const client = await requireSupabase()
@@ -443,6 +470,13 @@ const supabaseBackend: BackendApi = {
     if (oldAvatarPath && oldAvatarPath !== avatarPath) await removeStoredMedia(oldAvatarPath)
     return await hydrateProfile(data.profile as Profile)
   },
+  async deleteUser(id) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để xóa tài khoản.')
+    const client = await requireSupabase()
+    const { data, error } = await client.functions.invoke('manage-user', { body: { action: 'delete', id } })
+    if (error) throw new Error(await friendlyFunctionError(error))
+    if (data?.error) throw new Error(data.error)
+  },
   async updateProfile(id, changes) {
     const client = await requireSupabase()
     const { data, error } = await client.from('profiles').update(changes).eq('id', id).select().single()
@@ -454,7 +488,7 @@ const supabaseBackend: BackendApi = {
     if (!client) return () => undefined
 
     const channel = client.channel('msg-car-changes')
-    for (const table of ['profiles', 'trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists']) {
+    for (const table of ['profiles', 'vehicle_requests', 'trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange)
     }
     channel.subscribe()
@@ -463,17 +497,65 @@ const supabaseBackend: BackendApi = {
       void client.removeChannel(channel)
     }
   },
-  async createTrip(input, creatorId) {
+  async createVehicleRequest(input, requesterId, planFile) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để gửi đề nghị điều xe và văn bản kế hoạch.')
+    const client = await requireSupabase()
+    const id = uid('vehicle-request')
+    const now = new Date().toISOString()
+    let planPath: string | null = null
+    if (planFile) planPath = await uploadMedia(planFile, `${requesterId}/trip-plans`, `request-${id}`)
+    const payload = {
+      ...input,
+      id,
+      requester_id: requesterId,
+      plan_document_url: planPath,
+      status: 'pending_fleet',
+    }
+    const { data, error } = await client.from('vehicle_requests').insert(payload).select().single()
+    if (error) {
+      if (planPath) await removeStoredMedia(planPath)
+      throw error
+    }
+    return { ...(data as VehicleRequest), plan_document_path: planPath, plan_document_url: await signMedia(planPath), created_at: (data as VehicleRequest).created_at ?? now }
+  },
+  async updateVehicleRequest(id, changes) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để duyệt đề nghị điều xe.')
+    const client = await requireSupabase()
+    const payload = { ...changes, updated_at: new Date().toISOString() }
+    const { data, error } = await client.from('vehicle_requests').update(payload).eq('id', id).select().single()
+    if (error) throw error
+    const record = data as VehicleRequest
+    const planPath = record.plan_document_url ?? null
+    return { ...record, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+  },
+  async createTrip(input, creatorId, planFile) {
     const client = await requireSupabase()
     const now = new Date().toISOString()
     const id = uid('trip')
-    const optimistic: Trip = { ...input, id, status: 'assigned', checklist_completed: false, created_by: creatorId, created_at: now, updated_at: now }
-    const payload = { ...input, id, created_by: creatorId, status: 'assigned', checklist_completed: false }
-    return await performOrQueue('trips.insert', payload, async () => {
+    const { existing_plan_path, ...tripInput } = input
+    let planPath = existing_plan_path ?? null
+    if (planFile) planPath = await uploadMedia(planFile, `${creatorId}/trip-plans`, `trip-${id}`)
+    const approvedPlan = Boolean(input.approved_plan && planPath && ['board_business', 'patient_pickup'].includes(input.purpose))
+    const payload = {
+      ...tripInput,
+      id,
+      created_by: creatorId,
+      status: 'pending_fleet',
+      approval_mode: approvedPlan ? 'fleet_only' : 'director_required',
+      approved_plan: approvedPlan,
+      plan_document_url: planPath,
+      checklist_completed: false,
+    }
+    const optimistic: Trip = { ...payload, plan_document_path: planPath, created_at: now, updated_at: now } as Trip
+    try {
       const { data, error } = await client.from('trips').insert(payload).select().single()
       if (error) throw error
-      return data as Trip
-    }, optimistic)
+      const record = data as Trip
+      return { ...record, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+    } catch (error) {
+      if (planFile && planPath) await removeStoredMedia(planPath)
+      throw error
+    }
   },
   async updateTrip(id, changes) {
     const client = await requireSupabase()
@@ -579,10 +661,11 @@ const supabaseBackend: BackendApi = {
     const client = await requireSupabase()
     const location = await getCurrentLocation()
     const id = uid('incident')
-    const payload: Record<string, unknown> = { ...input, id, lat: input.lat ?? location?.lat, lng: input.lng ?? location?.lng }
+    const payload: Record<string, unknown> = { ...input, id, status: 'pending_director', lat: input.lat ?? location?.lat, lng: input.lng ?? location?.lng }
     const now = new Date().toISOString()
     const optimistic: Incident = {
       ...input,
+      status: 'pending_director',
       id,
       image_url: null,
       audio_url: null,
@@ -633,8 +716,8 @@ const supabaseBackend: BackendApi = {
     const client = await requireSupabase()
     const now = new Date().toISOString()
     const id = uid('maintenance')
-    const payload = { ...input, id }
-    const optimistic: Maintenance = { ...input, id, created_at: now, updated_at: now }
+    const payload = { ...input, id, status: 'pending_director' }
+    const optimistic: Maintenance = { ...input, id, status: 'pending_director', created_at: now, updated_at: now }
     return await performOrQueue('maintenances.insert', payload, async () => {
       const { data, error } = await client.from('maintenances').insert(payload).select().single()
       if (error) throw error

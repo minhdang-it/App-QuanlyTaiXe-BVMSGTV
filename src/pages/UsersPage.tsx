@@ -18,7 +18,7 @@ const EMPTY_CREATE: CreateUserInput = {
 
 export function UsersPage() {
   const { user, mode } = useAuth()
-  const { data, createUser, updateUser } = useData()
+  const { data, createUser, updateUser, deleteUser } = useData()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Profile | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -28,6 +28,7 @@ export function UsersPage() {
   const profiles = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return data.profiles.filter((profile) => {
+      if (profile.deleted_at) return false
       if (roleFilter !== 'all' && profile.role !== roleFilter) return false
       if (!needle) return true
       return [
@@ -40,6 +41,21 @@ export function UsersPage() {
       ].some((value) => String(value ?? '').toLowerCase().includes(needle))
     })
   }, [data.profiles, query, roleFilter])
+
+
+  async function removeAccount(profile: Profile) {
+    if (profile.id === user!.id) return
+    const accepted = window.confirm(`Xóa tài khoản ${profile.full_name}?
+
+Tài khoản sẽ bị vô hiệu hóa đăng nhập và ẩn khỏi danh sách. Dữ liệu chuyến/chi phí cũ vẫn được giữ để đối chiếu.`)
+    if (!accepted) return
+    try {
+      await deleteUser(profile.id)
+      setMessage('Đã xóa tài khoản. Lịch sử nghiệp vụ liên quan vẫn được bảo toàn.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Không thể xóa tài khoản.')
+    }
+  }
 
   async function toggleAccount(profile: Profile) {
     if (profile.id === user!.id) return
@@ -65,7 +81,7 @@ export function UsersPage() {
 
       <section className="toolbar account-toolbar">
         <div>
-          <strong>{data.profiles.length} tài khoản nhân viên</strong>
+          <strong>{data.profiles.filter((profile) => !profile.deleted_at).length} tài khoản nhân viên</strong>
           <p className="toolbar-note">Quản trị viên có thể cập nhật hồ sơ, ảnh đại diện, quyền truy cập và đặt lại mật khẩu.</p>
         </div>
         <button className="primary-button" onClick={() => setCreating(true)}>＋ THÊM TÀI KHOẢN</button>
@@ -121,6 +137,14 @@ export function UsersPage() {
                         onClick={() => void toggleAccount(profile)}
                       >
                         {profile.active ? 'Khóa' : 'Mở khóa'}
+                      </button>
+                      <button
+                        className="reject-button compact"
+                        disabled={profile.id === user!.id}
+                        onClick={() => void removeAccount(profile)}
+                        title="Xóa quyền đăng nhập nhưng giữ lịch sử nghiệp vụ"
+                      >
+                        Xóa
                       </button>
                     </div>
                   </td>

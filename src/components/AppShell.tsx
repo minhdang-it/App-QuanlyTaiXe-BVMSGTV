@@ -6,10 +6,11 @@ import { useData } from '../context/DataContext'
 import { BrandLogo } from './BrandLogo'
 import { NotificationCenter } from './NotificationCenter'
 
-export type PageKey = 'dashboard' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users'
+export type PageKey = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users'
 
 export const PAGE_PATHS: Record<PageKey, string> = {
   dashboard: '/tong-quan',
+  requests: '/de-nghi-xe',
   dispatch: '/dieu-xe',
   vehicles: '/ho-so-xe',
   expenses: '/chi-phi',
@@ -27,23 +28,25 @@ export function pageFromPath(pathname: string): PageKey {
   return match?.[0] ?? 'dashboard'
 }
 
-type RoleKey = 'dispatcher' | 'accountant' | 'fleet' | 'director' | 'admin'
-type NavIconName = 'dashboard' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users' | 'menu' | 'logout'
+type RoleKey = 'department_head' | 'dispatcher' | 'accountant' | 'fleet' | 'director' | 'admin'
+type NavIconName = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users' | 'menu' | 'logout'
 
 const navigation: Array<{ key: PageKey; label: string; icon: NavIconName; hint: string; roles: string[] }> = [
   { key: 'dashboard', label: 'Tổng quan', icon: 'dashboard', hint: 'Điều hành theo vai trò', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'requests', label: 'Đề nghị xe', icon: 'requests', hint: 'Gửi & duyệt kế hoạch', roles: ['department_head', 'dispatcher', 'fleet', 'director', 'admin'] },
   { key: 'dispatch', label: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
   { key: 'vehicles', label: 'Hồ sơ xe', icon: 'vehicles', hint: 'Danh mục & trạng thái xe', roles: ['dispatcher', 'fleet', 'admin'] },
   { key: 'expenses', label: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'director', 'admin'] },
   { key: 'incidents', label: 'Sự cố', icon: 'incidents', hint: 'Xử lý cảnh báo', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'maintenance', label: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'admin'] },
+  { key: 'maintenance', label: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
   { key: 'reports', label: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'account', label: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'account', label: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', roles: ['department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
   { key: 'users', label: 'Tài khoản', icon: 'users', hint: 'Phân quyền hệ thống', roles: ['admin'] },
 ]
 
 const pageDescriptions: Record<PageKey, string> = {
   dashboard: 'Màn hình điều hành trung tâm, hiển thị các chỉ số và cảnh báo quan trọng.',
+  requests: 'Trưởng khoa/đơn vị gửi đề nghị xe kèm kế hoạch và Hành chính đội xe duyệt trước khi điều xe.',
   dispatch: 'Theo dõi toàn bộ chuyến xe, vị trí xe hoạt động và lịch điều xe theo thời gian thực.',
   vehicles: 'Quản lý hồ sơ xe, tình trạng xe, đăng kiểm, bảo hiểm và phân công tài xế.',
   expenses: 'Quản lý chi phí phát sinh, hóa đơn, duyệt thanh toán và theo dõi nhiên liệu.',
@@ -55,6 +58,11 @@ const pageDescriptions: Record<PageKey, string> = {
 }
 
 const roleMeta: Record<RoleKey, { title: string; subtitle: string; security: string }> = {
+  department_head: {
+    title: 'Đề nghị điều hành xe',
+    subtitle: 'Gửi kế hoạch sử dụng xe và theo dõi trạng thái duyệt của Hành chính đội xe.',
+    security: 'Trưởng khoa/đơn vị chỉ xem các đề nghị do đơn vị mình gửi và hồ sơ cá nhân.',
+  },
   dispatcher: {
     title: 'Trung tâm điều phối xe',
     subtitle: 'Tập trung điều chuyến, theo dõi tiến độ và xử lý yêu cầu phát sinh theo thời gian thực.',
@@ -87,6 +95,8 @@ function AppIcon({ name, className = '' }: { name: NavIconName; className?: stri
   switch (name) {
     case 'dashboard':
       return <svg {...common}><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="8" rx="1.5" /><rect x="3" y="14" width="7" height="6" rx="1.5" /></svg>
+    case 'requests':
+      return <svg {...common}><path d="M6 3h9l3 3v15H6z" /><path d="M9 11h6" /><path d="M9 15h6" /><path d="M15 3v4h4" /></svg>
     case 'dispatch':
       return <svg {...common}><path d="M5 19 19 5" /><path d="M9 5h10v10" /></svg>
     case 'vehicles':
@@ -161,7 +171,7 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
     <div className={`app-shell role-${currentRole} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className="sidebar sidebar-modern">
         <div className="brand">
-          <button type="button" className="brand-home-button" onClick={() => onPage('dashboard')} aria-label="Về trang chủ">
+          <button type="button" className="brand-home-button" onClick={() => onPage(currentRole === 'department_head' ? 'requests' : 'dashboard')} aria-label="Về trang chủ">
             <BrandLogo compact />
           </button>
         </div>
@@ -230,7 +240,7 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
         <header className="topbar topbar-modern">
           <div className="topbar-heading-block">
             <div className="mobile-topbar-brand">
-              <button type="button" className="brand-home-button" onClick={() => onPage('dashboard')} aria-label="Về trang chủ">
+              <button type="button" className="brand-home-button" onClick={() => onPage(currentRole === 'department_head' ? 'requests' : 'dashboard')} aria-label="Về trang chủ">
                 <BrandLogo compact />
               </button>
               <span className={`sidebar-online-pill ${online ? 'is-online' : 'is-offline'}`}>{online ? 'Trực tuyến' : 'Ngoại tuyến'}</span>

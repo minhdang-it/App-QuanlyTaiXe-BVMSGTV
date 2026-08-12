@@ -6,6 +6,7 @@ import { formatCurrency, formatDateTime } from '../lib/utils'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { ImagePreview } from '../components/ImagePreview'
+import { Modal } from '../components/Modal'
 import type { ExpenseReviewAction, ExpenseStatus } from '../types/models'
 
 type ExpenseFilter = 'all' | ExpenseStatus
@@ -16,6 +17,7 @@ export function ExpensesPage() {
   const [filter, setFilter] = useState<ExpenseFilter>('all')
   const [message, setMessage] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
   const role = user!.profile.role
 
   const expenses = useMemo(
@@ -130,8 +132,37 @@ export function ExpensesPage() {
           {item.paid_at && <small>Chi trả: {formatDateTime(item.paid_at)}</small>}
           {item.rejection_reason && <small>Lý do: {item.rejection_reason}</small>}
         </td>
-        <td><div className="row-actions">{actionButtons(item)}</div></td>
+        <td><div className="row-actions"><button className="secondary-button compact" onClick={() => setSelectedExpenseId(item.id)}>Chi tiết</button>{actionButtons(item)}</div></td>
       </tr>
     })}</tbody></table></div> : <EmptyState icon="🧾" title="Không có chi phí phù hợp" />}</section>
+
+    {selectedExpenseId && (() => {
+      const item = data.expenses.find((expense) => expense.id === selectedExpenseId)
+      if (!item) return null
+      const vehicle = data.vehicles.find((vehicleItem) => vehicleItem.id === item.vehicle_id)
+      const driver = data.profiles.find((profile) => profile.id === item.driver_id)
+      const director = data.profiles.find((profile) => profile.id === item.director_reviewer_id)
+      const accountant = data.profiles.find((profile) => profile.id === item.accountant_reviewer_id)
+      return <Modal title={`Chi tiết chi phí · ${EXPENSE_LABELS[item.type]}`} onClose={() => setSelectedExpenseId(null)} wide>
+        <div className="expense-detail-modal">
+          <div className="expense-detail-summary"><div><span>{EXPENSE_LABELS[item.type]}</span><strong>{formatCurrency(item.amount)}</strong></div><StatusBadge status={item.status} /></div>
+          <div className="detail-grid">
+            <div><span>Xe</span><strong>{vehicle?.plate_number ?? '—'}</strong></div>
+            <div><span>Tài xế</span><strong>{driver?.full_name ?? '—'}</strong></div>
+            <div><span>Ngày chi phí</span><strong>{formatDateTime(item.expense_date)}</strong></div>
+            <div><span>Ngày gửi</span><strong>{formatDateTime(item.created_at)}</strong></div>
+            {item.type === 'fuel' && <><div><span>Số lít</span><strong>{item.fuel_liters ? `${item.fuel_liters} lít` : '—'}</strong></div><div><span>Đơn giá</span><strong>{item.fuel_unit_price ? formatCurrency(item.fuel_unit_price) : '—'}</strong></div></>}
+          </div>
+          <div className="note-box"><strong>Nội dung</strong><p>{item.description || 'Không có ghi chú.'}</p></div>
+          <section className="trip-detail-section"><h3>Hóa đơn / chứng từ</h3>{item.receipt_url ? <ImagePreview src={item.receipt_url} alt={`Hóa đơn ${EXPENSE_LABELS[item.type]}`} /> : <p className="muted-copy">Không có ảnh hóa đơn.</p>}</section>
+          <section className="trip-detail-section"><h3>Lịch sử duyệt</h3><div className="compact-record-list">
+            <div><span>Ban Giám đốc</span><strong>{item.director_reviewed_at ? formatDateTime(item.director_reviewed_at) : 'Chưa duyệt'}</strong><small>{director?.full_name ?? ''}</small></div>
+            <div><span>Kế toán</span><strong>{item.accountant_reviewed_at ? formatDateTime(item.accountant_reviewed_at) : 'Chưa duyệt'}</strong><small>{accountant?.full_name ?? ''}</small></div>
+            <div><span>Chi trả</span><strong>{item.paid_at ? formatDateTime(item.paid_at) : 'Chưa chi trả'}</strong></div>
+          </div>{item.rejection_reason && <div className="rejection-box"><strong>Lý do từ chối:</strong> {item.rejection_reason}</div>}</section>
+          <div className="form-actions"><button className="secondary-button" onClick={() => setSelectedExpenseId(null)}>Đóng</button>{actionButtons(item)}</div>
+        </div>
+      </Modal>
+    })()}
   </>
 }

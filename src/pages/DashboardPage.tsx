@@ -67,7 +67,7 @@ export function DashboardPage() {
       const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
       items.push({ level: 'warning', title: `${vehicle?.plate_number ?? 'Xe'} chưa kết thúc chuyến`, detail: `Dự kiến về ${formatDateTime(trip.expected_end)}` })
     }
-    for (const incident of data.incidents.filter((item) => item.status !== 'resolved')) {
+    for (const incident of data.incidents.filter((item) => !['resolved', 'rejected'].includes(item.status))) {
       if (incident.severity === 'critical' || incident.severity === 'high') items.push({ level: 'danger', title: 'Sự cố xe cần xử lý ngay', detail: incident.description || incident.type })
     }
     return items.slice(0, 8)
@@ -231,7 +231,7 @@ function AccountantWorkspace({ data }: { data: AppData }) {
 }
 
 function FleetWorkspace({ data }: { data: AppData }) {
-  const openIncidents = data.incidents.filter((item) => item.status !== 'resolved')
+  const openIncidents = data.incidents.filter((item) => !['resolved', 'rejected'].includes(item.status))
   return <section className="role-workspace role-workspace-fleet">
     <div className="role-workspace-heading"><div><span>KHÔNG GIAN ĐỘI XE</span><h3>Sức khỏe phương tiện và bảo dưỡng</h3><p>Hiển thị trạng thái xe, giấy tờ, mốc bảo dưỡng và sự cố chưa hoàn tất.</p></div><strong>{openIncidents.length} sự cố đang mở</strong></div>
     <div className="vehicle-health-grid">{data.vehicles.map((vehicle) => {
@@ -255,7 +255,7 @@ function FleetWorkspace({ data }: { data: AppData }) {
 function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metrics: DashboardMetrics; activeTrips: Trip[] }) {
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
   const monthExpense = data.expenses.filter((item) => new Date(item.expense_date).getTime() >= monthStart.getTime() && (item.status === 'approved' || item.status === 'paid')).reduce((sum, item) => sum + item.amount, 0)
-  const urgent = data.incidents.filter((item) => item.status !== 'resolved' && ['high', 'critical'].includes(item.severity)).length
+  const urgent = data.incidents.filter((item) => !['resolved', 'rejected'].includes(item.status) && ['high', 'critical'].includes(item.severity)).length
   const readiness = metrics.totalVehicles ? Math.round((metrics.available / metrics.totalVehicles) * 100) : 0
   return <section className="role-workspace role-workspace-director">
     <div className="role-workspace-heading"><div><span>TRUNG TÂM QUYẾT ĐỊNH</span><h3>Tổng hợp điều hành dành cho lãnh đạo</h3><p>Các con số quan trọng được cô đọng để cập nhật và ra quyết định nhanh.</p></div><strong>Cập nhật tức thời</strong></div>
@@ -269,10 +269,11 @@ function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metr
 }
 
 function AdminWorkspace({ data }: { data: AppData }) {
-  const active = data.profiles.filter((item) => item.active).length
-  const inactive = data.profiles.length - active
-  const missingDepartment = data.profiles.filter((item) => !item.department?.trim()).length
-  const roles = (Object.keys(ROLE_LABELS) as UserRole[]).map((role) => ({ role, count: data.profiles.filter((item) => item.role === role).length }))
+  const existingProfiles = data.profiles.filter((item) => !item.deleted_at)
+  const active = existingProfiles.filter((item) => item.active).length
+  const inactive = existingProfiles.length - active
+  const missingDepartment = existingProfiles.filter((item) => !item.department?.trim()).length
+  const roles = (Object.keys(ROLE_LABELS) as UserRole[]).map((role) => ({ role, count: existingProfiles.filter((item) => item.role === role).length }))
   return <section className="role-workspace role-workspace-admin">
     <div className="role-workspace-heading"><div><span>TRUNG TÂM BẢO MẬT & PHÂN QUYỀN</span><h3>Quản trị người dùng và tính toàn vẹn dữ liệu</h3><p>Kiểm soát tài khoản, bộ phận, vai trò và các điểm cần hoàn thiện hồ sơ.</p></div><strong>{active} tài khoản hoạt động</strong></div>
     <div className="admin-security-grid">
