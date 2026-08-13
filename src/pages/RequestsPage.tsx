@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
+import { VietnamDateInput } from '../components/VietnamDateInput'
+import { mergeSelectedPlanFiles, PlanAttachmentsViewer, SelectedPlanFiles } from '../components/PlanAttachments'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { PURPOSE_LABELS } from '../lib/constants'
@@ -100,7 +102,7 @@ export function RequestsPage() {
       {requests.map((item) => {
         const requester = data.profiles.find((profile) => profile.id === item.requester_id)
         const reviewer = data.profiles.find((profile) => profile.id === item.fleet_reviewer_id)
-        const canBypassDirector = Boolean(item.plan_document_url)
+        const canBypassDirector = Boolean(item.plan_document_url || item.plan_attachments?.length)
         return <article key={item.id} className="request-card">
           <div className="request-card-head">
             <div><span className="eyebrow">{PURPOSE_LABELS[item.purpose]}</span><h3>{item.pickup} → {item.destination}</h3></div>
@@ -114,8 +116,8 @@ export function RequestsPage() {
           </div>
           {item.notes && <p className="request-note">{item.notes}</p>}
           <div className="request-document-row">
-            {item.plan_document_url
-              ? <a className="secondary-button compact" href={item.plan_document_url} target="_blank" rel="noreferrer">📎 Xem văn bản kế hoạch</a>
+            {(item.plan_attachments?.length || item.plan_document_url)
+              ? <PlanAttachmentsViewer attachments={item.plan_attachments} legacyUrl={item.plan_document_url} legacyPath={item.plan_document_path} compact />
               : <span className="request-no-document">Chưa đính kèm văn bản</span>}
             {canBypassDirector && <span className="approval-route-chip">Có kế hoạch · Hành chính duyệt trực tiếp, không qua BGĐ</span>}
           </div>
@@ -133,8 +135,8 @@ export function RequestsPage() {
     {creating && <CreateRequestModal
       profileDepartment={user!.profile.department ?? ''}
       onClose={() => setCreating(false)}
-      onSubmit={async (input, planFile) => {
-        await createVehicleRequest(input, planFile)
+      onSubmit={async (input, planFiles) => {
+        await createVehicleRequest(input, planFiles)
         setCreating(false)
         setMessage('Đã gửi đề nghị điều hành xe đến Hành chính đội xe.')
       }}
@@ -149,41 +151,59 @@ function CreateRequestModal({
 }: {
   profileDepartment: string
   onClose: () => void
-  onSubmit: (input: CreateVehicleRequestInput, planFile: File | null) => Promise<void>
+  onSubmit: (input: CreateVehicleRequestInput, planFiles: File[]) => Promise<void>
 }) {
   const [form, setForm] = useState<CreateVehicleRequestInput>({ ...EMPTY_REQUEST, department: profileDepartment })
-  const [planFile, setPlanFile] = useState<File | null>(null)
+  const [planFiles, setPlanFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   return <Modal title="Gửi đề nghị điều hành xe" onClose={onClose} wide>
     <form className="form-stack" onSubmit={async (event) => {
       event.preventDefault()
-      if (!planFile) { setError('Vui lòng đính kèm văn bản/kế hoạch để Hành chính đội xe kiểm tra.'); return }
+      if (!planFiles.length) { setError('Vui lòng đính kèm ít nhất một văn bản, hình ảnh hoặc kế hoạch để Hành chính đội xe kiểm tra.'); return }
       if (!form.scheduled_start) { setError('Vui lòng chọn thời gian khởi hành.'); return }
       if (form.expected_end && form.expected_end <= form.scheduled_start) {
         setError('Thời gian dự kiến về phải sau thời gian khởi hành. Vui lòng kiểm tra lại ngày và giờ.')
         return
       }
       setSaving(true); setError(null)
-      try { await onSubmit(form, planFile) } catch (err) { setError(getErrorMessage(err, 'Không thể gửi đề nghị điều hành xe.')) } finally { setSaving(false) }
+      try { await onSubmit(form, planFiles) } catch (err) { setError(getErrorMessage(err, 'Không thể gửi đề nghị điều hành xe.')) } finally { setSaving(false) }
     }}>
       <div className="form-grid">
         <label>Khoa / đơn vị<input value={form.department ?? ''} onChange={(event) => setForm({ ...form, department: event.target.value })} required /></label>
         <label>Mục đích<select value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as TripPurpose })}>{(Object.keys(PURPOSE_LABELS) as TripPurpose[]).map((key) => <option key={key} value={key}>{PURPOSE_LABELS[key]}</option>)}</select></label>
         <label>Điểm đón<input value={form.pickup} onChange={(event) => setForm({ ...form, pickup: event.target.value })} required /></label>
         <label>Điểm đến<input value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} required /></label>
-        <label>Thời gian khởi hành<input type="datetime-local" value={form.scheduled_start} onChange={(event) => {
-          const scheduledStart = event.target.value
+        <label>Thời gian khởi hành<VietnamDateInput mode="datetime" value={form.scheduled_start} showHint onChange={(scheduledStart) => {
           const expectedEnd = form.expected_end && form.expected_end <= scheduledStart ? '' : form.expected_end
           setForm({ ...form, scheduled_start: scheduledStart, expected_end: expectedEnd })
           setError(null)
         }} required /></label>
-        <label>Thời gian dự kiến về<input type="datetime-local" min={form.scheduled_start || undefined} value={form.expected_end ?? ''} onChange={(event) => { setForm({ ...form, expected_end: event.target.value }); setError(null) }} /></label>
+        <label>Thời gian dự kiến về<VietnamDateInput mode="datetime" value={form.expected_end ?? ''} min={form.scheduled_start} showHint onChange={(value) => { setForm({ ...form, expected_end: value }); setError(null) }} /></label>
         <label>Người liên hệ<input value={form.contact_name ?? ''} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} /></label>
         <label>Số điện thoại<input inputMode="tel" value={form.contact_phone ?? ''} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
         <label>Số người<input type="number" min="0" value={form.passenger_count ?? 0} onChange={(event) => setForm({ ...form, passenger_count: Number(event.target.value) })} /></label>
-        <label className="span-2">Văn bản / kế hoạch<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => setPlanFile(event.target.files?.[0] ?? null)} required /><small>Chấp nhận PDF, Word, Excel hoặc ảnh chụp văn bản.</small></label>
+        <label className="span-2 plan-multi-upload-field">Văn bản / kế hoạch / hình ảnh
+          <div className="plan-multi-upload-box">
+            <span className="plan-multi-upload-icon" aria-hidden="true">📎</span>
+            <div className="plan-multi-upload-copy"><strong>Thêm nhiều tệp hoặc hình ảnh</strong><small>Chọn nhiều tệp cùng lúc hoặc bấm lại nhiều lần để bổ sung.</small></div>
+            <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*" onChange={(event) => {
+              const incoming = Array.from(event.currentTarget.files ?? [])
+              const merged = mergeSelectedPlanFiles(planFiles, incoming)
+              if (merged.length > 10) {
+                setError('Chỉ được đính kèm tối đa 10 tệp. Hãy xóa bớt tệp trước khi thêm.')
+                event.currentTarget.value = ''
+                return
+              }
+              setPlanFiles(merged)
+              setError(null)
+              event.currentTarget.value = ''
+            }} required={planFiles.length === 0} />
+          </div>
+          <small>Hỗ trợ PDF, Word, Excel, PowerPoint, TXT và hình ảnh. Tối đa 10 tệp, 10 MB/tệp, tổng 50 MB.</small>
+          <SelectedPlanFiles files={planFiles} onRemove={(index) => setPlanFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
+        </label>
         <label className="span-2">Ghi chú<textarea value={form.notes ?? ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
       </div>
       {error && <div className="form-error">{error}</div>}

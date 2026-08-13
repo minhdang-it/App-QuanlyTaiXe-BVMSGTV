@@ -59,8 +59,13 @@ export function DashboardPage() {
     for (const vehicle of data.vehicles) {
       const registration = daysUntil(vehicle.registration_expiry)
       const insurance = daysUntil(vehicle.insurance_expiry)
+      const roadFee = daysUntil(vehicle.road_fee_expiry)
+      const oilDate = daysUntil(vehicle.next_oil_change_date)
       if (registration !== null && registration <= 30) items.push({ level: registration < 0 ? 'danger' : 'warning', title: `${vehicle.plate_number} sắp hết đăng kiểm`, detail: registration < 0 ? `Đã quá hạn ${Math.abs(registration)} ngày` : `Còn ${registration} ngày` })
-      if (insurance !== null && insurance <= 30) items.push({ level: insurance < 0 ? 'danger' : 'warning', title: `${vehicle.plate_number} sắp hết bảo hiểm`, detail: insurance < 0 ? `Đã quá hạn ${Math.abs(insurance)} ngày` : `Còn ${insurance} ngày` })
+      if (insurance !== null && insurance <= 30) items.push({ level: insurance < 0 ? 'danger' : 'warning', title: `${vehicle.plate_number} sắp hết bảo hiểm TNDS`, detail: insurance < 0 ? `Đã quá hạn ${Math.abs(insurance)} ngày` : `Còn ${insurance} ngày` })
+      if (roadFee !== null && roadFee <= 30) items.push({ level: roadFee < 0 ? 'danger' : 'warning', title: `${vehicle.plate_number} sắp hết phí sử dụng đường bộ`, detail: roadFee < 0 ? `Đã quá hạn ${Math.abs(roadFee)} ngày` : `Còn ${roadFee} ngày` })
+      if (oilDate !== null && oilDate <= 14) items.push({ level: oilDate < 0 ? 'danger' : 'warning', title: `${vehicle.plate_number} đến lịch thay nhớt`, detail: oilDate < 0 ? `Đã quá lịch ${Math.abs(oilDate)} ngày` : `Còn ${oilDate} ngày` })
+      if (vehicle.next_oil_change_odometer && vehicle.odometer >= vehicle.next_oil_change_odometer) items.push({ level: 'warning', title: `${vehicle.plate_number} đến mốc thay nhớt`, detail: `KM hiện tại ${vehicle.odometer.toLocaleString('vi-VN')}` })
       if (vehicle.next_maintenance_odometer && vehicle.odometer >= vehicle.next_maintenance_odometer) items.push({ level: 'warning', title: `${vehicle.plate_number} đến mốc bảo dưỡng`, detail: `KM hiện tại ${vehicle.odometer.toLocaleString('vi-VN')}` })
     }
     for (const trip of data.trips.filter((item) => item.status === 'active' && item.expected_end && new Date(item.expected_end).getTime() < Date.now())) {
@@ -237,6 +242,8 @@ function FleetWorkspace({ data }: { data: AppData }) {
     <div className="vehicle-health-grid">{data.vehicles.map((vehicle) => {
       const registration = daysUntil(vehicle.registration_expiry)
       const insurance = daysUntil(vehicle.insurance_expiry)
+      const roadFee = daysUntil(vehicle.road_fee_expiry)
+      const oilDate = daysUntil(vehicle.next_oil_change_date)
       const incidents = openIncidents.filter((item) => item.vehicle_id === vehicle.id).length
       const maintenanceDue = vehicle.next_maintenance_odometer != null && vehicle.odometer >= vehicle.next_maintenance_odometer
       return <article className={`vehicle-health-card ${incidents || maintenanceDue ? 'needs-attention' : ''}`} key={vehicle.id}>
@@ -244,7 +251,9 @@ function FleetWorkspace({ data }: { data: AppData }) {
         <em>{VEHICLE_STATUS_LABELS[vehicle.status]}</em>
         <ul>
           <li>Đăng kiểm: <strong>{registration == null ? 'Chưa cập nhật' : registration < 0 ? `Quá hạn ${Math.abs(registration)} ngày` : `Còn ${registration} ngày`}</strong></li>
-          <li>Bảo hiểm: <strong>{insurance == null ? 'Chưa cập nhật' : insurance < 0 ? `Quá hạn ${Math.abs(insurance)} ngày` : `Còn ${insurance} ngày`}</strong></li>
+          <li>Bảo hiểm TNDS: <strong>{insurance == null ? 'Chưa cập nhật' : insurance < 0 ? `Quá hạn ${Math.abs(insurance)} ngày` : `Còn ${insurance} ngày`}</strong></li>
+          <li>Phí đường bộ: <strong>{roadFee == null ? 'Chưa cập nhật' : roadFee < 0 ? `Quá hạn ${Math.abs(roadFee)} ngày` : `Còn ${roadFee} ngày`}</strong></li>
+          <li>Thay nhớt: <strong>{oilDate == null ? 'Chưa cập nhật' : oilDate < 0 ? `Quá lịch ${Math.abs(oilDate)} ngày` : `Còn ${oilDate} ngày`}</strong></li>
           <li>Sự cố mở: <strong>{incidents}</strong></li>
         </ul>
       </article>

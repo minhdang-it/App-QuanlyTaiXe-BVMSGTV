@@ -36,6 +36,11 @@ create table if not exists public.vehicles (
   regular_driver_id uuid references public.profiles(id) on delete set null,
   registration_expiry date,
   insurance_expiry date,
+  road_fee_expiry date,
+  last_oil_change_date date,
+  last_oil_change_odometer integer check (last_oil_change_odometer is null or last_oil_change_odometer >= 0),
+  next_oil_change_date date,
+  next_oil_change_odometer integer check (next_oil_change_odometer is null or next_oil_change_odometer >= 0),
   next_maintenance_date date,
   next_maintenance_odometer integer,
   fuel_norm_l_per_100km numeric(6,2),
@@ -498,6 +503,65 @@ create trigger audit_incidents after insert or update or delete on public.incide
 drop trigger if exists audit_vehicles on public.vehicles;
 create trigger audit_vehicles after insert or update or delete on public.vehicles for each row execute function public.audit_change();
 
+
+create or replace function public.driver_update_vehicle_tracking(
+  p_vehicle_id uuid,
+  p_registration_expiry date default null,
+  p_insurance_expiry date default null,
+  p_road_fee_expiry date default null,
+  p_last_oil_change_date date default null,
+  p_last_oil_change_odometer integer default null,
+  p_next_oil_change_date date default null,
+  p_next_oil_change_odometer integer default null,
+  p_next_maintenance_date date default null,
+  p_next_maintenance_odometer integer default null
+)
+returns public.vehicles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  result public.vehicles;
+  allowed boolean;
+begin
+  select public.current_role() = 'driver' and (
+    v.regular_driver_id = auth.uid() or exists (
+      select 1 from public.trips t
+      where t.vehicle_id = v.id and t.driver_id = auth.uid()
+        and t.status in ('assigned','accepted','ready','active')
+    )
+  ) into allowed
+  from public.vehicles v where v.id = p_vehicle_id;
+
+  if not coalesce(allowed, false) then
+    raise exception 'Tài xế chỉ được cập nhật xe đang được phân công.' using errcode = '42501';
+  end if;
+  if p_last_oil_change_odometer is not null and p_last_oil_change_odometer < 0 then raise exception 'KM thay nhớt không hợp lệ.'; end if;
+  if p_next_oil_change_odometer is not null and p_next_oil_change_odometer < 0 then raise exception 'Mốc KM thay nhớt không hợp lệ.'; end if;
+  if p_next_maintenance_odometer is not null and p_next_maintenance_odometer < 0 then raise exception 'Mốc KM bảo dưỡng không hợp lệ.'; end if;
+  if p_last_oil_change_date is not null and p_next_oil_change_date is not null and p_next_oil_change_date < p_last_oil_change_date then
+    raise exception 'Ngày thay nhớt kế tiếp phải sau lần thay nhớt gần nhất.';
+  end if;
+
+  update public.vehicles set
+    registration_expiry = p_registration_expiry,
+    insurance_expiry = p_insurance_expiry,
+    road_fee_expiry = p_road_fee_expiry,
+    last_oil_change_date = p_last_oil_change_date,
+    last_oil_change_odometer = p_last_oil_change_odometer,
+    next_oil_change_date = p_next_oil_change_date,
+    next_oil_change_odometer = p_next_oil_change_odometer,
+    next_maintenance_date = p_next_maintenance_date,
+    next_maintenance_odometer = p_next_maintenance_odometer
+  where id = p_vehicle_id
+  returning * into result;
+  return result;
+end;
+$$;
+revoke all on function public.driver_update_vehicle_tracking(uuid,date,date,date,date,integer,date,integer,date,integer) from public;
+grant execute on function public.driver_update_vehicle_tracking(uuid,date,date,date,date,integer,date,integer,date,integer) to authenticated;
+
 alter table public.profiles enable row level security;
 alter table public.vehicles enable row level security;
 alter table public.trips enable row level security;
@@ -590,7 +654,7 @@ drop policy if exists "audit admin director read" on public.audit_logs;
 create policy "audit admin director read" on public.audit_logs for select to authenticated using (public.current_role() in ('admin','director'));
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('vehicle-media', 'vehicle-media', false, 10485760, array['image/jpeg','image/png','image/webp','image/heic','image/heif','audio/webm','audio/mpeg','audio/mp4','audio/wav','audio/x-m4a','audio/aac','audio/ogg'])
+values ('vehicle-media', 'vehicle-media', false, 10485760, array['image/jpeg','image/png','image/webp','image/heic','image/heif','image/gif','audio/webm','audio/mpeg','audio/mp4','audio/wav','audio/x-m4a','audio/aac','audio/ogg'])
 on conflict (id) do update set public = false;
 
 drop policy if exists "media authenticated read permitted folders" on storage.objects;
@@ -708,6 +772,7 @@ create table if not exists public.vehicle_requests (
   expected_end timestamptz,
   notes text,
   plan_document_url text,
+  plan_attachments jsonb not null default '[]'::jsonb,
   status text not null default 'pending_fleet' check (status in ('pending_fleet','fleet_approved','rejected','converted')),
   fleet_reviewer_id uuid references public.profiles(id) on delete set null,
   fleet_reviewed_at timestamptz,
@@ -730,6 +795,7 @@ alter table public.trips
   add column if not exists approval_mode text not null default 'director_required',
   add column if not exists approved_plan boolean not null default false,
   add column if not exists plan_document_url text,
+  add column if not exists plan_attachments jsonb not null default '[]'::jsonb,
   add column if not exists vehicle_request_id uuid,
   add column if not exists fleet_reviewer_id uuid references public.profiles(id) on delete set null,
   add column if not exists fleet_reviewed_at timestamptz,
@@ -764,8 +830,11 @@ begin
   -- Vì vậy không được đưa chuyến quay lại bước Hành chính duyệt lần thứ hai.
   new.status := 'assigned';
   new.approval_mode := 'fleet_only';
-  new.plan_document_url := coalesce(new.plan_document_url, req.plan_document_url);
-  new.approved_plan := (new.plan_document_url is not null);
+  if jsonb_array_length(coalesce(new.plan_attachments, '[]'::jsonb)) = 0 then
+    new.plan_attachments := coalesce(req.plan_attachments, '[]'::jsonb);
+  end if;
+  new.plan_document_url := coalesce(new.plan_document_url, req.plan_document_url, new.plan_attachments -> 0 ->> 'path');
+  new.approved_plan := (new.plan_document_url is not null or jsonb_array_length(coalesce(new.plan_attachments, '[]'::jsonb)) > 0);
   new.fleet_reviewer_id := req.fleet_reviewer_id;
   new.fleet_reviewed_at := req.fleet_reviewed_at;
   new.director_reviewer_id := null;
@@ -1176,10 +1245,11 @@ create policy "maintenances workflow update" on public.maintenances for update t
 -- 12) Storage: cho phép văn bản kế hoạch PDF/Office tối đa 10 MB và quyền đọc theo hồ sơ.
 update storage.buckets
 set allowed_mime_types = array[
-  'image/jpeg','image/png','image/webp','image/heic','image/heif',
+  'image/jpeg','image/png','image/webp','image/heic','image/heif','image/gif',
   'audio/webm','audio/mpeg','audio/mp4','audio/wav','audio/x-m4a','audio/aac','audio/ogg',
   'application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain'
 ]
 where id = 'vehicle-media';
 

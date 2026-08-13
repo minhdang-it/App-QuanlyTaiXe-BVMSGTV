@@ -4,6 +4,7 @@ import type {
   Checklist,
   CreateTripInput,
   CreateVehicleRequestInput,
+  DriverVehicleTrackingUpdate,
   CreateUserInput,
   Expense,
   ExpenseReviewAction,
@@ -29,9 +30,9 @@ interface DataContextValue {
   deleteUser(id: string): Promise<void>
   changeOwnPassword(password: string): Promise<void>
   updateProfile(id: string, changes: Partial<import('../types/models').Profile>): Promise<import('../types/models').Profile>
-  createVehicleRequest(input: CreateVehicleRequestInput, planFile?: File | null): Promise<VehicleRequest>
+  createVehicleRequest(input: CreateVehicleRequestInput, planFiles?: File[]): Promise<VehicleRequest>
   updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
-  createTrip(input: CreateTripInput, planFile?: File | null): Promise<Trip>
+  createTrip(input: CreateTripInput, planFiles?: File[]): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
@@ -43,6 +44,7 @@ interface DataContextValue {
   updateIncident(id: string, changes: Partial<Incident>): Promise<Incident>
   createVehicle(input: Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>): Promise<Vehicle>
   updateVehicle(id: string, changes: Partial<Vehicle>): Promise<Vehicle>
+  updateDriverVehicleTracking(id: string, changes: DriverVehicleTrackingUpdate): Promise<Vehicle>
   createMaintenance(input: Omit<Maintenance, 'id' | 'created_at' | 'updated_at'>): Promise<Maintenance>
   updateMaintenance(id: string, changes: Partial<Maintenance>): Promise<Maintenance>
 }
@@ -144,9 +146,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     deleteUser: (id) => run(() => backend.deleteUser(id)),
     changeOwnPassword: (password) => backend.changeOwnPassword(password),
     updateProfile: (id, changes) => run(() => backend.updateProfile(id, changes)),
-    createVehicleRequest: (input, planFile) => run(() => backend.createVehicleRequest(input, user!.id, planFile)),
+    createVehicleRequest: (input, planFiles) => run(() => backend.createVehicleRequest(input, user!.id, planFiles)),
     updateVehicleRequest: (id, changes) => run(() => backend.updateVehicleRequest(id, changes)),
-    createTrip: (input, planFile) => run(() => backend.createTrip(input, user!.id, planFile)),
+    createTrip: (input, planFiles) => run(() => backend.createTrip(input, user!.id, planFiles)),
     updateTrip: (id, changes) => run(() => backend.updateTrip(id, changes)),
     updateTripLocation,
     deleteTrip: (id) => run(() => backend.deleteTrip(id)),
@@ -158,6 +160,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateIncident: (id, changes) => run(() => backend.updateIncident(id, changes)),
     createVehicle: (input) => run(() => backend.createVehicle(input)),
     updateVehicle: (id, changes) => run(() => backend.updateVehicle(id, changes)),
+    updateDriverVehicleTracking: (id, changes) => run(() => backend.updateDriverVehicleTracking(id, changes)),
     createMaintenance: (input) => run(() => backend.createMaintenance(input)),
     updateMaintenance: (id, changes) => run(() => backend.updateMaintenance(id, changes)),
   }), [data, error, loading, online, pending, refresh, run, updateTripLocation, user])

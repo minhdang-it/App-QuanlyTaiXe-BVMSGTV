@@ -8692,3 +8692,650 @@ label {
 .request-toolbar .filter-tabs{width:100%;padding-bottom:2px;scrollbar-width:none}.request-toolbar .filter-tabs::-webkit-scrollbar{display:none}
 }
 @media (max-width:390px){.app-shell .mobile-nav button{flex-basis:72px;min-width:72px}.app-shell .mobile-nav small{max-width:66px;font-size:10px}}
+
+
+/* ==== v2.7.6 DRIVER VEHICLE TRACKING - MOBILE FIRST ==== */
+.driver-quick-action.vehicle-tracking .driver-quick-icon.vehicle { background: #e8f5ef; color: #17644f; }
+.driver-vehicle-tracking-head { display:grid; gap:10px; margin-bottom:14px; }
+.driver-vehicle-tracking-head > div { display:flex; align-items:center; gap:10px; }
+.driver-vehicle-tracking-head > div > span { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:#e8f5ef; font-size:22px; }
+.driver-vehicle-tracking-head strong { display:block; font-size:18px; }
+.driver-vehicle-tracking-head small, .driver-vehicle-tracking-head p { color:#60756f; }
+.driver-vehicle-tracking-head p { margin:0; font-size:12px; line-height:1.5; }
+.driver-vehicle-expiry-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
+.driver-vehicle-expiry-grid > div { border:1px solid #dfe9e5; border-radius:14px; padding:10px; background:#fbfdfc; min-width:0; }
+.driver-vehicle-expiry-grid span,.driver-vehicle-expiry-grid small { display:block; font-size:10px; color:#667d76; }
+.driver-vehicle-expiry-grid strong { display:block; margin:4px 0; font-size:13px; color:#183c34; white-space:nowrap; }
+.driver-vehicle-expiry-grid > div.warning { border-color:#efd18a; background:#fffaf0; }
+.driver-vehicle-expiry-grid > div.danger { border-color:#efb3b3; background:#fff3f3; }
+.driver-vehicle-expiry-grid > div.warning small { color:#936b13; font-weight:700; }
+.driver-vehicle-expiry-grid > div.danger small { color:#b83232; font-weight:700; }
+.driver-vehicle-tracking-form { display:grid; gap:12px; }
+.driver-vehicle-tracking-form fieldset { margin:0; padding:12px; border:1px solid #dfe9e5; border-radius:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.driver-vehicle-tracking-form legend { padding:0 6px; font-weight:800; color:#1f5045; }
+.driver-vehicle-tracking-form label { min-width:0; }
+.driver-vehicle-tracking-form input { width:100%; min-width:0; box-sizing:border-box; }
+.driver-date-format-note { margin:0; text-align:center; }
+@media (max-width: 640px) {
+  .driver-vehicle-expiry-grid { grid-template-columns:1fr; }
+  .driver-vehicle-expiry-grid > div { display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:10px; }
+  .driver-vehicle-expiry-grid > div span { grid-column:1; }
+  .driver-vehicle-expiry-grid > div strong { grid-column:2; grid-row:1 / span 2; font-size:14px; }
+  .driver-vehicle-expiry-grid > div small { grid-column:1; }
+  .driver-vehicle-tracking-form fieldset { grid-template-columns:1fr; padding:11px; }
+  .driver-vehicle-tracking-form input { font-size:16px; min-height:46px; }
+}
+
+@media (max-width: 560px) {
+  .driver-quick-action.incident,
+  .driver-quick-action.vehicle-tracking {
+    grid-column: auto;
+    min-height: 108px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+
+/* ==== v2.7.10 — GIỮ PHONG CÁCH v2.7.6, TĂNG NHẸ ĐỘ DỄ ĐỌC + NÂNG CẤP MENU ==== */
+/* Không phóng toàn bộ giao diện. Chỉ tăng 1px cho các nhóm chữ nhỏ thường xuyên sử dụng. */
+.topbar p,
+.panel-header p,
+.toolbar-note,
+.form-help,
+.metric-card p,
+.alert-item small,
+.timeline-item p,
+.dispatch-meta,
+.vehicle-subline,
+.vehicle-meta-card span,
+.vehicle-km span,
+.detail-grid span,
+.detail-list span,
+.doc-lines,
+.workspace-list article small,
+.workspace-breakdown span,
+.vehicle-health-card > div span,
+.vehicle-health-card ul,
+.location-updated-label,
+.admin-security-grid small,
+.finance-overview-grid small,
+.director-kpi-grid small {
+  font-size: 13px;
+}
+
+/* Những nhãn vốn 10–11px được tăng nhẹ, không biến thành tiêu đề lớn. */
+.mode-pill,
+.count-pill,
+.status-badge,
+.account-state,
+.role-distribution-grid span,
+.admin-security-grid span,
+.finance-overview-grid span,
+.director-kpi-grid span,
+.vehicle-health-card em,
+.timeline-item small,
+th {
+  font-size: 12px;
+}
+
+.form-error,
+.form-warning,
+.inline-message,
+.empty-state p {
+  font-size: 14px;
+}
+
+/* Khối quản trị trong ảnh: nhãn rõ hơn nhưng số liệu giữ tỷ lệ v2.7.6. */
+.admin-security-grid strong,
+.finance-overview-grid strong,
+.director-kpi-grid strong {
+  font-size: 25px;
+}
+.role-distribution-grid strong { font-size: 23px; }
+.role-distribution-grid span { min-height: 34px; line-height: 1.45; font-weight: 750; }
+
+/* ----- MENU PC: nâng cấp vừa phải, giữ tông sáng của v2.7.6 ----- */
+.app-shell { grid-template-columns: 264px 1fr; }
+.sidebar {
+  width: 264px;
+  padding: 20px 14px;
+  background: linear-gradient(180deg, #f6fbf9 0%, #eaf5f1 100%);
+  border-right: 1px solid #d4e7e1;
+  box-shadow: 8px 0 28px rgba(15, 67, 58, .07);
+}
+
+.brand {
+  padding: 5px 8px 20px;
+}
+.brand .brand-title-copy strong { font-size: 16px; }
+.brand .brand-title-copy span { font-size: 10px; }
+
+.sidebar-controls { padding: 12px 8px 5px; }
+.sidebar-role-pill {
+  min-height: 30px;
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.sidebar-collapse-control {
+  min-height: 46px;
+  border-radius: 14px;
+}
+.sidebar-collapse-control strong { font-size: 14px; }
+
+.side-nav {
+  gap: 7px;
+  margin-top: 17px;
+}
+.side-nav-modern button {
+  position: relative;
+  min-height: 64px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 17px;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.side-nav-modern button:hover {
+  background: #e5f4ef;
+  border-color: #d5ebe4;
+  transform: translateX(1px);
+}
+.side-nav-modern button.active {
+  background: linear-gradient(135deg, #d9f2e9 0%, #cdebe1 100%);
+  border-color: #c7e5dc;
+  box-shadow: 0 8px 20px rgba(14, 112, 91, .08);
+}
+.side-nav-modern button.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: #0e8b70;
+}
+.nav-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+.nav-icon-badge svg { width: 21px; height: 21px; }
+.nav-copy { gap: 3px; }
+.nav-copy strong {
+  color: #153c35;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+.nav-copy small {
+  color: #607a73;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.side-nav button.active .nav-copy strong,
+.side-nav button:hover .nav-copy strong { color: #0e493f; }
+.side-nav button.active .nav-copy small,
+.side-nav button:hover .nav-copy small { color: #4c6f66; }
+
+.sidebar-account { padding: 14px 8px 2px; gap: 10px; }
+.sidebar-user { grid-template-columns: 40px 1fr auto; }
+.user-copy strong { font-size: 14px; }
+.user-copy span { font-size: 12px; }
+.sidebar-logout { min-height: 46px; }
+.sidebar-logout strong { font-size: 14px; }
+
+/* Giữ nguyên chế độ thu gọn 96px đã ổn định ở v2.7.6. */
+.app-shell.sidebar-collapsed { grid-template-columns: 96px 1fr; }
+.app-shell.sidebar-collapsed .sidebar { width: 96px; }
+.app-shell.sidebar-collapsed .side-nav-modern button { transform: none; }
+.app-shell.sidebar-collapsed .side-nav-modern button.active::before { display: none; }
+
+/* Mobile: tăng nhẹ chữ nhỏ, không làm menu đáy cao quá mức. */
+@media (max-width: 920px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed { grid-template-columns: 1fr; }
+  .sidebar { width: min(304px, calc(100vw - 28px)); }
+
+  .app-shell .mobile-topbar-brand .brand-title-copy span { font-size: 10px; }
+  .app-shell .topbar p,
+  .app-shell .panel-header p,
+  .app-shell .toolbar-note { font-size: 13px; }
+  .app-shell .mobile-nav small { font-size: 11px; }
+  .app-shell .notification-item-copy small { font-size: 12px; }
+  .app-shell .notification-item-copy strong { font-size: 14px; }
+}
+
+@media (max-width: 390px) {
+  .app-shell .mobile-nav small { font-size: 10.5px; }
+}
+
+
+/* ==== v2.7.11 MOBILE VIETNAM DATE/TIME PICKER ==== */
+.vietnam-date-control {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.vietnam-date-input-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cadbd7;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color .18s, box-shadow .18s;
+}
+
+.vietnam-date-input-row:focus-within {
+  border-color: var(--primary-2);
+  box-shadow: 0 0 0 3px rgba(22, 122, 110, .12);
+}
+
+.vietnam-date-text-input {
+  min-width: 0;
+  height: 48px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding-right: 8px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+
+.vietnam-native-picker-button {
+  position: relative;
+  min-width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-left: 1px solid #e0ebe8;
+  background: #f3f9f7;
+  color: var(--primary);
+  overflow: hidden;
+}
+
+.vietnam-calendar-icon {
+  font-size: 21px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.vietnam-native-picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.vietnam-date-hint {
+  display: block;
+  color: #667d78;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.vietnam-date-hint b {
+  color: #315b53;
+  font-weight: 850;
+}
+
+@media (max-width: 920px) {
+  .vietnam-date-input-row {
+    grid-template-columns: minmax(0, 1fr) 54px;
+    border-radius: 14px;
+  }
+
+  .vietnam-date-text-input,
+  .vietnam-native-picker-button {
+    height: 52px;
+  }
+
+  .vietnam-date-text-input {
+    font-size: 16px;
+    font-weight: 750;
+  }
+
+  .vietnam-native-picker-button {
+    min-width: 54px;
+    background: #eaf7f3;
+  }
+
+  .vietnam-calendar-icon {
+    font-size: 23px;
+  }
+
+  .vietnam-date-hint {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+
+/* ==== v2.7.12: xem tệp trong trang + nhiều tệp đính kèm ==== */
+.attachment-open-button { display: inline-flex; align-items: center; gap: 7px; }
+.selected-plan-files { margin-top: 8px; padding: 11px; border: 1px solid #d9e9e4; border-radius: 13px; background: #f8fcfb; }
+.selected-plan-files-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.selected-plan-files-head strong { font-size: 13px; color: #173f37; }
+.selected-plan-files-head small { color: #6d817b; font-size: 11px; font-weight: 650; }
+.selected-plan-file-list { display: grid; gap: 7px; }
+.selected-plan-file-list > div { display: grid; grid-template-columns: 28px minmax(0,1fr) 32px; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 10px; background: #fff; border: 1px solid #e4eeeb; }
+.selected-plan-file-list > div > span { font-size: 18px; }
+.selected-plan-file-list > div > div { min-width: 0; display: grid; gap: 2px; }
+.selected-plan-file-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #21463f; }
+.selected-plan-file-list small { color: #7a8c87; font-size: 10px; }
+.selected-plan-file-list button { width: 30px; height: 30px; border: 0; border-radius: 9px; background: #fff0ee; color: #b42318; font-weight: 900; }
+
+.attachment-viewer { display: grid; grid-template-columns: minmax(230px, .34fr) minmax(0, 1fr); gap: 14px; min-height: min(66vh, 650px); }
+.attachment-file-list { display: grid; align-content: start; gap: 7px; padding: 8px; border: 1px solid #deebe7; border-radius: 15px; background: #f6faf9; overflow-y: auto; }
+.attachment-file-list > button { width: 100%; min-width: 0; display: grid; grid-template-columns: 38px minmax(0,1fr); align-items: center; gap: 9px; padding: 10px; border: 1px solid transparent; border-radius: 12px; background: transparent; text-align: left; }
+.attachment-file-list > button:hover { background: #edf7f4; }
+.attachment-file-list > button.active { border-color: #b9dfd4; background: #e7f6f1; box-shadow: 0 6px 16px rgba(13,107,89,.08); }
+.attachment-file-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #fff; font-size: 20px; }
+.attachment-file-copy { min-width: 0; display: grid; gap: 3px; }
+.attachment-file-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #173f37; font-size: 12px; }
+.attachment-file-copy small { color: #70837e; font-size: 10px; line-height: 1.35; }
+.attachment-preview-pane { min-width: 0; display: grid; grid-template-rows: auto minmax(0,1fr); border: 1px solid #dbe9e5; border-radius: 15px; overflow: hidden; background: #f4f8f7; }
+.attachment-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border-bottom: 1px solid #dfeae7; background: #fff; }
+.attachment-preview-head > div { min-width: 0; display: grid; gap: 2px; }
+.attachment-preview-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #173f37; font-size: 13px; }
+.attachment-preview-head small { color: #748781; font-size: 10px; }
+.attachment-image-preview { min-height: 0; display: grid; place-items: center; overflow: auto; padding: 14px; }
+.attachment-image-preview img { max-width: 100%; max-height: 70vh; width: auto; height: auto; border-radius: 10px; box-shadow: 0 10px 30px rgba(18,62,54,.13); }
+.attachment-pdf-preview { width: 100%; min-height: 60vh; height: 100%; border: 0; background: #fff; }
+.attachment-generic-preview { min-height: 420px; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 28px; text-align: center; color: #617770; }
+.attachment-generic-preview > span { font-size: 54px; }
+.attachment-generic-preview h3 { margin: 0; color: #173f37; font-size: 18px; }
+.attachment-generic-preview p { max-width: 520px; margin: 0 0 6px; font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 760px) {
+  .attachment-viewer { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); min-height: 68vh; }
+  .attachment-file-list { display: flex; overflow-x: auto; overflow-y: hidden; padding: 7px; }
+  .attachment-file-list > button { flex: 0 0 210px; }
+  .attachment-pdf-preview { min-height: 52vh; }
+  .attachment-preview-head { align-items: flex-start; }
+  .selected-plan-files-head { align-items: flex-start; flex-direction: column; gap: 2px; }
+}
+
+/* ==== v2.7.13 MULTI FILE + IMAGE INLINE / DOCUMENT NEW TAB ==== */
+.plan-multi-upload-field { gap: 9px; }
+.plan-multi-upload-box {
+  position: relative;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 13px;
+  border: 1.5px dashed #b8d9d1;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #fbfefd 0%, #f3faf8 100%);
+  transition: border-color .18s, background .18s, box-shadow .18s;
+}
+.plan-multi-upload-box:hover,
+.plan-multi-upload-box:focus-within {
+  border-color: #4cae98;
+  background: #f0faf7;
+  box-shadow: 0 0 0 3px rgba(22, 122, 110, .08);
+}
+.plan-multi-upload-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: #e2f5ef;
+  color: #0b705d;
+  font-size: 20px;
+}
+.plan-multi-upload-copy { min-width: 0; display: grid; gap: 3px; }
+.plan-multi-upload-copy strong { color: #173d36; font-size: 14px; }
+.plan-multi-upload-copy small { color: #637b75; font-size: 11px; font-weight: 650; line-height: 1.45; }
+.plan-multi-upload-box input[type="file"] {
+  width: auto;
+  min-width: 205px;
+  max-width: 290px;
+  padding: 8px;
+  border: 0;
+  border-radius: 11px;
+  background: #fff;
+  font-size: 12px;
+}
+.plan-multi-upload-box input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: #0b6e5d;
+  color: #fff;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.attachment-document-link { text-decoration: none; }
+.attachment-file-list > .attachment-file-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+.attachment-file-list > .attachment-file-row:hover { background: #edf7f4; }
+.attachment-file-list > .attachment-file-row.active {
+  border-color: #b9dfd4;
+  background: #e7f6f1;
+  box-shadow: 0 6px 16px rgba(13,107,89,.08);
+}
+.attachment-document-row { cursor: pointer; }
+.attachment-external-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: #fff;
+  color: #0c705d;
+  font-size: 15px;
+  font-weight: 900;
+}
+.attachment-preview-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.attachment-document-preview .primary-button { text-decoration: none; }
+
+@media (max-width: 700px) {
+  .plan-multi-upload-box {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 11px;
+  }
+  .plan-multi-upload-box input[type="file"] {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+  .attachment-file-list > .attachment-file-row { flex: 0 0 225px; }
+  .attachment-preview-head { gap: 8px; }
+  .attachment-preview-actions { width: 100%; justify-content: flex-start; }
+  .attachment-preview-actions > a { flex: 1 1 auto; justify-content: center; text-align: center; }
+}
+
+
+/* ==== v2.7.14 - Trình xem ảnh gọn, ưu tiên nội dung ==== */
+.attachment-simple-viewer {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.attachment-simple-viewer.single-image {
+  display: block;
+}
+
+.attachment-simple-image-stage {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  overflow: auto;
+}
+
+.attachment-simple-image-stage img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(90vh - 145px);
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(18,62,54,.12);
+}
+
+.attachment-simple-viewer.single-image .attachment-simple-image-stage img {
+  max-height: calc(90vh - 130px);
+}
+
+.attachment-thumbnail-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 1px 4px;
+  scrollbar-width: thin;
+}
+
+.attachment-thumbnail-strip button {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 11px;
+  background: #f1f6f5;
+  overflow: hidden;
+}
+
+.attachment-thumbnail-strip button.active {
+  border-color: var(--primary-2);
+  box-shadow: 0 0 0 2px rgba(22,122,110,.10);
+}
+
+.attachment-thumbnail-strip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 7px;
+}
+
+.attachment-document-links {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.attachment-document-links > strong {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.attachment-document-links > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-document-links a,
+.attachment-document-links .unavailable {
+  min-width: min(250px, 100%);
+  flex: 1 1 250px;
+  display: grid;
+  grid-template-columns: 30px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid #dce9e6;
+  border-radius: 12px;
+  background: #f8fbfa;
+  color: var(--text);
+}
+
+.attachment-document-links a:hover {
+  border-color: #bcded5;
+  background: #eef8f5;
+}
+
+.attachment-document-links a > span:nth-child(2),
+.attachment-document-links .unavailable > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.attachment-document-links b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.attachment-document-links small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.attachment-document-links em {
+  font-style: normal;
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.attachment-simple-empty {
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.attachment-simple-empty > span { font-size: 40px; }
+
+@media (max-width: 600px) {
+  .attachment-simple-image-stage img,
+  .attachment-simple-viewer.single-image .attachment-simple-image-stage img {
+    max-height: calc(94vh - 135px);
+    border-radius: 8px;
+  }
+
+  .attachment-thumbnail-strip button {
+    flex-basis: 58px;
+    width: 58px;
+    height: 58px;
+  }
+
+  .attachment-document-links > div {
+    display: grid;
+  }
+}

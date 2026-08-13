@@ -49,6 +49,13 @@ function walk(directory) {
 }
 
 const sourceFiles = walk(path.join(root, 'src')).filter((file) => /\.(ts|tsx)$/.test(file))
+// Không cho tồn tại file JS/JSX cùng tên với TS/TSX vì Vite có thể resolve nhầm bản cũ.
+for (const file of sourceFiles) {
+  const base = file.replace(/\.(ts|tsx)$/, '')
+  for (const shadow of [`${base}.js`, `${base}.jsx`]) {
+    assert(!fs.existsSync(shadow), `Phát hiện file legacy có thể đè source TypeScript: ${path.relative(root, shadow)}`)
+  }
+}
 const importPattern = /(?:from\s+|import\s*\()(['"])(\.[^'"]+)\1/g
 for (const file of sourceFiles) {
   const content = fs.readFileSync(file, 'utf8')

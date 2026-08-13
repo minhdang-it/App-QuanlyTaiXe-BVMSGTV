@@ -53,12 +53,39 @@ export interface Vehicle {
   regular_driver_id?: string | null
   registration_expiry?: string | null
   insurance_expiry?: string | null
+  road_fee_expiry?: string | null
+  last_oil_change_date?: string | null
+  last_oil_change_odometer?: number | null
+  next_oil_change_date?: string | null
+  next_oil_change_odometer?: number | null
   next_maintenance_date?: string | null
   next_maintenance_odometer?: number | null
   fuel_norm_l_per_100km?: number | null
   notes?: string | null
   created_at: string
   updated_at: string
+}
+
+
+export type DriverVehicleTrackingUpdate = Pick<Vehicle,
+  | 'registration_expiry'
+  | 'insurance_expiry'
+  | 'road_fee_expiry'
+  | 'last_oil_change_date'
+  | 'last_oil_change_odometer'
+  | 'next_oil_change_date'
+  | 'next_oil_change_odometer'
+  | 'next_maintenance_date'
+  | 'next_maintenance_odometer'
+>
+
+
+export interface PlanAttachment {
+  path: string
+  url?: string | null
+  name: string
+  mime_type?: string | null
+  size_bytes?: number | null
 }
 
 export interface VehicleRequest {
@@ -76,6 +103,7 @@ export interface VehicleRequest {
   notes?: string | null
   plan_document_url?: string | null
   plan_document_path?: string | null
+  plan_attachments?: PlanAttachment[]
   status: VehicleRequestStatus
   fleet_reviewer_id?: string | null
   fleet_reviewed_at?: string | null
@@ -104,6 +132,7 @@ export interface Trip {
   approved_plan?: boolean
   plan_document_url?: string | null
   plan_document_path?: string | null
+  plan_attachments?: PlanAttachment[]
   vehicle_request_id?: string | null
   fleet_reviewer_id?: string | null
   fleet_reviewed_at?: string | null

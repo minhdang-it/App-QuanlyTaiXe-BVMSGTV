@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { useData } from '../context/DataContext'
+import { useAuth } from '../context/AuthContext'
 import { VEHICLE_STATUS_LABELS } from '../lib/constants'
 import { daysUntil, formatDate } from '../lib/utils'
 import type { Vehicle, VehicleStatus } from '../types/models'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+import { VietnamDateInput } from '../components/VietnamDateInput'
 
 export function VehiclesPage() {
   const { data } = useData()
+  const { user } = useAuth()
+  const canManage = ['dispatcher', 'fleet', 'admin'].includes(user!.profile.role)
   const [selected, setSelected] = useState<Vehicle | null>(null)
   const [creating, setCreating] = useState(false)
   const [assigning, setAssigning] = useState<Vehicle | null>(null)
@@ -19,13 +23,15 @@ export function VehiclesPage() {
         <strong>{data.vehicles.length} xe trong hệ thống</strong>
         <p className="toolbar-note">Theo dõi kilomet, giấy tờ, hình ảnh xe và tình trạng sử dụng trên giao diện tối ưu cho điện thoại.</p>
       </div>
-      <button className="primary-button" onClick={() => setCreating(true)}>＋ THÊM XE</button>
+      {canManage && <button className="primary-button" onClick={() => setCreating(true)}>＋ THÊM XE</button>}
     </section>
 
     {data.vehicles.length ? <section className="vehicle-grid">{data.vehicles.map((vehicle) => {
       const driver = data.profiles.find((p) => p.id === vehicle.regular_driver_id)
       const regDays = daysUntil(vehicle.registration_expiry)
       const insuranceDays = daysUntil(vehicle.insurance_expiry)
+      const roadFeeDays = daysUntil(vehicle.road_fee_expiry)
+      const oilDays = daysUntil(vehicle.next_oil_change_date)
       const fuelNorm = vehicle.fuel_norm_l_per_100km ? `${vehicle.fuel_norm_l_per_100km} L/100km` : '—'
 
       return <article className="vehicle-card" key={vehicle.id} onClick={() => setSelected(vehicle)}>
@@ -64,8 +70,16 @@ export function VehiclesPage() {
               <strong className={regDays !== null && regDays <= 30 ? 'warning-text' : ''}>{formatDate(vehicle.registration_expiry)}</strong>
             </div>
             <div className="vehicle-meta-card">
-              <span>Bảo hiểm</span>
+              <span>Bảo hiểm TNDS</span>
               <strong className={insuranceDays !== null && insuranceDays <= 30 ? 'warning-text' : ''}>{formatDate(vehicle.insurance_expiry)}</strong>
+            </div>
+            <div className="vehicle-meta-card">
+              <span>Phí đường bộ</span>
+              <strong className={roadFeeDays !== null && roadFeeDays <= 30 ? 'warning-text' : ''}>{formatDate(vehicle.road_fee_expiry)}</strong>
+            </div>
+            <div className="vehicle-meta-card">
+              <span>Thay nhớt kế tiếp</span>
+              <strong className={oilDays !== null && oilDays <= 30 ? 'warning-text' : ''}>{formatDate(vehicle.next_oil_change_date)}</strong>
             </div>
           </div>
 
@@ -78,7 +92,7 @@ export function VehiclesPage() {
               </div>
             </div>
             <div className="vehicle-card-actions">
-              <button
+              {canManage && <button
                 type="button"
                 className="vehicle-assign-button"
                 onClick={(event) => {
@@ -87,7 +101,7 @@ export function VehiclesPage() {
                 }}
               >
                 {driver ? 'Đổi tài xế' : 'Gán tài xế'}
-              </button>
+              </button>}
               <span className="vehicle-open-link">Xem hồ sơ →</span>
             </div>
           </div>
@@ -95,7 +109,7 @@ export function VehiclesPage() {
       </article>
     })}</section> : <EmptyState icon="🚘" title="Chưa có hồ sơ xe" />}
 
-    {selected && <VehicleDetail vehicle={selected} onClose={() => setSelected(null)} />}
+    {selected && <VehicleDetail vehicle={selected} canManage={canManage} onClose={() => setSelected(null)} />}
     {creating && <VehicleForm onClose={() => setCreating(false)} />}
     {assigning && <AssignDriverModal vehicle={assigning} onClose={() => setAssigning(null)} />}
   </>
@@ -142,7 +156,7 @@ function AssignDriverModal({ vehicle, onClose }: { vehicle: Vehicle; onClose: ()
   </Modal>
 }
 
-function VehicleDetail({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => void }) {
+function VehicleDetail({ vehicle, canManage, onClose }: { vehicle: Vehicle; canManage: boolean; onClose: () => void }) {
   const { data, updateVehicle } = useData()
   const [editing, setEditing] = useState(false)
   const history = data.trips.filter((t) => t.vehicle_id === vehicle.id && t.status === 'completed')
@@ -174,14 +188,17 @@ function VehicleDetail({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => 
                 <p>{vehicle.plate_number} · {vehicle.vehicle_type} · {vehicle.seats} chỗ</p>
                 <StatusBadge status={vehicle.status} />
               </div>
-              <button className="secondary-button" onClick={() => setEditing(true)}>Chỉnh sửa</button>
+              {canManage && <button className="secondary-button" onClick={() => setEditing(true)}>Chỉnh sửa</button>}
             </div>
 
             <div className="detail-grid">
               <div><span>Kilomet hiện tại</span><strong>{vehicle.odometer.toLocaleString('vi-VN')} km</strong></div>
               <div><span>Định mức nhiên liệu</span><strong>{vehicle.fuel_norm_l_per_100km ?? '—'} L/100km</strong></div>
               <div><span>Đăng kiểm</span><strong>{formatDate(vehicle.registration_expiry)}</strong></div>
-              <div><span>Bảo hiểm</span><strong>{formatDate(vehicle.insurance_expiry)}</strong></div>
+              <div><span>Bảo hiểm TNDS</span><strong>{formatDate(vehicle.insurance_expiry)}</strong></div>
+              <div><span>Phí sử dụng đường bộ</span><strong>{formatDate(vehicle.road_fee_expiry)}</strong></div>
+              <div><span>Thay nhớt gần nhất</span><strong>{formatDate(vehicle.last_oil_change_date)}{vehicle.last_oil_change_odometer ? ` · ${vehicle.last_oil_change_odometer.toLocaleString('vi-VN')} km` : ''}</strong></div>
+              <div><span>Thay nhớt kế tiếp</span><strong>{formatDate(vehicle.next_oil_change_date)}{vehicle.next_oil_change_odometer ? ` · ${vehicle.next_oil_change_odometer.toLocaleString('vi-VN')} km` : ''}</strong></div>
               <div><span>Bảo dưỡng kế tiếp</span><strong>{formatDate(vehicle.next_maintenance_date)}</strong></div>
               <div><span>Mốc KM bảo dưỡng</span><strong>{vehicle.next_maintenance_odometer?.toLocaleString('vi-VN') ?? '—'}</strong></div>
             </div>
@@ -211,7 +228,8 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
   const [form, setForm] = useState({
     plate_number: initial?.plate_number ?? '', vehicle_name: initial?.vehicle_name ?? '', vehicle_type: initial?.vehicle_type ?? 'Xe 7 chỗ', seats: String(initial?.seats ?? 7),
     status: initial?.status ?? 'available' as VehicleStatus, odometer: String(initial?.odometer ?? 0), image_url: initial?.image_url ?? '', regular_driver_id: initial?.regular_driver_id ?? '',
-    registration_expiry: initial?.registration_expiry ?? '', insurance_expiry: initial?.insurance_expiry ?? '', next_maintenance_date: initial?.next_maintenance_date ?? '',
+    registration_expiry: initial?.registration_expiry ?? '', insurance_expiry: initial?.insurance_expiry ?? '', road_fee_expiry: initial?.road_fee_expiry ?? '',
+    last_oil_change_date: initial?.last_oil_change_date ?? '', last_oil_change_odometer: String(initial?.last_oil_change_odometer ?? ''), next_oil_change_date: initial?.next_oil_change_date ?? '', next_oil_change_odometer: String(initial?.next_oil_change_odometer ?? ''), next_maintenance_date: initial?.next_maintenance_date ?? '',
     next_maintenance_odometer: String(initial?.next_maintenance_odometer ?? ''), fuel_norm_l_per_100km: String(initial?.fuel_norm_l_per_100km ?? ''), notes: initial?.notes ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -230,6 +248,11 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
         fuel_norm_l_per_100km: form.fuel_norm_l_per_100km ? Number(form.fuel_norm_l_per_100km) : null,
         registration_expiry: form.registration_expiry || null,
         insurance_expiry: form.insurance_expiry || null,
+        road_fee_expiry: form.road_fee_expiry || null,
+        last_oil_change_date: form.last_oil_change_date || null,
+        last_oil_change_odometer: form.last_oil_change_odometer ? Number(form.last_oil_change_odometer) : null,
+        next_oil_change_date: form.next_oil_change_date || null,
+        next_oil_change_odometer: form.next_oil_change_odometer ? Number(form.next_oil_change_odometer) : null,
         next_maintenance_date: form.next_maintenance_date || null,
       })
     } finally {
@@ -243,9 +266,14 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     <label>Trạng thái<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as VehicleStatus })}>{(Object.keys(VEHICLE_STATUS_LABELS) as VehicleStatus[]).map((key) => <option key={key} value={key}>{VEHICLE_STATUS_LABELS[key]}</option>)}</select></label>
     <label>KM hiện tại<input type="number" min="0" value={form.odometer} onChange={(e) => setForm({ ...form, odometer: e.target.value })} /></label>
     <label>Tài xế thường xuyên<select value={form.regular_driver_id ?? ''} onChange={(e) => setForm({ ...form, regular_driver_id: e.target.value })}><option value="">— Chưa gán tài xế —</option>{drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.full_name} · {driver.phone}</option>)}</select></label>
-    <label>Hạn đăng kiểm<input type="date" value={form.registration_expiry} onChange={(e) => setForm({ ...form, registration_expiry: e.target.value })} /></label>
-    <label>Hạn bảo hiểm<input type="date" value={form.insurance_expiry} onChange={(e) => setForm({ ...form, insurance_expiry: e.target.value })} /></label>
-    <label>Ngày bảo dưỡng kế tiếp<input type="date" value={form.next_maintenance_date} onChange={(e) => setForm({ ...form, next_maintenance_date: e.target.value })} /></label>
+    <label>Hạn đăng kiểm<VietnamDateInput value={form.registration_expiry} onChange={(value) => setForm({ ...form, registration_expiry: value })} /></label>
+    <label>Hạn bảo hiểm TNDS<VietnamDateInput value={form.insurance_expiry} onChange={(value) => setForm({ ...form, insurance_expiry: value })} /></label>
+    <label>Hạn phí sử dụng đường bộ<VietnamDateInput value={form.road_fee_expiry} onChange={(value) => setForm({ ...form, road_fee_expiry: value })} /></label>
+    <label>Ngày thay nhớt gần nhất<VietnamDateInput value={form.last_oil_change_date} onChange={(value) => setForm({ ...form, last_oil_change_date: value })} /></label>
+    <label>KM thay nhớt gần nhất<input type="number" min="0" value={form.last_oil_change_odometer} onChange={(e) => setForm({ ...form, last_oil_change_odometer: e.target.value })} /></label>
+    <label>Ngày thay nhớt kế tiếp<VietnamDateInput value={form.next_oil_change_date} onChange={(value) => setForm({ ...form, next_oil_change_date: value })} /></label>
+    <label>Mốc KM thay nhớt kế tiếp<input type="number" min="0" value={form.next_oil_change_odometer} onChange={(e) => setForm({ ...form, next_oil_change_odometer: e.target.value })} /></label>
+    <label>Ngày bảo dưỡng kế tiếp<VietnamDateInput value={form.next_maintenance_date} onChange={(value) => setForm({ ...form, next_maintenance_date: value })} /></label>
     <label>Mốc KM bảo dưỡng<input type="number" min="0" value={form.next_maintenance_odometer} onChange={(e) => setForm({ ...form, next_maintenance_odometer: e.target.value })} /></label>
     <label>Định mức L/100km<input type="number" min="0" step="0.1" value={form.fuel_norm_l_per_100km} onChange={(e) => setForm({ ...form, fuel_norm_l_per_100km: e.target.value })} /></label>
     <label className="span-2">Ảnh xe (URL)<input value={form.image_url ?? ''} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://.../xe.jpg" /></label>

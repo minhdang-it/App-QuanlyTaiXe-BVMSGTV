@@ -32,6 +32,44 @@ export function formatDate(value: string | null | undefined) {
   }).format(date)
 }
 
+
+export function dateToVietnamInput(value: string | null | undefined) {
+  if (!value) return ''
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return formatDate(value) === '—' ? '' : formatDate(value)
+  return `${match[3]}/${match[2]}/${match[1]}`
+}
+
+export function dateTimeToVietnamInput(value: string | null | undefined) {
+  if (!value) return ''
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!match) return ''
+  return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`
+}
+
+export function vietnamDateToIso(value: string) {
+  const text = value.trim()
+  if (!text) return ''
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!match) return null
+  const day = Number(match[1]); const month = Number(match[2]); const year = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
+  return `${match[3]}-${match[2]}-${match[1]}`
+}
+
+export function vietnamDateTimeToLocalIso(value: string) {
+  const text = value.trim()
+  if (!text) return ''
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const day=Number(match[1]); const month=Number(match[2]); const year=Number(match[3]); const hour=Number(match[4]); const minute=Number(match[5])
+  if (hour > 23 || minute > 59) return null
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
+  return `${match[3]}-${match[2]}-${match[1]}T${match[4]}:${match[5]}`
+}
+
 export function toDateTimeLocal(date: Date) {
   const offset = date.getTimezoneOffset()
   return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16)

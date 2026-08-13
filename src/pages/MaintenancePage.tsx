@@ -5,6 +5,7 @@ import { formatCurrency, formatDate, formatDateTime } from '../lib/utils'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+import { VietnamDateInput } from '../components/VietnamDateInput'
 
 export function MaintenancePage() {
   const { user } = useAuth()
@@ -79,7 +80,7 @@ function MaintenanceModal({ requesterId, onClose }: { requesterId: string; onClo
   }}>
     <label>Xe<select value={form.vehicle_id} onChange={(e) => setForm({ ...form, vehicle_id: e.target.value })}>{data.vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate_number} — {v.vehicle_name}</option>)}</select></label>
     <label>Hạng mục<input value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} required /></label>
-    <label>Ngày dự kiến<input type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} required /></label>
+    <label>Ngày dự kiến<VietnamDateInput value={form.scheduled_date} onChange={(value) => setForm({ ...form, scheduled_date: value })} required /></label>
     <label>Mốc KM<input type="number" min="0" value={form.odometer} onChange={(e) => setForm({ ...form, odometer: e.target.value })} /></label>
     <label>Đơn vị thực hiện<input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} /></label>
     <label>Chi phí dự kiến<input type="number" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} /></label>

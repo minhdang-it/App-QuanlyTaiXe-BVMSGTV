@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_ICONS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDateTime, getSuggestedSecureUrl, googleMapsDirectionsUrl, googleMapsLocationUrl, isTrustedWebContext, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
-import type { ExpenseType, IncidentType, Profile, Severity, Trip, UpdateUserInput } from '../types/models'
+import { daysUntil, formatCurrency, formatDate, formatDateTime, getSuggestedSecureUrl, googleMapsDirectionsUrl, googleMapsLocationUrl, isTrustedWebContext, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
+import type { DriverVehicleTrackingUpdate, ExpenseType, IncidentType, Profile, Severity, Trip, UpdateUserInput, Vehicle } from '../types/models'
 import { Modal } from '../components/Modal'
 import { MediaInput } from '../components/MediaInput'
 import { StatusBadge } from '../components/StatusBadge'
@@ -15,6 +15,7 @@ import { readOdometerFromImage, type OdometerOcrResult } from '../lib/odometerOc
 import { isGeminiOdometerAvailable, readOdometerWithGemini, type GeminiOdometerResult } from '../lib/odometerGemini'
 import { NotificationCenter } from '../components/NotificationCenter'
 import { useNotifications } from '../context/NotificationContext'
+import { VietnamDateInput } from '../components/VietnamDateInput'
 
 const coordinatorPhone = import.meta.env.VITE_COORDINATOR_PHONE || '0900000000'
 const ODOMETER_AUTO_READ_KEY = 'bvmsgtv_odometer_auto_read'
@@ -27,12 +28,12 @@ function getSavedOdometerAutoRead() {
   }
 }
 
-type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | null
+type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | 'vehicleTracking' | null
 type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported'
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword } = useData()
+  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
   const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -360,6 +361,9 @@ export function DriverPage() {
           <button className="driver-quick-action incident" onClick={() => setDialog('incident')} disabled={!vehicle}>
             <span className="driver-quick-icon warning">⚠️</span><span><strong>Báo sự cố</strong><small>Ảnh, ghi âm, vị trí</small></span>
           </button>
+          <button className="driver-quick-action vehicle-tracking" onClick={() => setDialog('vehicleTracking')} disabled={!vehicle}>
+            <span className="driver-quick-icon vehicle">🚘</span><span><strong>Theo dõi xe</strong><small>Giấy tờ & bảo dưỡng</small></span>
+          </button>
         </section>
 
         {currentTrip?.status === 'active' && <a className="maps-launch-button" href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.start_lat != null && currentTrip.start_lng != null ? { lat: currentTrip.start_lat, lng: currentTrip.start_lng } : null)} target="_blank" rel="noreferrer">🗺 TIẾP TỤC DẪN ĐƯỜNG GOOGLE MAPS</a>}
@@ -416,9 +420,84 @@ export function DriverPage() {
       {dialog === 'incident' && vehicle && <IncidentModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, severity, description, file, audio) => guarded(async () => {
         await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_director' }, { file, secondFile: audio })
       }, 'Đã gửi báo cáo sự cố đến điều phối.')} />}
+      {dialog === 'vehicleTracking' && vehicle && <DriverVehicleTrackingModal vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => {
+        await updateDriverVehicleTracking(vehicle.id, values)
+      }, 'Đã cập nhật thông tin theo dõi xe.')} />}
     </main>
   )
 
+}
+
+
+function DriverVehicleTrackingModal({ vehicle, saving, onClose, onSubmit }: {
+  vehicle: Vehicle
+  saving: boolean
+  onClose: () => void
+  onSubmit: (values: DriverVehicleTrackingUpdate) => void
+}) {
+  const [form, setForm] = useState({
+    registration_expiry: vehicle.registration_expiry ?? '',
+    insurance_expiry: vehicle.insurance_expiry ?? '',
+    road_fee_expiry: vehicle.road_fee_expiry ?? '',
+    last_oil_change_date: vehicle.last_oil_change_date ?? '',
+    last_oil_change_odometer: String(vehicle.last_oil_change_odometer ?? ''),
+    next_oil_change_date: vehicle.next_oil_change_date ?? '',
+    next_oil_change_odometer: String(vehicle.next_oil_change_odometer ?? ''),
+    next_maintenance_date: vehicle.next_maintenance_date ?? '',
+    next_maintenance_odometer: String(vehicle.next_maintenance_odometer ?? ''),
+  })
+  const registrationDays = daysUntil(form.registration_expiry)
+  const insuranceDays = daysUntil(form.insurance_expiry)
+  const roadFeeDays = daysUntil(form.road_fee_expiry)
+
+  const dueLabel = (days: number | null) => days == null ? 'Chưa cập nhật' : days < 0 ? `Quá hạn ${Math.abs(days)} ngày` : days === 0 ? 'Hết hạn hôm nay' : `Còn ${days} ngày`
+  const dueClass = (days: number | null) => days != null && days < 0 ? 'danger' : days != null && days <= 30 ? 'warning' : 'ok'
+
+  return <Modal title={`Theo dõi xe ${vehicle.plate_number}`} onClose={onClose} wide>
+    <div className="driver-vehicle-tracking-head">
+      <div><span>🚘</span><div><strong>{vehicle.plate_number}</strong><small>{vehicle.vehicle_name} · {vehicle.odometer.toLocaleString('vi-VN')} km</small></div></div>
+      <p>Tài xế được cập nhật các mốc giấy tờ và kỹ thuật của xe đang phụ trách. Mọi thay đổi đều được lưu lịch sử hệ thống.</p>
+    </div>
+
+    <div className="driver-vehicle-expiry-grid">
+      <div className={dueClass(registrationDays)}><span>Đăng kiểm</span><strong>{formatDate(form.registration_expiry)}</strong><small>{dueLabel(registrationDays)}</small></div>
+      <div className={dueClass(insuranceDays)}><span>Bảo hiểm TNDS</span><strong>{formatDate(form.insurance_expiry)}</strong><small>{dueLabel(insuranceDays)}</small></div>
+      <div className={dueClass(roadFeeDays)}><span>Phí đường bộ</span><strong>{formatDate(form.road_fee_expiry)}</strong><small>{dueLabel(roadFeeDays)}</small></div>
+    </div>
+
+    <form className="driver-vehicle-tracking-form" onSubmit={(event) => {
+      event.preventDefault()
+      onSubmit({
+        registration_expiry: form.registration_expiry || null,
+        insurance_expiry: form.insurance_expiry || null,
+        road_fee_expiry: form.road_fee_expiry || null,
+        last_oil_change_date: form.last_oil_change_date || null,
+        last_oil_change_odometer: form.last_oil_change_odometer ? Number(form.last_oil_change_odometer) : null,
+        next_oil_change_date: form.next_oil_change_date || null,
+        next_oil_change_odometer: form.next_oil_change_odometer ? Number(form.next_oil_change_odometer) : null,
+        next_maintenance_date: form.next_maintenance_date || null,
+        next_maintenance_odometer: form.next_maintenance_odometer ? Number(form.next_maintenance_odometer) : null,
+      })
+    }}>
+      <fieldset><legend>Giấy tờ xe</legend>
+        <label>Hạn bảo hiểm trách nhiệm dân sự<VietnamDateInput value={form.insurance_expiry} onChange={(value) => setForm({ ...form, insurance_expiry: value })} /></label>
+        <label>Hạn đăng kiểm<VietnamDateInput value={form.registration_expiry} onChange={(value) => setForm({ ...form, registration_expiry: value })} /></label>
+        <label>Hạn phí sử dụng đường bộ<VietnamDateInput value={form.road_fee_expiry} onChange={(value) => setForm({ ...form, road_fee_expiry: value })} /></label>
+      </fieldset>
+      <fieldset><legend>Thay nhớt</legend>
+        <label>Lần thay nhớt gần nhất<VietnamDateInput value={form.last_oil_change_date} onChange={(value) => setForm({ ...form, last_oil_change_date: value })} /></label>
+        <label>KM khi thay nhớt<input type="number" min="0" inputMode="numeric" value={form.last_oil_change_odometer} onChange={(e) => setForm({ ...form, last_oil_change_odometer: e.target.value })} /></label>
+        <label>Thay nhớt kế tiếp<VietnamDateInput value={form.next_oil_change_date} onChange={(value) => setForm({ ...form, next_oil_change_date: value })} /></label>
+        <label>Mốc KM thay nhớt kế tiếp<input type="number" min="0" inputMode="numeric" value={form.next_oil_change_odometer} onChange={(e) => setForm({ ...form, next_oil_change_odometer: e.target.value })} /></label>
+      </fieldset>
+      <fieldset><legend>Bảo dưỡng định kỳ</legend>
+        <label>Ngày bảo dưỡng kế tiếp<VietnamDateInput value={form.next_maintenance_date} onChange={(value) => setForm({ ...form, next_maintenance_date: value })} /></label>
+        <label>Mốc KM bảo dưỡng<input type="number" min="0" inputMode="numeric" value={form.next_maintenance_odometer} onChange={(e) => setForm({ ...form, next_maintenance_odometer: e.target.value })} /></label>
+      </fieldset>
+      <div className="form-help driver-date-format-note">Ngày tháng nhập theo định dạng <strong>DD/MM/YYYY</strong>.</div>
+      <button className="primary-button full" disabled={saving}>{saving ? 'ĐANG LƯU...' : 'LƯU THEO DÕI XE'}</button>
+    </form>
+  </Modal>
 }
 
 function DriverPermissionGate({

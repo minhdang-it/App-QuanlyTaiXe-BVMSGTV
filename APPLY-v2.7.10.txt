@@ -1,0 +1,9 @@
+PATCH DỰA TRÊN v2.7.6
+
+Chép toàn bộ nội dung patch vào thư mục gốc project và cho phép ghi đè.
+Sau đó chạy:
+  npm run verify:source
+  npm run check
+  npm run build
+
+Không cần SQL migration. Không cần deploy lại Supabase Edge Function.

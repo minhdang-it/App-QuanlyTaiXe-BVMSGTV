@@ -6,11 +6,13 @@ import type {
   Checklist,
   CreateTripInput,
   CreateVehicleRequestInput,
+  DriverVehicleTrackingUpdate,
   CreateUserInput,
   Expense,
   ExpenseReviewAction,
   Incident,
   Maintenance,
+  PlanAttachment,
   Profile,
   Trip,
   UpdateUserInput,
@@ -42,9 +44,9 @@ export interface BackendApi {
   changeOwnPassword(password: string): Promise<void>
   updateProfile(id: string, changes: Partial<Profile>): Promise<Profile>
   subscribe(onChange: () => void): () => void
-  createVehicleRequest(input: CreateVehicleRequestInput, requesterId: string, planFile?: File | null): Promise<VehicleRequest>
+  createVehicleRequest(input: CreateVehicleRequestInput, requesterId: string, planFiles?: File[]): Promise<VehicleRequest>
   updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
-  createTrip(input: CreateTripInput, creatorId: string, planFile?: File | null): Promise<Trip>
+  createTrip(input: CreateTripInput, creatorId: string, planFiles?: File[]): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
@@ -56,6 +58,7 @@ export interface BackendApi {
   updateIncident(id: string, changes: Partial<Incident>): Promise<Incident>
   createVehicle(input: Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>): Promise<Vehicle>
   updateVehicle(id: string, changes: Partial<Vehicle>): Promise<Vehicle>
+  updateDriverVehicleTracking(id: string, changes: DriverVehicleTrackingUpdate): Promise<Vehicle>
   createMaintenance(input: Omit<Maintenance, 'id' | 'created_at' | 'updated_at'>): Promise<Maintenance>
   updateMaintenance(id: string, changes: Partial<Maintenance>): Promise<Maintenance>
   syncPending(): Promise<number>
@@ -220,11 +223,44 @@ async function uploadMedia(file: Blob, folder: string, fileKey?: string) {
   if (error) {
     const message = error.message || String(error)
     if (/bucket.*not found|not found.*bucket/i.test(message)) throw new Error('Chưa có kho ảnh vehicle-media. Quản trị cần chạy lại supabase/schema.sql.')
-    if (/row-level security|policy|not authorized|permission/i.test(message)) throw new Error('Tài khoản không có quyền tải ảnh. Kiểm tra Storage Policy và tài khoản tài xế.')
-    if (/too large|maximum|payload|size/i.test(message)) throw new Error('Ảnh vượt dung lượng cho phép. Vui lòng chụp lại ở độ phân giải thấp hơn.')
-    throw new Error(`Không tải được ảnh: ${message}`)
+    if (/row-level security|policy|not authorized|permission/i.test(message)) throw new Error('Tài khoản không có quyền tải tệp. Kiểm tra Storage Policy và quyền người dùng.')
+    if (/too large|maximum|payload|size/i.test(message)) throw new Error('Tệp vượt dung lượng cho phép 10 MB. Vui lòng chọn tệp nhỏ hơn.')
+    throw new Error(`Không tải được tệp: ${message}`)
   }
   return path
+}
+
+const MAX_PLAN_FILES = 10
+const MAX_PLAN_FILE_SIZE = 10 * 1024 * 1024
+const MAX_PLAN_TOTAL_SIZE = 50 * 1024 * 1024
+
+function validatePlanFiles(files: File[]) {
+  if (files.length > MAX_PLAN_FILES) throw new Error(`Chỉ được đính kèm tối đa ${MAX_PLAN_FILES} tệp.`)
+  const total = files.reduce((sum, file) => sum + file.size, 0)
+  if (total > MAX_PLAN_TOTAL_SIZE) throw new Error('Tổng dung lượng tệp đính kèm không được vượt quá 50 MB.')
+  const tooLarge = files.find((file) => file.size > MAX_PLAN_FILE_SIZE)
+  if (tooLarge) throw new Error(`Tệp “${tooLarge.name}” vượt quá 10 MB.`)
+}
+
+async function uploadPlanFiles(files: File[], ownerId: string, recordType: 'request' | 'trip', recordId: string): Promise<PlanAttachment[]> {
+  validatePlanFiles(files)
+  const uploaded: PlanAttachment[] = []
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const path = await uploadMedia(file, `${ownerId}/trip-plans`, `${recordType}-${recordId}-${index + 1}`)
+      uploaded.push({ path, name: file.name || `Tệp ${index + 1}`, mime_type: file.type || 'application/octet-stream', size_bytes: file.size })
+    }
+    return uploaded
+  } catch (error) {
+    await Promise.all(uploaded.map((item) => removeStoredMedia(item.path)))
+    throw error
+  }
+}
+
+async function hydratePlanAttachments(items?: PlanAttachment[] | null, fallbackPath?: string | null): Promise<PlanAttachment[]> {
+  const source = items?.length ? items : fallbackPath ? [{ path: fallbackPath, name: 'Văn bản kế hoạch', mime_type: null, size_bytes: null }] : []
+  return await Promise.all(source.map(async (item) => ({ ...item, url: await signMedia(item.path) })))
 }
 
 async function uploadAccountAvatar(file: File, targetUserId: string) {
@@ -258,7 +294,12 @@ async function hydrateData(data: AppData): Promise<AppData> {
   const profiles = await Promise.all(data.profiles.map(hydrateProfile))
   const vehicleRequests = await Promise.all(data.vehicleRequests.map(async (request) => {
     const planPath = request.plan_document_path ?? request.plan_document_url ?? null
-    return { ...request, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+    return {
+      ...request,
+      plan_document_path: planPath,
+      plan_document_url: await signMedia(planPath),
+      plan_attachments: await hydratePlanAttachments(request.plan_attachments, planPath),
+    }
   }))
   const trips = await Promise.all(data.trips.map(async (trip) => {
     const planPath = trip.plan_document_path ?? trip.plan_document_url ?? null
@@ -266,6 +307,7 @@ async function hydrateData(data: AppData): Promise<AppData> {
       ...trip,
       plan_document_path: planPath,
       plan_document_url: await signMedia(planPath),
+      plan_attachments: await hydratePlanAttachments(trip.plan_attachments, planPath),
       start_odometer_image_url: await signMedia(trip.start_odometer_image_url),
       end_odometer_image_url: await signMedia(trip.end_odometer_image_url),
     }
@@ -497,26 +539,34 @@ const supabaseBackend: BackendApi = {
       void client.removeChannel(channel)
     }
   },
-  async createVehicleRequest(input, requesterId, planFile) {
+  async createVehicleRequest(input, requesterId, planFiles = []) {
     if (!navigator.onLine) throw new Error('Cần kết nối mạng để gửi đề nghị điều xe và văn bản kế hoạch.')
     const client = await requireSupabase()
     const id = uid('vehicle-request')
     const now = new Date().toISOString()
-    let planPath: string | null = null
-    if (planFile) planPath = await uploadMedia(planFile, `${requesterId}/trip-plans`, `request-${id}`)
+    const attachments = await uploadPlanFiles(planFiles, requesterId, 'request', id)
+    const planPath = attachments[0]?.path ?? null
     const payload = {
       ...input,
       id,
       requester_id: requesterId,
       plan_document_url: planPath,
+      plan_attachments: attachments,
       status: 'pending_fleet',
     }
     const { data, error } = await client.from('vehicle_requests').insert(payload).select().single()
     if (error) {
-      if (planPath) await removeStoredMedia(planPath)
+      await Promise.all(attachments.map((item) => removeStoredMedia(item.path)))
       throw new Error(getErrorMessage(error, 'Không thể tạo đề nghị điều hành xe.'))
     }
-    return { ...(data as VehicleRequest), plan_document_path: planPath, plan_document_url: await signMedia(planPath), created_at: (data as VehicleRequest).created_at ?? now }
+    const record = data as VehicleRequest
+    return {
+      ...record,
+      plan_document_path: planPath,
+      plan_document_url: await signMedia(planPath),
+      plan_attachments: await hydratePlanAttachments(record.plan_attachments, planPath),
+      created_at: record.created_at ?? now,
+    }
   },
   async updateVehicleRequest(id, changes) {
     if (!navigator.onLine) throw new Error('Cần kết nối mạng để duyệt đề nghị điều xe.')
@@ -526,40 +576,51 @@ const supabaseBackend: BackendApi = {
     if (error) throw error
     const record = data as VehicleRequest
     const planPath = record.plan_document_url ?? null
-    return { ...record, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+    return {
+      ...record,
+      plan_document_path: planPath,
+      plan_document_url: await signMedia(planPath),
+      plan_attachments: await hydratePlanAttachments(record.plan_attachments, planPath),
+    }
   },
-  async createTrip(input, creatorId, planFile) {
+  async createTrip(input, creatorId, planFiles = []) {
     const client = await requireSupabase()
     const now = new Date().toISOString()
     const id = uid('trip')
     const { existing_plan_path, ...tripInput } = input
 
-    // Nếu chuyến được tạo từ đề nghị của Trưởng khoa đã được Hành chính duyệt,
-    // không yêu cầu Hành chính duyệt lần thứ hai. Giữ lại người/thời gian duyệt
-    // từ đề nghị để bảo toàn dấu vết phê duyệt và giao chuyến thẳng cho tài xế.
-    let approvedRequest: {
+    type ApprovedVehicleRequest = {
       status: string
       plan_document_url?: string | null
+      plan_attachments?: PlanAttachment[] | null
       fleet_reviewer_id?: string | null
       fleet_reviewed_at?: string | null
-    } | null = null
+    }
+
+    let approvedRequest: ApprovedVehicleRequest | null = null
     if (input.vehicle_request_id) {
       const { data: requestData, error: requestError } = await client
         .from('vehicle_requests')
-        .select('status, plan_document_url, fleet_reviewer_id, fleet_reviewed_at')
+        .select('status, plan_document_url, plan_attachments, fleet_reviewer_id, fleet_reviewed_at')
         .eq('id', input.vehicle_request_id)
         .single()
       if (requestError) throw requestError
       if (!requestData || requestData.status !== 'fleet_approved') {
         throw new Error('Đề nghị điều xe chưa được Hành chính duyệt hoặc đã được tạo thành chuyến.')
       }
-      approvedRequest = requestData
+      approvedRequest = requestData as ApprovedVehicleRequest
     }
 
-    let planPath = existing_plan_path ?? approvedRequest?.plan_document_url ?? null
-    if (planFile) planPath = await uploadMedia(planFile, `${creatorId}/trip-plans`, `trip-${id}`)
+    const inheritedAttachments = approvedRequest?.plan_attachments?.length
+      ? approvedRequest.plan_attachments
+      : (existing_plan_path ?? approvedRequest?.plan_document_url)
+        ? [{ path: (existing_plan_path ?? approvedRequest?.plan_document_url)!, name: 'Văn bản kế hoạch', mime_type: null, size_bytes: null }]
+        : []
+    const uploadedAttachments = await uploadPlanFiles(planFiles, creatorId, 'trip', id)
+    const attachments = [...(inheritedAttachments ?? []), ...uploadedAttachments]
+    const planPath = attachments[0]?.path ?? existing_plan_path ?? approvedRequest?.plan_document_url ?? null
     const fromApprovedDepartmentRequest = Boolean(input.vehicle_request_id && approvedRequest)
-    const approvedPlan = Boolean(planPath)
+    const approvedPlan = Boolean(planPath || attachments.length)
     const payload = {
       ...tripInput,
       id,
@@ -568,6 +629,7 @@ const supabaseBackend: BackendApi = {
       approval_mode: fromApprovedDepartmentRequest || approvedPlan ? 'fleet_only' : 'director_required',
       approved_plan: approvedPlan,
       plan_document_url: planPath,
+      plan_attachments: attachments.map(({ url: _url, ...item }) => item),
       fleet_reviewer_id: fromApprovedDepartmentRequest ? approvedRequest?.fleet_reviewer_id ?? null : null,
       fleet_reviewed_at: fromApprovedDepartmentRequest ? approvedRequest?.fleet_reviewed_at ?? null : null,
       checklist_completed: false,
@@ -577,9 +639,14 @@ const supabaseBackend: BackendApi = {
       const { data, error } = await client.from('trips').insert(payload).select().single()
       if (error) throw error
       const record = data as Trip
-      return { ...record, plan_document_path: planPath, plan_document_url: await signMedia(planPath) }
+      return {
+        ...record,
+        plan_document_path: planPath,
+        plan_document_url: await signMedia(planPath),
+        plan_attachments: await hydratePlanAttachments(record.plan_attachments, planPath),
+      }
     } catch (error) {
-      if (planFile && planPath) await removeStoredMedia(planPath)
+      await Promise.all(uploadedAttachments.map((item) => removeStoredMedia(item.path)))
       throw error
     }
   },
@@ -737,6 +804,23 @@ const supabaseBackend: BackendApi = {
       if (error) throw error
       return data as Vehicle
     }, optimistic)
+  },
+  async updateDriverVehicleTracking(id, changes) {
+    const client = await requireSupabase()
+    const { data, error } = await client.rpc('driver_update_vehicle_tracking', {
+      p_vehicle_id: id,
+      p_registration_expiry: changes.registration_expiry ?? null,
+      p_insurance_expiry: changes.insurance_expiry ?? null,
+      p_road_fee_expiry: changes.road_fee_expiry ?? null,
+      p_last_oil_change_date: changes.last_oil_change_date ?? null,
+      p_last_oil_change_odometer: changes.last_oil_change_odometer ?? null,
+      p_next_oil_change_date: changes.next_oil_change_date ?? null,
+      p_next_oil_change_odometer: changes.next_oil_change_odometer ?? null,
+      p_next_maintenance_date: changes.next_maintenance_date ?? null,
+      p_next_maintenance_odometer: changes.next_maintenance_odometer ?? null,
+    })
+    if (error) throw error
+    return data as Vehicle
   },
   async createMaintenance(input) {
     const client = await requireSupabase()
