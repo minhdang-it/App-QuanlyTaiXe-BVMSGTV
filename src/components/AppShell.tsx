@@ -274,7 +274,7 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
             </div>
           </div>
           <div className="topbar-actions">
-            <GlobalSearch onNavigate={(target) => handlePageNavigation(target)} />
+            <GlobalSearch onNavigate={(target, recordId) => handlePageNavigation(target, recordId)} />
             <button className="refresh-data-button" onClick={() => void handleRefresh()} disabled={refreshing} aria-label="Làm mới dữ liệu">
               <span aria-hidden="true">↻</span>
               <strong className="refresh-label-full">{refreshing ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</strong>

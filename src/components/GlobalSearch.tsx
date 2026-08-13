@@ -6,7 +6,7 @@ import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constant
 import { formatCurrency, formatDateTime } from '../lib/utils'
 import type { PageKey } from './AppShell'
 
-type SearchResult = { id: string; page: PageKey; icon: string; title: string; detail: string; meta: string }
+type SearchResult = { id: string; recordId: string; page: PageKey; icon: string; title: string; detail: string; meta: string }
 
 const rolePages: Record<string, Set<PageKey>> = {
   department_head: new Set(['requests','account']),
@@ -17,7 +17,7 @@ const rolePages: Record<string, Set<PageKey>> = {
   admin: new Set(['dashboard','requests','dispatch','vehicles','expenses','incidents','maintenance','reports','account','users']),
 }
 
-export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey, recordId?: string) => void }) {
   const { user } = useAuth()
   const { data } = useData()
   const [open, setOpen] = useState(false)
@@ -32,32 +32,32 @@ export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
 
     if (allowed.has('requests')) data.vehicleRequests.filter((item) => user!.profile.role !== 'department_head' || item.requester_id === user!.id).forEach((item) => {
       const requester = data.profiles.find((profile) => profile.id === item.requester_id)
-      if (match(item.pickup,item.destination,item.department,item.contact_name,item.contact_phone,requester?.full_name,PURPOSE_LABELS[item.purpose])) list.push({ id:`request-${item.id}`, page:'requests', icon:'📄', title:`${item.pickup} → ${item.destination}`, detail:`${item.department || requester?.department || 'Đề nghị xe'} · ${PURPOSE_LABELS[item.purpose]}`, meta:formatDateTime(item.scheduled_start) })
+      if (match(item.pickup,item.destination,item.department,item.contact_name,item.contact_phone,requester?.full_name,PURPOSE_LABELS[item.purpose])) list.push({ id:`request-${item.id}`, recordId:item.id, page:'requests', icon:'📄', title:`${item.pickup} → ${item.destination}`, detail:`${item.department || requester?.department || 'Đề nghị xe'} · ${PURPOSE_LABELS[item.purpose]}`, meta:formatDateTime(item.scheduled_start) })
     })
 
     if (allowed.has('dispatch')) data.trips.forEach((item) => {
       const vehicle = data.vehicles.find((v) => v.id === item.vehicle_id)
       const driver = data.profiles.find((p) => p.id === item.driver_id)
-      if (match(item.pickup,item.destination,item.contact_name,item.contact_phone,item.notes,vehicle?.plate_number,vehicle?.vehicle_name,driver?.full_name,PURPOSE_LABELS[item.purpose])) list.push({ id:`trip-${item.id}`, page:'dispatch', icon:'🚐', title:`${vehicle?.plate_number ?? 'Chuyến xe'} · ${item.destination}`, detail:`${driver?.full_name ?? 'Chưa gán tài xế'} · ${PURPOSE_LABELS[item.purpose]}`, meta:formatDateTime(item.scheduled_start) })
+      if (match(item.pickup,item.destination,item.contact_name,item.contact_phone,item.notes,vehicle?.plate_number,vehicle?.vehicle_name,driver?.full_name,PURPOSE_LABELS[item.purpose])) list.push({ id:`trip-${item.id}`, recordId:item.id, page:'dispatch', icon:'🚐', title:`${vehicle?.plate_number ?? 'Chuyến xe'} · ${item.destination}`, detail:`${driver?.full_name ?? 'Chưa gán tài xế'} · ${PURPOSE_LABELS[item.purpose]}`, meta:formatDateTime(item.scheduled_start) })
     })
 
     if (allowed.has('vehicles')) data.vehicles.forEach((item) => {
       const driver = data.profiles.find((profile) => profile.id === item.regular_driver_id)
-      if (match(item.plate_number,item.vehicle_name,item.vehicle_type,driver?.full_name,item.notes)) list.push({ id:`vehicle-${item.id}`, page:'vehicles', icon:'🚘', title:item.plate_number, detail:`${item.vehicle_name} · ${driver?.full_name ?? 'Chưa phân tài xế'}`, meta:`${item.odometer.toLocaleString('vi-VN')} km` })
+      if (match(item.plate_number,item.vehicle_name,item.vehicle_type,driver?.full_name,item.notes)) list.push({ id:`vehicle-${item.id}`, recordId:item.id, page:'vehicles', icon:'🚘', title:item.plate_number, detail:`${item.vehicle_name} · ${driver?.full_name ?? 'Chưa phân tài xế'}`, meta:`${item.odometer.toLocaleString('vi-VN')} km` })
     })
 
     if (allowed.has('expenses')) data.expenses.forEach((item) => {
       const vehicle = data.vehicles.find((v) => v.id === item.vehicle_id)
-      if (match(item.description,item.amount,EXPENSE_LABELS[item.type],vehicle?.plate_number)) list.push({ id:`expense-${item.id}`, page:'expenses', icon:'🧾', title:`${EXPENSE_LABELS[item.type]} · ${formatCurrency(item.amount)}`, detail:`${vehicle?.plate_number ?? 'Chưa rõ xe'} · ${item.description || 'Không có mô tả'}`, meta:formatDateTime(item.created_at) })
+      if (match(item.description,item.amount,EXPENSE_LABELS[item.type],vehicle?.plate_number)) list.push({ id:`expense-${item.id}`, recordId:item.id, page:'expenses', icon:'🧾', title:`${EXPENSE_LABELS[item.type]} · ${formatCurrency(item.amount)}`, detail:`${vehicle?.plate_number ?? 'Chưa rõ xe'} · ${item.description || 'Không có mô tả'}`, meta:formatDateTime(item.created_at) })
     })
 
     if (allowed.has('incidents')) data.incidents.forEach((item) => {
       const vehicle = data.vehicles.find((v) => v.id === item.vehicle_id)
-      if (match(item.description,INCIDENT_LABELS[item.type],vehicle?.plate_number,item.severity)) list.push({ id:`incident-${item.id}`, page:'incidents', icon:'⚠️', title:`${INCIDENT_LABELS[item.type]} · ${vehicle?.plate_number ?? ''}`, detail:item.description || `Mức độ ${item.severity}`, meta:formatDateTime(item.created_at) })
+      if (match(item.description,INCIDENT_LABELS[item.type],vehicle?.plate_number,item.severity)) list.push({ id:`incident-${item.id}`, recordId:item.id, page:'incidents', icon:'⚠️', title:`${INCIDENT_LABELS[item.type]} · ${vehicle?.plate_number ?? ''}`, detail:item.description || `Mức độ ${item.severity}`, meta:formatDateTime(item.created_at) })
     })
 
     if (allowed.has('users')) data.profiles.filter((item) => !item.deleted_at).forEach((item) => {
-      if (match(item.full_name,item.phone,item.department,item.employee_code,item.job_title)) list.push({ id:`user-${item.id}`, page:'users', icon:'👤', title:item.full_name, detail:`${item.department || 'Chưa có bộ phận'} · ${item.phone}`, meta:item.job_title || 'Tài khoản hệ thống' })
+      if (match(item.full_name,item.phone,item.department,item.employee_code,item.job_title)) list.push({ id:`user-${item.id}`, recordId:item.id, page:'users', icon:'👤', title:item.full_name, detail:`${item.department || 'Chưa có bộ phận'} · ${item.phone}`, meta:item.job_title || 'Tài khoản hệ thống' })
     })
 
     return list.slice(0, 30)
@@ -66,7 +66,7 @@ export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
   function openResult(item: SearchResult) {
     setOpen(false)
     setQuery('')
-    onNavigate(item.page)
+    onNavigate(item.page, item.recordId)
   }
 
   return <>

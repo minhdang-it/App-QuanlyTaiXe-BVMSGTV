@@ -9,7 +9,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { VietnamDateInput } from '../components/VietnamDateInput'
 import { mergeSelectedPlanFiles, PlanAttachmentsViewer, SelectedPlanFiles } from '../components/PlanAttachments'
-import { consumeNavigationFocus } from '../lib/focusNavigation'
+import { consumeNavigationFocus, NAVIGATION_FOCUS_EVENT } from '../lib/focusNavigation'
 
 
 function nextDefaultTripDateTime() {
@@ -88,19 +88,33 @@ export function DispatchPage() {
     .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()), [data.vehicleRequests])
 
   useEffect(() => {
+    const applyFocus = (focusId: string) => {
+      const trip = data.trips.find((item) => item.id === focusId)
+      if (trip) {
+        setFilter('all'); setPurpose('all'); setQuery(''); setDateFrom(''); setDateTo(''); setViewMode('list'); setSelectedTrip(trip)
+        return
+      }
+      const request = data.vehicleRequests.find((item) => item.id === focusId && item.status === 'fleet_approved')
+      if (request) {
+        setFocusedRequestId(request.id)
+        window.setTimeout(() => document.getElementById(`approved-request-${request.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+        window.setTimeout(() => setFocusedRequestId((current) => current === request.id ? null : current), 4000)
+      }
+    }
+
     const focusId = consumeNavigationFocus('dispatch')
-    if (!focusId) return
-    const trip = data.trips.find((item) => item.id === focusId)
-    if (trip) {
-      setFilter('all'); setPurpose('all'); setQuery(''); setDateFrom(''); setDateTo(''); setViewMode('list'); setSelectedTrip(trip)
-      return
+    if (focusId) applyFocus(focusId)
+
+    const handleLiveFocus = (event: Event) => {
+      const detail = (event as CustomEvent<{ target?: string; recordId?: string }>).detail
+      if (detail?.target !== 'dispatch' || !detail.recordId) return
+      // Xóa focus đang xếp hàng để không mở lại lần nữa khi trang đổi/remount.
+      const queuedId = consumeNavigationFocus('dispatch')
+      applyFocus(queuedId ?? detail.recordId)
     }
-    const request = data.vehicleRequests.find((item) => item.id === focusId && item.status === 'fleet_approved')
-    if (request) {
-      setFocusedRequestId(request.id)
-      window.setTimeout(() => document.getElementById(`approved-request-${request.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
-      window.setTimeout(() => setFocusedRequestId((current) => current === request.id ? null : current), 4000)
-    }
+
+    window.addEventListener(NAVIGATION_FOCUS_EVENT, handleLiveFocus)
+    return () => window.removeEventListener(NAVIGATION_FOCUS_EVENT, handleLiveFocus)
   }, [data.trips, data.vehicleRequests])
 
   async function cancelTrip(trip: Trip) {

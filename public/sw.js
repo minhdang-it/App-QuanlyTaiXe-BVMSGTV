@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v280-hotfix5'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v281-search-detail'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope

@@ -1,6 +1,7 @@
 export type FocusTarget = 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance'
 
 const FOCUS_KEY = 'msg-car-navigation-focus'
+export const NAVIGATION_FOCUS_EVENT = 'msg-car-navigation-focus-event'
 
 export function queueNavigationFocus(target: FocusTarget, recordId?: string | null) {
   if (!recordId) return
@@ -8,6 +9,14 @@ export function queueNavigationFocus(target: FocusTarget, recordId?: string | nu
     sessionStorage.setItem(FOCUS_KEY, JSON.stringify({ target, recordId, createdAt: Date.now() }))
   } catch {
     // sessionStorage may be unavailable in restricted browser modes.
+  }
+
+  // Nếu người dùng đang đứng ngay trên trang đích (ví dụ đang ở Điều xe và tìm một chuyến),
+  // trang sẽ không bị remount. Phát sự kiện để trang hiện tại mở đúng bản ghi ngay lập tức.
+  try {
+    window.dispatchEvent(new CustomEvent(NAVIGATION_FOCUS_EVENT, { detail: { target, recordId } }))
+  } catch {
+    // CustomEvent có thể không khả dụng ở một số webview rất cũ; sessionStorage vẫn là fallback.
   }
 }
 
