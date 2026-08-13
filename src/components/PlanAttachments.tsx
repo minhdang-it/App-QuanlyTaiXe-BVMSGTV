@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { PlanAttachment } from '../types/models'
 import { Modal } from './Modal'
 
@@ -28,6 +28,132 @@ function fileIcon(item: PlanAttachment) {
   if (['ppt', 'pptx'].includes(ext)) return '📙'
   if (ext === 'txt') return '📄'
   return '📎'
+}
+
+
+
+type Point = { x: number; y: number }
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function ZoomableAttachmentImage({ src, alt }: { src: string; alt: string }) {
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
+  const pointers = useRef(new Map<number, Point>())
+  const dragStart = useRef<{ pointer: Point; offset: Point } | null>(null)
+  const pinchStart = useRef<{ distance: number; scale: number; center: Point; offset: Point } | null>(null)
+
+  function resetZoom() {
+    setScale(1)
+    setOffset({ x: 0, y: 0 })
+    dragStart.current = null
+    pinchStart.current = null
+    pointers.current.clear()
+  }
+
+  function zoomTo(nextScale: number) {
+    const bounded = clamp(nextScale, 1, 4)
+    setScale(bounded)
+    if (bounded === 1) setOffset({ x: 0, y: 0 })
+  }
+
+  function distance(a: Point, b: Point) {
+    return Math.hypot(b.x - a.x, b.y - a.y)
+  }
+
+  function center(a: Point, b: Point): Point {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  }
+
+  function pointerPoint(event: ReactPointerEvent<HTMLDivElement>): Point {
+    return { x: event.clientX, y: event.clientY }
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    pointers.current.set(event.pointerId, pointerPoint(event))
+
+    const active = [...pointers.current.values()]
+    if (active.length === 1 && scale > 1) {
+      dragStart.current = { pointer: active[0], offset }
+    } else if (active.length >= 2) {
+      pinchStart.current = {
+        distance: Math.max(1, distance(active[0], active[1])),
+        scale,
+        center: center(active[0], active[1]),
+        offset,
+      }
+      dragStart.current = null
+    }
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!pointers.current.has(event.pointerId)) return
+    const nextPoint = pointerPoint(event)
+    pointers.current.set(event.pointerId, nextPoint)
+    const active = [...pointers.current.values()]
+
+    if (active.length >= 2 && pinchStart.current) {
+      const start = pinchStart.current
+      const currentDistance = Math.max(1, distance(active[0], active[1]))
+      const nextScale = clamp(start.scale * (currentDistance / start.distance), 1, 4)
+      const currentCenter = center(active[0], active[1])
+      setScale(nextScale)
+      setOffset({
+        x: start.offset.x + (currentCenter.x - start.center.x),
+        y: start.offset.y + (currentCenter.y - start.center.y),
+      })
+      return
+    }
+
+    if (active.length === 1 && scale > 1 && dragStart.current) {
+      const start = dragStart.current
+      setOffset({
+        x: start.offset.x + (nextPoint.x - start.pointer.x),
+        y: start.offset.y + (nextPoint.y - start.pointer.y),
+      })
+    }
+  }
+
+  function handlePointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    pointers.current.delete(event.pointerId)
+    const active = [...pointers.current.values()]
+    if (scale <= 1.02) {
+      setScale(1)
+      setOffset({ x: 0, y: 0 })
+    }
+    if (active.length === 1 && scale > 1) {
+      dragStart.current = { pointer: active[0], offset }
+    } else {
+      dragStart.current = null
+    }
+    pinchStart.current = null
+  }
+
+  return <div
+    className={`attachment-zoom-stage ${scale > 1 ? 'is-zoomed' : ''}`}
+    onPointerDown={handlePointerDown}
+    onPointerMove={handlePointerMove}
+    onPointerUp={handlePointerEnd}
+    onPointerCancel={handlePointerEnd}
+    onDoubleClick={() => scale > 1 ? resetZoom() : zoomTo(2)}
+  >
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})` }}
+    />
+    <div className="attachment-zoom-controls" aria-label="Điều khiển phóng to ảnh">
+      <button type="button" onClick={(event) => { event.stopPropagation(); zoomTo(scale - .5) }} disabled={scale <= 1} aria-label="Thu nhỏ ảnh">−</button>
+      <button type="button" className="zoom-value" onClick={(event) => { event.stopPropagation(); resetZoom() }} aria-label="Khôi phục kích thước ảnh">{Math.round(scale * 100)}%</button>
+      <button type="button" onClick={(event) => { event.stopPropagation(); zoomTo(scale + .5) }} disabled={scale >= 4} aria-label="Phóng to ảnh">＋</button>
+    </div>
+    <small className="attachment-zoom-hint">Chụm 2 ngón để phóng to · kéo ảnh khi đã phóng · bấm 100% để đặt lại</small>
+  </div>
 }
 
 function attachmentUrl(item: PlanAttachment) {
@@ -101,7 +227,7 @@ export function PlanAttachmentsViewer({
     >
       <div className={`attachment-simple-viewer ${files.length === 1 && imageItems.length === 1 ? 'single-image' : ''}`}>
         {activeImage && activeImageUrl && <div className="attachment-simple-image-stage">
-          <img src={activeImageUrl} alt={activeImage.name || 'Ảnh đính kèm'} />
+          <ZoomableAttachmentImage key={`${activeImage.path}-${activeImagePosition}`} src={activeImageUrl} alt={activeImage.name || 'Ảnh đính kèm'} />
         </div>}
 
         {activeImage && !activeImageUrl && <div className="attachment-simple-empty">

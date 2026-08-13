@@ -9339,3 +9339,107 @@ th {
     display: grid;
   }
 }
+
+
+/* ==== v2.7.15 - Mobile image zoom nội bộ, đóng ảnh tự khôi phục ==== */
+.attachment-zoom-stage {
+  position: relative;
+  width: 100%;
+  min-height: min(68vh, 720px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.attachment-zoom-stage img {
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform .14s ease-out;
+}
+
+.attachment-zoom-stage.is-zoomed img {
+  transition: none;
+  cursor: grab;
+}
+
+.attachment-zoom-stage.is-zoomed:active img { cursor: grabbing; }
+
+.attachment-zoom-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid rgba(15,74,64,.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 8px 24px rgba(12,54,48,.14);
+  backdrop-filter: blur(10px);
+}
+
+.attachment-zoom-controls button {
+  min-width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #edf6f3;
+  color: var(--primary);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.attachment-zoom-controls button:disabled { opacity: .38; }
+.attachment-zoom-controls .zoom-value { min-width: 58px; padding: 0 8px; font-size: 12px; }
+
+.attachment-zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 13px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 240px);
+  color: #5f756f;
+  font-size: 11px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.modal-backdrop,
+.modal-card {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 600px) {
+  .attachment-zoom-stage {
+    min-height: calc(100dvh - 150px);
+    max-height: calc(100dvh - 125px);
+  }
+
+  .attachment-zoom-stage img {
+    max-width: 100%;
+    max-height: calc(100dvh - 155px);
+  }
+
+  .attachment-zoom-controls {
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  .attachment-zoom-controls button {
+    min-width: 42px;
+    height: 42px;
+  }
+
+  .attachment-zoom-hint { display: none; }
+
+  /* Khi modal ảnh mở, pinch được xử lý bên trong ảnh thay vì zoom toàn trang. */
+  .modal-backdrop { touch-action: pan-y; }
+  .attachment-simple-image-stage { touch-action: none; }
+}
