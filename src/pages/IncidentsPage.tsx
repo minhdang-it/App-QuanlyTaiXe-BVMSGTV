@@ -1,18 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { INCIDENT_LABELS } from '../lib/constants'
 import { formatDateTime } from '../lib/utils'
 import { StatusBadge } from '../components/StatusBadge'
+import { consumeNavigationFocus } from '../lib/focusNavigation'
 
 export function IncidentsPage() {
   const { user } = useAuth()
   const { data, updateIncident } = useData()
   const [filter, setFilter] = useState<'open' | 'pending_director' | 'handling' | 'resolved' | 'all'>('open')
   const [message, setMessage] = useState<string | null>(null)
+  const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null)
   const role = user!.profile.role
   const canDirectorReview = role === 'director' || role === 'admin'
   const canFleetHandle = role === 'fleet' || role === 'admin'
+
+  useEffect(() => {
+    const focusId = consumeNavigationFocus('incidents')
+    if (!focusId || !data.incidents.some((item) => item.id === focusId)) return
+    setFilter('all')
+    setFocusedIncidentId(focusId)
+    window.setTimeout(() => document.getElementById(`incident-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+    window.setTimeout(() => setFocusedIncidentId((current) => current === focusId ? null : current), 4000)
+  }, [data.incidents])
 
   const incidents = data.incidents.filter((item) => {
     if (filter === 'all') return true
@@ -62,7 +73,7 @@ export function IncidentsPage() {
       const vehicle = data.vehicles.find((v) => v.id === item.vehicle_id)
       const driver = data.profiles.find((p) => p.id === item.driver_id)
       const director = data.profiles.find((p) => p.id === item.director_reviewer_id)
-      return <article className={`incident-card severity-${item.severity}`} key={item.id}>
+      return <article id={`incident-${item.id}`} className={`incident-card severity-${item.severity} ${focusedIncidentId === item.id ? 'record-focus-pulse' : ''}`} key={item.id}>
         <div className="incident-card-head"><span className="severity-chip">{item.severity === 'critical' ? 'KHẨN CẤP' : item.severity === 'high' ? 'NGHIÊM TRỌNG' : item.severity === 'medium' ? 'CẦN KIỂM TRA' : 'NHẸ'}</span><StatusBadge status={item.status} /></div>
         <h2>{INCIDENT_LABELS[item.type]}</h2><p>{item.description || 'Không có mô tả'}</p>
         <div className="incident-info"><span>🚘 {vehicle?.plate_number}</span><span>👤 {driver?.full_name}</span><span>🕒 {formatDateTime(item.created_at)}</span></div>

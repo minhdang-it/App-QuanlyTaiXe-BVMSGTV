@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_LABELS } from '../lib/constants'
@@ -8,6 +8,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ImagePreview } from '../components/ImagePreview'
 import { Modal } from '../components/Modal'
 import type { ExpenseReviewAction, ExpenseStatus } from '../types/models'
+import { consumeNavigationFocus } from '../lib/focusNavigation'
 
 type ExpenseFilter = 'all' | ExpenseStatus
 
@@ -19,6 +20,13 @@ export function ExpensesPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
   const role = user!.profile.role
+
+  useEffect(() => {
+    const focusId = consumeNavigationFocus('expenses')
+    if (!focusId || !data.expenses.some((item) => item.id === focusId)) return
+    setFilter('all')
+    setSelectedExpenseId(focusId)
+  }, [data.expenses])
 
   const expenses = useMemo(
     () => data.expenses.filter((expense) => filter === 'all' || expense.status === filter),

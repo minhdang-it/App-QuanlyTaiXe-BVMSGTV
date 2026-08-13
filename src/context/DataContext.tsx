@@ -25,6 +25,7 @@ interface DataContextValue {
   online: boolean
   pending: number
   refresh(): Promise<void>
+  syncNow(): Promise<number>
   createUser(input: CreateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
   updateUser(input: UpdateUserInput, avatarFile?: File | null): Promise<import('../types/models').Profile>
   deleteUser(id: string): Promise<void>
@@ -125,6 +126,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return result
   }, [refresh])
 
+  const syncNow = useCallback(async () => {
+    const nextPending = await backend.syncPending()
+    setPending(nextPending)
+    await refresh()
+    return nextPending
+  }, [refresh])
+
   const updateTripLocation = useCallback(async (id: string, lat: number, lng: number) => {
     const updated = await backend.updateTripLocation(id, lat, lng)
     setData((current) => ({
@@ -141,6 +149,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     online,
     pending,
     refresh,
+    syncNow,
     createUser: (input, avatarFile) => run(() => backend.createUser(input, avatarFile)),
     updateUser: (input, avatarFile) => run(() => backend.updateUser(input, avatarFile)),
     deleteUser: (id) => run(() => backend.deleteUser(id)),
@@ -163,7 +172,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateDriverVehicleTracking: (id, changes) => run(() => backend.updateDriverVehicleTracking(id, changes)),
     createMaintenance: (input) => run(() => backend.createMaintenance(input)),
     updateMaintenance: (id, changes) => run(() => backend.updateMaintenance(id, changes)),
-  }), [data, error, loading, online, pending, refresh, run, updateTripLocation, user])
+  }), [data, error, loading, online, pending, refresh, run, syncNow, updateTripLocation, user])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

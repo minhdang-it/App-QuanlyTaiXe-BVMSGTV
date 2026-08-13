@@ -8,6 +8,9 @@ import { EmptyState } from '../components/EmptyState'
 import { Modal } from '../components/Modal'
 import { TripDetailModal } from './DispatchPage'
 import { ImagePreview } from '../components/ImagePreview'
+import { ActionCenter } from '../components/ActionCenter'
+import { detectOperationalInsights } from '../lib/operationalInsights'
+import type { PageKey } from '../components/AppShell'
 import type { AppData, Expense, Incident, Trip, UserRole } from '../types/models'
 
 type OfficeRole = Exclude<UserRole, 'driver'>
@@ -31,7 +34,7 @@ function localizedExpenseDescription(item: Expense) {
   return englishLabels[normalized] ?? description
 }
 
-export function DashboardPage() {
+export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
   const { data } = useData()
   const { user } = useAuth()
   const role = (user?.profile.role ?? 'dispatcher') as OfficeRole
@@ -91,8 +94,23 @@ export function DashboardPage() {
     ...data.expenses.map((item) => ({ kind: 'expense' as const, item, time: item.created_at })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 6), [data.expenses, data.incidents])
 
+  const operationalInsights = useMemo(() => detectOperationalInsights(data).slice(0, 8), [data])
+  const todayPending = todayTrips.filter((trip) => ['pending_fleet','pending_director','assigned','accepted','ready'].includes(trip.status)).length
+
   return (
     <div className="dashboard-grid executive-dashboard-grid">
+
+      <section className="mobile-today-hero">
+        <div><span>HÔM NAY</span><h2>{new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</h2><p>Tình hình điều hành nhanh trên điện thoại</p></div>
+        <div className="mobile-today-stats">
+          <article><span>🚐</span><strong>{todayTrips.length}</strong><small>Chuyến</small></article>
+          <article><span>🟢</span><strong>{activeTrips.length}</strong><small>Đang chạy</small></article>
+          <article><span>🕒</span><strong>{todayPending}</strong><small>Chờ xử lý</small></article>
+          <article><span>⚠️</span><strong>{operationalInsights.length}</strong><small>Cảnh báo</small></article>
+        </div>
+      </section>
+
+      <ActionCenter onNavigate={onNavigate} />
 
       <section className="metric-grid compact-metric-grid">
         <Metric icon="🚘" label="Tổng số xe" value={metrics.totalVehicles} />
@@ -117,6 +135,13 @@ export function DashboardPage() {
       </section>
 
       <LiveTrackingPanel data={data} trips={activeTrips} />
+
+      <section className="panel insight-panel modern-panel-span-2">
+        <div className="panel-header"><div><h2>Kiểm tra dữ liệu & vận hành</h2><p>Tự phát hiện các dữ liệu thiếu, quá hạn hoặc bất thường cần kiểm tra.</p></div><span className={`count-pill ${operationalInsights.some((item) => item.level === 'danger') ? 'danger' : ''}`}>{operationalInsights.length} mục</span></div>
+        {operationalInsights.length ? <div className="operational-insight-list">{operationalInsights.map((item) => <button type="button" key={item.id} className={`operational-insight-item ${item.level}`} onClick={() => onNavigate(item.entity === 'vehicle' ? 'vehicles' : item.entity === 'expense' ? 'expenses' : 'dispatch')}>
+          <span>{item.level === 'danger' ? '!' : item.level === 'warning' ? '⚠' : 'i'}</span><div><strong>{item.title}</strong><small>{item.detail}</small></div><i>›</i>
+        </button>)}</div> : <EmptyState icon="✅" title="Dữ liệu vận hành đang ổn" description="Chưa phát hiện vấn đề cần kiểm tra." />}
+      </section>
 
       <section className="panel alert-panel">
         <div className="panel-header"><div><h2>Cảnh báo cần chú ý</h2><p>Giấy tờ, bảo dưỡng, sự cố và chậm chuyến</p></div></div>
@@ -266,6 +291,11 @@ function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metr
   const monthExpense = data.expenses.filter((item) => new Date(item.expense_date).getTime() >= monthStart.getTime() && (item.status === 'approved' || item.status === 'paid')).reduce((sum, item) => sum + item.amount, 0)
   const urgent = data.incidents.filter((item) => !['resolved', 'rejected'].includes(item.status) && ['high', 'critical'].includes(item.severity)).length
   const readiness = metrics.totalVehicles ? Math.round((metrics.available / metrics.totalVehicles) * 100) : 0
+  const monthTrips = data.trips.filter((item) => new Date(item.scheduled_start).getTime() >= monthStart.getTime() && item.status !== 'cancelled')
+  const monthKm = monthTrips.reduce((sum, item) => sum + (item.start_odometer != null && item.end_odometer != null && item.end_odometer >= item.start_odometer ? item.end_odometer - item.start_odometer : 0), 0)
+  const costPerKm = monthKm > 0 ? monthExpense / monthKm : 0
+  const vehicleUse = data.vehicles.map((vehicle) => ({ vehicle, trips: monthTrips.filter((trip) => trip.vehicle_id === vehicle.id).length })).sort((a,b) => b.trips - a.trips)[0]
+  const openIncidents = data.incidents.filter((item) => !['resolved','rejected'].includes(item.status)).length
   return <section className="role-workspace role-workspace-director">
     <div className="role-workspace-heading"><div><span>TRUNG TÂM QUYẾT ĐỊNH</span><h3>Tổng hợp điều hành dành cho lãnh đạo</h3><p>Các con số quan trọng được cô đọng để cập nhật và ra quyết định nhanh.</p></div><strong>Cập nhật tức thời</strong></div>
     <div className="director-kpi-grid">
@@ -273,6 +303,12 @@ function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metr
       <article><span>Mức sẵn sàng</span><strong>{readiness}%</strong><small>{metrics.available} xe có thể điều ngay</small></article>
       <article><span>Chi phí tháng</span><strong>{formatCurrency(monthExpense)}</strong><small>Không tính khoản bị từ chối</small></article>
       <article className={urgent ? 'urgent' : ''}><span>Cảnh báo nghiêm trọng</span><strong>{urgent}</strong><small>Sự cố cần chỉ đạo</small></article>
+    </div>
+    <div className="director-brief-grid">
+      <article><span>Chuyến trong tháng</span><strong>{monthTrips.length}</strong><small>{monthKm.toLocaleString('vi-VN')} km đã đối soát</small></article>
+      <article><span>Chi phí / km</span><strong>{monthKm ? formatCurrency(costPerKm) : '—'}</strong><small>Tính trên KM đã có đủ đầu/cuối</small></article>
+      <article><span>Xe sử dụng nhiều</span><strong>{vehicleUse?.vehicle.plate_number ?? '—'}</strong><small>{vehicleUse?.trips ?? 0} chuyến trong tháng</small></article>
+      <article className={openIncidents ? 'warning' : ''}><span>Sự cố đang mở</span><strong>{openIncidents}</strong><small>Cần theo dõi đến khi hoàn tất</small></article>
     </div>
   </section>
 }

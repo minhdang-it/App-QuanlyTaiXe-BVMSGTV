@@ -67,10 +67,10 @@ function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKe
 
   if (loading) return <Loading label="Đang tải dữ liệu đội xe..." />
   if (role === 'driver') return <DriverPage />
-  return <AppShell page={safePage} onPage={setPage}><Page page={safePage} /></AppShell>
+  return <AppShell page={safePage} onPage={setPage}><Page page={safePage} onPage={setPage} /></AppShell>
 }
 
-function Page({ page }: { page: PageKey }) {
+function Page({ page, onPage }: { page: PageKey; onPage: (page: PageKey) => void }) {
   switch (page) {
     case 'requests': return <RequestsPage />
     case 'dispatch': return <DispatchPage />
@@ -81,6 +81,6 @@ function Page({ page }: { page: PageKey }) {
     case 'reports': return <ReportsPage />
     case 'account': return <AccountPage />
     case 'users': return <UsersPage />
-    default: return <DashboardPage />
+    default: return <DashboardPage onNavigate={onPage} />
   }
 }

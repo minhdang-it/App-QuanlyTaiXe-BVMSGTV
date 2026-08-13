@@ -22,7 +22,7 @@ function relativeTime(value: string) {
   return `${days} ngày trước`
 }
 
-export function NotificationCenter({ onNavigate, compact = false }: { onNavigate?: (target: NotificationTarget) => void; compact?: boolean }) {
+export function NotificationCenter({ onNavigate, compact = false }: { onNavigate?: (target: NotificationTarget, recordId?: string) => void; compact?: boolean }) {
   const {
     notifications,
     unreadCount,
@@ -54,7 +54,7 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
   function openItem(item: AppNotification) {
     markRead(item.id)
     setOpen(false)
-    if (item.target) onNavigate?.(item.target)
+    if (item.target) onNavigate?.(item.target, item.recordId)
   }
 
   return <>

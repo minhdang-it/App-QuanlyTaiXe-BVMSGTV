@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2715'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v280-hotfix5'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope
@@ -46,4 +46,30 @@ self.addEventListener('fetch', (event) => {
         return Response.error()
       }),
   )
+})
+
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const data = event.notification.data || {}
+  const paths = {
+    dashboard: 'tong-quan',
+    requests: 'de-nghi-xe',
+    dispatch: 'dieu-xe',
+    expenses: 'chi-phi',
+    incidents: 'su-co',
+    maintenance: 'bao-duong',
+  }
+  const path = paths[data.target] || 'tong-quan'
+  const url = new URL(path, self.registration.scope)
+  if (data.recordId) url.searchParams.set('focus', data.recordId)
+
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
+    const existing = clients.find((client) => new URL(client.url).origin === url.origin)
+    if (existing && 'navigate' in existing) {
+      await existing.navigate(url.href)
+      return existing.focus()
+    }
+    return self.clients.openWindow(url.href)
+  }))
 })

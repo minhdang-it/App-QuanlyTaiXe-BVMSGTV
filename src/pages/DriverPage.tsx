@@ -16,6 +16,7 @@ import { isGeminiOdometerAvailable, readOdometerWithGemini, type GeminiOdometerR
 import { NotificationCenter } from '../components/NotificationCenter'
 import { useNotifications } from '../context/NotificationContext'
 import { VietnamDateInput } from '../components/VietnamDateInput'
+import { hasBlockingVehicleIssue, vehicleReadinessIssues } from '../lib/operationalInsights'
 
 const coordinatorPhone = import.meta.env.VITE_COORDINATOR_PHONE || '0900000000'
 const ODOMETER_AUTO_READ_KEY = 'bvmsgtv_odometer_auto_read'
@@ -33,7 +34,7 @@ type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | '
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
+  const { data, loading, online, pending, syncNow, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
   const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -130,6 +131,8 @@ export function DriverPage() {
   const currentTrip = trips.find((trip) => ['assigned', 'accepted', 'ready', 'active'].includes(trip.status)) ?? null
   const todayCompleted = trips.filter((trip) => trip.status === 'completed' && todayKey(new Date(trip.ended_at ?? trip.updated_at)) === todayKey())
   const vehicle = data.vehicles.find((item) => item.id === currentTrip?.vehicle_id) ?? data.vehicles.find((item) => item.regular_driver_id === user!.id) ?? null
+  const readinessIssues = useMemo(() => vehicleReadinessIssues(vehicle), [vehicle])
+  const blockingVehicleIssue = useMemo(() => hasBlockingVehicleIssue(vehicle), [vehicle])
 
   useEffect(() => {
     if (!driverSetupReady || !currentTrip || currentTrip.status !== 'assigned' || !('serviceWorker' in navigator)) return
@@ -270,7 +273,10 @@ export function DriverPage() {
     if (!currentTrip.checklist_completed) return setDialog('checklist')
     if (currentTrip.status === 'accepted' && currentTrip.checklist_completed) return setMessage('Checklist có mục Không. Vui lòng chờ điều phối xác nhận trước khi xuất phát.')
     if (currentTrip.start_odometer == null) return setDialog('odometer')
-    if (currentTrip.status !== 'active') return setDialog('startTrip')
+    if (currentTrip.status !== 'active') {
+      if (blockingVehicleIssue) setMessage('Xe có cảnh báo nghiêm trọng về trạng thái, đăng kiểm hoặc bảo hiểm. Vui lòng kiểm tra trước khi xuất phát.')
+      return setDialog('startTrip')
+    }
     if (currentTrip.end_odometer == null) return setDialog('odometer')
     await guarded(async () => { await updateTrip(currentTrip.id, { status: 'completed', ended_at: new Date().toISOString() }) }, 'Chuyến đi đã hoàn thành.')
   }
@@ -287,7 +293,7 @@ export function DriverPage() {
   }
 
   return (
-    <main className="driver-app driver-app-modern">
+    <main className={`driver-app driver-app-modern ${currentTrip?.status === 'active' ? 'driver-active-mode' : ''}`}>
       <NetworkBanner />
       <header className="driver-header driver-header-modern">
         <BrandLogo className="driver-brand" compact />
@@ -328,6 +334,22 @@ export function DriverPage() {
 
         {message && <button type="button" className="driver-toast" onClick={() => setMessage(null)}><span>{message}</span><strong>✕</strong></button>}
 
+        {(!online || pending > 0) && <section className={`driver-sync-card ${online ? 'pending' : 'offline'}`}>
+          <span>{online ? '↻' : '☁'}</span>
+          <div><strong>{online ? `${pending} thao tác chờ đồng bộ` : 'Đang làm việc ngoại tuyến'}</strong><small>{online ? 'Dữ liệu đã lưu tạm trên máy và sẵn sàng gửi lên server.' : 'KM, chi phí và sự cố sẽ được lưu tạm, tự đồng bộ khi có mạng.'}</small></div>
+          {online && pending > 0 && <button type="button" onClick={() => void syncNow()}>ĐỒNG BỘ</button>}
+        </section>}
+
+        {currentTrip && <section className="driver-trip-progress">
+          <div className={currentTrip.status === 'assigned' ? 'current' : 'done'}><span>1</span><small>Nhận chuyến</small></div>
+          <i />
+          <div className={['accepted','ready'].includes(currentTrip.status) ? 'current' : ['active','completed'].includes(currentTrip.status) ? 'done' : ''}><span>2</span><small>Chuẩn bị</small></div>
+          <i />
+          <div className={currentTrip.status === 'active' ? 'current' : currentTrip.status === 'completed' ? 'done' : ''}><span>3</span><small>Đang chạy</small></div>
+          <i />
+          <div className={currentTrip.status === 'completed' ? 'done' : ''}><span>4</span><small>Hoàn tất</small></div>
+        </section>}
+
         {loading ? <div className="driver-trip-card skeleton-card" /> : currentTrip ? (
           <article className="driver-trip-card driver-trip-card-modern" onClick={() => setDialog('trip')}>
             <div className="trip-card-top"><span>CHUYẾN ĐANG PHỤ TRÁCH</span><StatusBadge status={currentTrip.status} /></div>
@@ -343,6 +365,16 @@ export function DriverPage() {
             <div className="trip-meta"><span>🕒 {formatDateTime(currentTrip.scheduled_start)}</span><span>🏥 {PURPOSE_LABELS[currentTrip.purpose]}</span><span>Xem chi tiết →</span></div>
           </article>
         ) : <EmptyState icon="🚐" title="Chưa có chuyến được giao" description="Khi điều phối tạo chuyến, thông tin sẽ xuất hiện tại đây." />}
+
+        {currentTrip && vehicle && currentTrip.status !== 'completed' && <section className={`driver-readiness-card ${blockingVehicleIssue ? 'blocked' : readinessIssues.length ? 'warning' : 'ready'}`}>
+          <div className="driver-readiness-head"><span>{blockingVehicleIssue ? '!' : readinessIssues.length ? '⚠' : '✓'}</span><div><strong>{blockingVehicleIssue ? 'Xe chưa đủ điều kiện xuất phát' : readinessIssues.length ? 'Có cảnh báo cần lưu ý' : 'Xe sẵn sàng cho chuyến đi'}</strong><small>{vehicle.plate_number} · kiểm tra giấy tờ và bảo dưỡng tự động</small></div></div>
+          {readinessIssues.length > 0 && <div className="driver-readiness-list">{readinessIssues.slice(0,4).map((item) => <div key={item.id} className={item.level}><strong>{item.title}</strong><small>{item.detail}</small></div>)}</div>}
+        </section>}
+
+        {currentTrip?.status === 'active' && <section className="driver-driving-focus">
+          <span className="driver-section-label">CHẾ ĐỘ ĐANG CHẠY</span><h2>{currentTrip.destination}</h2><p>{vehicle?.plate_number} · GPS đang cập nhật vị trí cho bộ phận theo dõi.</p>
+          <div><a href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.current_lat != null && currentTrip.current_lng != null ? { lat: currentTrip.current_lat, lng: currentTrip.current_lng } : null)} target="_blank" rel="noreferrer">🗺 MỞ BẢN ĐỒ</a><button type="button" onClick={() => setDialog('incident')}>⚠ BÁO SỰ CỐ</button></div>
+        </section>}
 
         <button className="driver-primary-journey" onClick={() => void primaryTripAction()} disabled={saving || !currentTrip}>
           <span className="driver-primary-icon">▶</span>
@@ -408,7 +440,7 @@ export function DriverPage() {
       />}
       {dialog === 'trip' && currentTrip && <TripDetailModal trip={currentTrip} vehicleName={`${vehicle?.plate_number ?? ''} ${vehicle?.vehicle_name ?? ''}`} onClose={() => setDialog(null)} />}
       {dialog === 'checklist' && currentTrip && <ChecklistModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => { await createChecklist({ ...values, trip_id: currentTrip.id, driver_id: user!.id }) }, 'Checklist đã được ghi nhận.')} />}
-      {dialog === 'startTrip' && currentTrip && <StartTripModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={startTrip} />}
+      {dialog === 'startTrip' && currentTrip && <StartTripModal trip={currentTrip} vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={startTrip} />}
       {dialog === 'odometer' && currentTrip && <OdometerModal trip={currentTrip} vehicleOdometer={vehicle?.odometer ?? 0} saving={saving} onClose={() => setDialog(null)} onSubmit={(phase, odometer, file) => guarded(async () => {
         if (phase === 'start' && odometer < (vehicle?.odometer ?? 0) - 10) throw new Error('Kilomet đầu nhỏ bất thường so với hồ sơ xe.')
         if (phase === 'end' && odometer < (currentTrip.start_odometer ?? 0)) throw new Error('Kilomet cuối không được nhỏ hơn kilomet đầu.')
@@ -681,11 +713,13 @@ function TripDetailModal({ trip, vehicleName, onClose }: { trip: Trip; vehicleNa
   return <Modal title="Chi tiết chuyến" onClose={onClose}><div className="detail-list"><div><span>Xe</span><strong>{vehicleName}</strong></div><div><span>Xuất phát</span><strong>{formatDateTime(trip.scheduled_start)}</strong></div><div><span>Dự kiến về</span><strong>{formatDateTime(trip.expected_end)}</strong></div><div><span>Điểm đón</span><strong>{trip.pickup}</strong></div><div><span>Điểm đến</span><strong>{trip.destination}</strong></div><div><span>Người liên hệ</span><strong>{trip.contact_name || '—'}</strong></div><div><span>Số điện thoại</span><strong>{trip.contact_phone ? <a href={`tel:${trip.contact_phone}`}>{trip.contact_phone}</a> : '—'}</strong></div><div><span>Loại chuyến</span><strong>{PURPOSE_LABELS[trip.purpose]}</strong></div><div><span>Ghi chú</span><strong>{trip.notes || '—'}</strong></div></div><a className="maps-launch-button" href={googleMapsDirectionsUrl(trip.destination, origin)} target="_blank" rel="noreferrer">🗺 MỞ TUYẾN ĐƯỜNG GOOGLE MAPS</a></Modal>
 }
 
-function StartTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; saving: boolean; onClose: () => void; onSubmit: (location: ConfirmedLocation) => Promise<void> }) {
+function StartTripModal({ trip, vehicle, saving, onClose, onSubmit }: { trip: Trip; vehicle: Vehicle | null; saving: boolean; onClose: () => void; onSubmit: (location: ConfirmedLocation) => Promise<void> }) {
   const [location, setLocation] = useState<ConfirmedLocation | null>(null)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
+  const readinessIssues = vehicleReadinessIssues(vehicle)
+  const blocked = hasBlockingVehicleIssue(vehicle)
 
   async function locate() {
     setLocating(true)
@@ -731,12 +765,18 @@ function StartTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; savin
       {!isTrustedWebContext() && <button type="button" className="secure-open-button" onClick={() => window.location.assign(getSuggestedSecureUrl())}>MỞ ĐỊA CHỈ HTTPS</button>}
     </div>
 
+    <section className={`start-readiness-check ${blocked ? 'blocked' : readinessIssues.length ? 'warning' : 'ready'}`}>
+      <div className="start-readiness-title"><span>{blocked ? '!' : readinessIssues.length ? '⚠' : '✓'}</span><div><strong>{blocked ? 'Chưa thể xuất phát' : readinessIssues.length ? 'Kiểm tra cảnh báo trước khi đi' : 'Xe đủ điều kiện xuất phát'}</strong><small>{vehicle?.plate_number ?? 'Chưa rõ xe'}</small></div></div>
+      {readinessIssues.length > 0 && <div className="start-readiness-items">{readinessIssues.map((item) => <div key={item.id} className={item.level}><strong>{item.title}</strong><small>{item.detail}</small></div>)}</div>}
+      {blocked && <div className="form-error">Cần Hành chính/Điều phối xử lý cảnh báo nghiêm trọng trước khi tài xế bắt đầu chuyến.</div>}
+    </section>
+
     <label className="confirmation-check">
       <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
       <span>Tôi xác nhận đang ở điểm đón <strong>{trip.pickup}</strong> và đồng ý bắt đầu chuyến.</span>
     </label>
 
-    <button className="primary-button full start-navigation-button" disabled={saving || locating || !location || !confirmed} onClick={() => location && void onSubmit(location)}>
+    <button className="primary-button full start-navigation-button" disabled={saving || locating || !location || !confirmed || blocked} onClick={() => location && void onSubmit(location)}>
       {saving ? 'ĐANG BẮT ĐẦU CHUYẾN...' : 'BẮT ĐẦU & MỞ GOOGLE MAPS'}
     </button>
   </Modal>

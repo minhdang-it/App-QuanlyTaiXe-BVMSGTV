@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { formatCurrency, formatDate, formatDateTime } from '../lib/utils'
@@ -6,15 +6,25 @@ import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { VietnamDateInput } from '../components/VietnamDateInput'
+import { consumeNavigationFocus } from '../lib/focusNavigation'
 
 export function MaintenancePage() {
   const { user } = useAuth()
   const { data, updateMaintenance } = useData()
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [focusedMaintenanceId, setFocusedMaintenanceId] = useState<string | null>(null)
   const role = user!.profile.role
   const canCreateOrExecute = role === 'fleet' || role === 'admin'
   const canDirectorReview = role === 'director' || role === 'admin'
+
+  useEffect(() => {
+    const focusId = consumeNavigationFocus('maintenance')
+    if (!focusId || !data.maintenances.some((item) => item.id === focusId)) return
+    setFocusedMaintenanceId(focusId)
+    window.setTimeout(() => document.getElementById(`maintenance-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+    window.setTimeout(() => setFocusedMaintenanceId((current) => current === focusId ? null : current), 4000)
+  }, [data.maintenances])
 
   async function approve(id: string) {
     try {
@@ -49,7 +59,7 @@ export function MaintenancePage() {
     <section className="panel">{data.maintenances.length ? <div className="table-wrap"><table><thead><tr><th>Xe</th><th>Nội dung</th><th>Lịch thực hiện</th><th>KM</th><th>Chi phí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{data.maintenances.map((item) => {
       const vehicle = data.vehicles.find((v) => v.id === item.vehicle_id)
       const director = data.profiles.find((profile) => profile.id === item.director_reviewer_id)
-      return <tr key={item.id}>
+      return <tr id={`maintenance-${item.id}`} className={focusedMaintenanceId === item.id ? 'record-focus-pulse' : ''} key={item.id}>
         <td><strong>{vehicle?.plate_number}</strong><small>{vehicle?.vehicle_name}</small></td>
         <td><strong>{item.type}</strong><small>{item.description}</small>{item.rejection_reason && <small className="danger-text">Lý do: {item.rejection_reason}</small>}</td>
         <td>{formatDate(item.scheduled_date)}{item.director_reviewed_at && <small>BGĐ: {formatDateTime(item.director_reviewed_at)}{director ? ` · ${director.full_name}` : ''}</small>}</td>

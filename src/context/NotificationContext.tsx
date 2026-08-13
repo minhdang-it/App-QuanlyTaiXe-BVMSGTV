@@ -17,6 +17,7 @@ export interface AppNotification {
   createdAt: string
   read: boolean
   target?: NotificationTarget
+  recordId?: string
 }
 
 interface NotificationContextValue {
@@ -138,17 +139,17 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
     const route = `${PURPOSE_LABELS[request.purpose]} · ${request.pickup} → ${request.destination}`
     if (!before) {
       if (request.status === 'pending_fleet' && ['fleet', 'admin'].includes(role)) {
-        results.push({ id: `request-new-${request.id}`, kind: 'request', priority: 'important', title: 'Có đề nghị điều hành xe mới', message: route, createdAt: now, read: false, target: 'requests' })
+        results.push({ id: `request-new-${request.id}`, kind: 'request', priority: 'important', title: 'Có đề nghị điều hành xe mới', message: route, createdAt: now, read: false, target: 'requests', recordId: request.id })
       }
       continue
     }
     if (before.status !== request.status) {
       if (request.requester_id === userId && role === 'department_head') {
         const title = request.status === 'fleet_approved' ? 'Hành chính đã duyệt đề nghị xe' : request.status === 'converted' ? 'Đề nghị đã được tạo thành chuyến' : request.status === 'rejected' ? 'Đề nghị xe không được duyệt' : 'Đề nghị xe đã được cập nhật'
-        results.push({ id: `request-owner-${request.id}-${request.status}`, kind: 'request', priority: request.status === 'rejected' ? 'important' : 'normal', title, message: route, createdAt: now, read: false, target: 'requests' })
+        results.push({ id: `request-owner-${request.id}-${request.status}`, kind: 'request', priority: request.status === 'rejected' ? 'important' : 'normal', title, message: route, createdAt: now, read: false, target: 'requests', recordId: request.id })
       }
       if (request.status === 'fleet_approved' && ['dispatcher', 'admin'].includes(role)) {
-        results.push({ id: `request-dispatch-${request.id}`, kind: 'request', priority: 'important', title: 'Đề nghị xe đã được Hành chính duyệt', message: `${route} · Có thể tạo chuyến`, createdAt: now, read: false, target: 'dispatch' })
+        results.push({ id: `request-dispatch-${request.id}`, kind: 'request', priority: 'important', title: 'Đề nghị xe đã được Hành chính duyệt', message: `${route} · Có thể tạo chuyến`, createdAt: now, read: false, target: 'dispatch', recordId: request.id })
       }
     }
   }
@@ -167,6 +168,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
           createdAt: now,
           read: false,
           target: 'dispatch',
+          recordId: trip.id,
         })
       } else if (roleCanSeeTripEvents(role) && trip.created_by !== userId) {
         results.push({
@@ -178,6 +180,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
           createdAt: now,
           read: false,
           target: 'dispatch',
+          recordId: trip.id,
         })
       }
       continue
@@ -195,6 +198,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
           createdAt: now,
           read: false,
           target: 'dispatch',
+          recordId: trip.id,
         })
       }
 
@@ -210,6 +214,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
             createdAt: now,
             read: false,
             target: 'dispatch',
+            recordId: trip.id,
           })
         }
         if (before.status !== trip.status && trip.status === 'cancelled') {
@@ -222,6 +227,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
             createdAt: now,
             read: false,
             target: 'dispatch',
+            recordId: trip.id,
           })
         }
       }
@@ -235,6 +241,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'dispatch',
+        recordId: trip.id,
       })
     }
   }
@@ -251,6 +258,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'incidents',
+        recordId: incident.id,
       })
       continue
     }
@@ -265,6 +273,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'incidents',
+        recordId: incident.id,
       })
     }
   }
@@ -283,6 +292,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'expenses',
+        recordId: expense.id,
       })
       continue
     }
@@ -298,6 +308,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
           createdAt: now,
           read: false,
           target: 'expenses',
+          recordId: expense.id,
         })
       }
 
@@ -318,6 +329,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
           createdAt: now,
           read: false,
           target: 'expenses',
+          recordId: expense.id,
         })
       }
     }
@@ -335,6 +347,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'maintenance',
+        recordId: maintenance.id,
       })
     } else if (before && roleCanSeeMaintenanceEvents(role) && before.status !== maintenance.status) {
       results.push({
@@ -346,6 +359,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         createdAt: now,
         read: false,
         target: 'maintenance',
+        recordId: maintenance.id,
       })
     }
   }
@@ -401,7 +415,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       tag: item.id,
-      data: { target: item.target ?? 'dashboard' },
+      data: { target: item.target ?? 'dashboard', recordId: item.recordId ?? null },
       requireInteraction: item.priority === 'urgent',
       vibrate: vibrationPattern,
     } as NotificationOptions & { vibrate?: number[] }

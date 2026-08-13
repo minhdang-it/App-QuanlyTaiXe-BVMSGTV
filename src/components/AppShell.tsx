@@ -6,6 +6,8 @@ import { useData } from '../context/DataContext'
 import { BrandLogo } from './BrandLogo'
 import { NotificationCenter } from './NotificationCenter'
 import { useNotifications, type NotificationTarget } from '../context/NotificationContext'
+import { queueNavigationFocus } from '../lib/focusNavigation'
+import { GlobalSearch } from './GlobalSearch'
 
 export type PageKey = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users'
 
@@ -137,8 +139,11 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
 
   const notificationCountFor = (key: PageKey) => unreadByTarget[key as NotificationTarget] ?? 0
 
-  function handlePageNavigation(key: PageKey) {
+  function handlePageNavigation(key: PageKey, recordId?: string) {
     markTargetRead(key as NotificationTarget)
+    if (recordId && ['requests', 'dispatch', 'expenses', 'incidents', 'maintenance'].includes(key)) {
+      queueNavigationFocus(key as 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance', recordId)
+    }
     onPage(key)
   }
 
@@ -269,12 +274,13 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
             </div>
           </div>
           <div className="topbar-actions">
+            <GlobalSearch onNavigate={(target) => handlePageNavigation(target)} />
             <button className="refresh-data-button" onClick={() => void handleRefresh()} disabled={refreshing} aria-label="Làm mới dữ liệu">
               <span aria-hidden="true">↻</span>
               <strong className="refresh-label-full">{refreshing ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</strong>
               <strong className="refresh-label-short">{refreshing ? 'Đang tải' : 'Làm mới'}</strong>
             </button>
-            <NotificationCenter onNavigate={(target) => handlePageNavigation(target as PageKey)} />
+            <NotificationCenter onNavigate={(target, recordId) => handlePageNavigation(target as PageKey, recordId)} />
             <button className="topbar-profile-button" onClick={() => onPage('account')} aria-label="Mở hồ sơ cá nhân">
               <span className="topbar-profile-avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="Ảnh đại diện" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</span>
               <span>Hồ sơ</span>

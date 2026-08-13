@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDateTime, googleMapsLocationUrl, toDateTimeLocal } from '../lib/utils'
-import type { CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
+import { formatCurrency, formatDate, formatDateTime, googleMapsLocationUrl, toDateTimeLocal, todayKey } from '../lib/utils'
+import type { AppData, CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { VietnamDateInput } from '../components/VietnamDateInput'
 import { mergeSelectedPlanFiles, PlanAttachmentsViewer, SelectedPlanFiles } from '../components/PlanAttachments'
+import { consumeNavigationFocus } from '../lib/focusNavigation'
 
 
 function nextDefaultTripDateTime() {
@@ -45,7 +46,10 @@ export function DispatchPage() {
   const [query, setQuery] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'day' | 'week' | 'month'>('list')
+  const [calendarDate, setCalendarDate] = useState(todayKey())
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null)
+  const [focusedRequestId, setFocusedRequestId] = useState<string | null>(null)
 
   const trips = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN')
@@ -82,6 +86,22 @@ export function DispatchPage() {
   const approvedDepartmentRequests = useMemo(() => data.vehicleRequests
     .filter((request) => request.status === 'fleet_approved')
     .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()), [data.vehicleRequests])
+
+  useEffect(() => {
+    const focusId = consumeNavigationFocus('dispatch')
+    if (!focusId) return
+    const trip = data.trips.find((item) => item.id === focusId)
+    if (trip) {
+      setFilter('all'); setPurpose('all'); setQuery(''); setDateFrom(''); setDateTo(''); setViewMode('list'); setSelectedTrip(trip)
+      return
+    }
+    const request = data.vehicleRequests.find((item) => item.id === focusId && item.status === 'fleet_approved')
+    if (request) {
+      setFocusedRequestId(request.id)
+      window.setTimeout(() => document.getElementById(`approved-request-${request.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+      window.setTimeout(() => setFocusedRequestId((current) => current === request.id ? null : current), 4000)
+    }
+  }, [data.trips, data.vehicleRequests])
 
   async function cancelTrip(trip: Trip) {
     if (!window.confirm(`Hủy chuyến đi đến “${trip.destination}”?`)) return
@@ -177,7 +197,7 @@ export function DispatchPage() {
       </div>
       <div className="approved-request-list">{approvedDepartmentRequests.map((request) => {
         const requester = data.profiles.find((profile) => profile.id === request.requester_id)
-        return <article key={request.id} className="approved-request-row">
+        return <article id={`approved-request-${request.id}`} key={request.id} className={`approved-request-row ${focusedRequestId === request.id ? 'record-focus-pulse' : ''}`}>
           <div className="approved-request-main"><strong>{PURPOSE_LABELS[request.purpose]} · {request.destination}</strong><span>{request.department || requester?.department || 'Chưa rõ khoa/đơn vị'} · {formatDateTime(request.scheduled_start)}</span></div>
           <div className="approved-request-actions"><span className="approval-route-chip">Hành chính đã duyệt</span><PlanAttachmentsViewer attachments={request.plan_attachments} legacyUrl={request.plan_document_url} legacyPath={request.plan_document_path} compact /><button type="button" className="primary-button compact" onClick={() => { setCreateRequestId(request.id); setShowCreate(true) }}>＋ Tạo chuyến</button></div>
         </article>
@@ -206,7 +226,24 @@ export function DispatchPage() {
       </div>
     </section>
 
-    <section className="panel">
+    <section className="dispatch-view-switch">
+      <div className="dispatch-view-tabs">
+        <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>☰ Danh sách</button>
+        <button type="button" className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Ngày</button>
+        <button type="button" className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Tuần</button>
+        <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Tháng</button>
+      </div>
+      {viewMode !== 'list' && <div className="calendar-nav-controls">
+        <button type="button" className="secondary-button compact" onClick={() => setCalendarDate(moveCalendarDate(calendarDate, viewMode, -1))}>‹</button>
+        <button type="button" className="secondary-button compact" onClick={() => setCalendarDate(todayKey())}>Hôm nay</button>
+        <strong>{calendarPeriodLabel(calendarDate, viewMode)}</strong>
+        <button type="button" className="secondary-button compact" onClick={() => setCalendarDate(moveCalendarDate(calendarDate, viewMode, 1))}>›</button>
+      </div>}
+    </section>
+
+    {viewMode !== 'list' && <TripCalendar mode={viewMode} anchor={calendarDate} trips={trips} data={data} onOpen={(trip) => setSelectedTrip(trip)} onSelectDate={(date) => { setCalendarDate(date); setViewMode('day') }} />}
+
+    {viewMode === 'list' && <section className="panel">
       <div className="panel-header"><div><h2>Danh sách chuyến đi</h2><p>Bấm “Xem chi tiết” để kiểm tra đầy đủ dữ liệu chuyến.</p></div><span className="count-pill">{trips.length} chuyến</span></div>
       {trips.length ? <div className="trip-list">{trips.map((trip) => {
         const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
@@ -223,8 +260,8 @@ export function DispatchPage() {
           && !data.expenses.some((item) => item.trip_id === trip.id)
           && !data.incidents.some((item) => item.trip_id === trip.id)
 
-        return <article className="dispatch-card" key={trip.id}>
-          <div className="dispatch-time"><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong><small>{new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date(trip.scheduled_start))}</small></div>
+        return <article id={`trip-${trip.id}`} className="dispatch-card" key={trip.id}>
+          <div className="dispatch-time"><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong><small>{formatDate(trip.scheduled_start)}</small></div>
           <div className="dispatch-main">
             <div className="dispatch-title"><h3>{vehicle?.plate_number ?? 'Chưa rõ xe'} · {driver?.full_name ?? 'Chưa rõ tài xế'}</h3><StatusBadge status={trip.status} /></div>
             <p><strong>{trip.pickup}</strong> → <strong>{trip.destination}</strong></p>
@@ -245,7 +282,7 @@ export function DispatchPage() {
           </div>
         </article>
       })}</div> : <EmptyState icon="🚐" title="Không có chuyến phù hợp" />}
-    </section>
+    </section>}
 
     {showCreate && <TripFormModal initialRequestId={createRequestId ?? undefined} onClose={() => { setShowCreate(false); setCreateRequestId(null) }} onSubmit={async (input, planFiles) => {
       await createTrip(input, planFiles)
@@ -274,6 +311,124 @@ export function DispatchPage() {
   </>
 }
 
+
+type CalendarMode = 'day' | 'week' | 'month'
+
+function dateKey(value: Date) {
+  return todayKey(value)
+}
+
+function startOfWeek(value: Date) {
+  const date = new Date(value)
+  date.setHours(0, 0, 0, 0)
+  const day = date.getDay() || 7
+  date.setDate(date.getDate() - day + 1)
+  return date
+}
+
+function calendarPeriodLabel(anchor: string, mode: 'list' | CalendarMode) {
+  const date = new Date(`${anchor}T00:00:00`)
+  if (mode === 'day') return formatDate(anchor)
+  if (mode === 'week') {
+    const start = startOfWeek(date)
+    const end = new Date(start); end.setDate(end.getDate() + 6)
+    return `${formatDate(dateKey(start))} – ${formatDate(dateKey(end))}`
+  }
+  if (mode === 'month') { const first = new Date(date.getFullYear(), date.getMonth(), 1); const last = new Date(date.getFullYear(), date.getMonth() + 1, 0); return `${formatDate(dateKey(first))} – ${formatDate(dateKey(last))}` }
+  return 'Danh sách'
+}
+
+function moveCalendarDate(anchor: string, mode: 'list' | CalendarMode, direction: number) {
+  const date = new Date(`${anchor}T00:00:00`)
+  if (mode === 'day') date.setDate(date.getDate() + direction)
+  else if (mode === 'week') date.setDate(date.getDate() + direction * 7)
+  else if (mode === 'month') date.setMonth(date.getMonth() + direction)
+  return dateKey(date)
+}
+
+function TripCalendar({ mode, anchor, trips, data, onOpen, onSelectDate }: {
+  mode: CalendarMode
+  anchor: string
+  trips: Trip[]
+  data: AppData
+  onOpen: (trip: Trip) => void
+  onSelectDate: (date: string) => void
+}) {
+  const anchorDate = new Date(`${anchor}T00:00:00`)
+  if (mode === 'day') {
+    const items = trips.filter((trip) => dateKey(new Date(trip.scheduled_start)) === anchor)
+    return <section className="panel trip-calendar-panel">
+      <div className="panel-header"><div><h2>Lịch ngày {formatDate(anchor)}</h2><p>{items.length} chuyến trong ngày đã chọn</p></div><span className="count-pill">{items.length}</span></div>
+      {items.length ? <div className="calendar-day-list">{items.sort((a,b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()).map((trip) => <CalendarTripCard key={trip.id} trip={trip} data={data} onOpen={onOpen} />)}</div> : <EmptyState icon="📅" title="Ngày này chưa có chuyến" />}
+    </section>
+  }
+
+  if (mode === 'week') {
+    const start = startOfWeek(anchorDate)
+    const days = Array.from({ length: 7 }, (_, index) => { const d = new Date(start); d.setDate(start.getDate() + index); return d })
+    return <section className="trip-calendar-week">{days.map((date) => {
+      const key = dateKey(date)
+      const items = trips.filter((trip) => dateKey(new Date(trip.scheduled_start)) === key).sort((a,b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime())
+      const isToday = key === todayKey()
+      return <article key={key} className={`calendar-week-day ${isToday ? 'today' : ''}`}>
+        <button type="button" className="calendar-day-heading" onClick={() => onSelectDate(key)}><span>{new Intl.DateTimeFormat('vi-VN', { weekday: 'short' }).format(date)}</span><strong>{date.getDate().toString().padStart(2,'0')}</strong><small>{(date.getMonth()+1).toString().padStart(2,'0')}/{date.getFullYear()}</small></button>
+        <div className="calendar-week-trips">{items.length ? items.map((trip) => <CalendarTripCard key={trip.id} trip={trip} data={data} onOpen={onOpen} compact />) : <span className="calendar-no-trip">Trống</span>}</div>
+      </article>
+    })}</section>
+  }
+
+  const first = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+  const gridStart = startOfWeek(first)
+  const cells = Array.from({ length: 42 }, (_, index) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + index); return d })
+  return <section className="panel trip-calendar-panel month-view">
+    <div className="calendar-month-weekdays">{['T2','T3','T4','T5','T6','T7','CN'].map((label) => <span key={label}>{label}</span>)}</div>
+    <div className="calendar-month-grid">{cells.map((date) => {
+      const key = dateKey(date)
+      const items = trips.filter((trip) => dateKey(new Date(trip.scheduled_start)) === key)
+      const outside = date.getMonth() !== anchorDate.getMonth()
+      const today = key === todayKey()
+      return <button type="button" key={key} className={`${outside ? 'outside' : ''} ${today ? 'today' : ''} ${items.length ? 'has-trip' : ''}`} onClick={() => onSelectDate(key)}>
+        <span>{date.getDate()}</span>{items.length > 0 && <strong>{items.length}</strong>}<small>{items.slice(0,2).map((trip) => new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))).join(' · ')}</small>
+      </button>
+    })}</div>
+  </section>
+}
+
+function CalendarTripCard({ trip, data, onOpen, compact = false }: { trip: Trip; data: AppData; onOpen: (trip: Trip) => void; compact?: boolean }) {
+  const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
+  const driver = data.profiles.find((item) => item.id === trip.driver_id)
+  return <button type="button" className={`calendar-trip-card ${compact ? 'compact' : ''}`} onClick={() => onOpen(trip)}>
+    <time>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</time>
+    <div><strong>{vehicle?.plate_number ?? 'Chưa gán xe'} · {trip.destination}</strong><small>{driver?.full_name ?? 'Chưa gán tài xế'} · {PURPOSE_LABELS[trip.purpose]}</small></div>
+    <StatusBadge status={trip.status} />
+  </button>
+}
+
+
+function buildTripTimeline(trip: Trip, data: AppData) {
+  const events: Array<{ time: string; title: string; detail: string; tone: 'normal' | 'success' | 'warning' | 'danger' }> = []
+  const name = (id?: string | null) => data.profiles.find((item) => item.id === id)?.full_name ?? ''
+  const checklist = data.checklists.find((item) => item.trip_id === trip.id)
+  const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
+  const driver = name(trip.driver_id) || 'Tài xế'
+  const creator = name(trip.created_by) || 'Điều phối'
+  const push = (time: string | null | undefined, title: string, detail: string, tone: 'normal' | 'success' | 'warning' | 'danger' = 'normal') => { if (time) events.push({ time, title, detail, tone }) }
+
+  push(trip.created_at, 'Tạo yêu cầu/chuyến', `${creator} · ${trip.pickup} → ${trip.destination}`)
+  push(trip.fleet_reviewed_at, 'Hành chính đã duyệt', name(trip.fleet_reviewer_id) || 'Hành chính đội xe', 'success')
+  push(trip.director_reviewed_at, 'Ban Giám đốc đã duyệt', name(trip.director_reviewer_id) || 'Ban Giám đốc', 'success')
+  if (trip.approval_rejection_reason) push(trip.updated_at, 'Yêu cầu không được duyệt', trip.approval_rejection_reason, 'danger')
+  push(checklist?.created_at, 'Tài xế hoàn tất checklist', `${driver}${checklist?.notes ? ` · ${checklist.notes}` : ''}`, checklist && !(checklist.fuel_ok && checklist.tires_ok && checklist.lights_horn_ok && checklist.vehicle_clean && checklist.documents_ok) ? 'warning' : 'success')
+  if (trip.start_odometer != null) push(trip.started_at ?? trip.updated_at, 'Ghi nhận KM đầu', `${trip.start_odometer.toLocaleString('vi-VN')} km · ${vehicle?.plate_number ?? ''}`, 'normal')
+  push(trip.started_at, 'Bắt đầu chuyến', `${driver} bắt đầu hành trình`, 'success')
+  data.expenses.filter((item) => item.trip_id === trip.id).forEach((item) => push(item.created_at, `Gửi chi phí ${formatCurrency(item.amount)}`, EXPENSE_LABELS[item.type], 'normal'))
+  data.incidents.filter((item) => item.trip_id === trip.id).forEach((item) => push(item.created_at, 'Báo sự cố', `${INCIDENT_LABELS[item.type]} · ${item.description || 'Không có mô tả'}`, ['high','critical'].includes(item.severity) ? 'danger' : 'warning'))
+  if (trip.end_odometer != null) push(trip.ended_at ?? trip.updated_at, 'Ghi nhận KM cuối', `${trip.end_odometer.toLocaleString('vi-VN')} km`, 'normal')
+  push(trip.ended_at, 'Kết thúc chuyến', `${driver} hoàn thành chuyến`, 'success')
+
+  return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+}
+
 export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete }: {
   trip: Trip
   canManage: boolean
@@ -289,6 +444,7 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
   const checklist = data.checklists.find((item) => item.trip_id === trip.id)
   const expenses = data.expenses.filter((item) => item.trip_id === trip.id)
   const incidents = data.incidents.filter((item) => item.trip_id === trip.id)
+  const timelineEvents = buildTripTimeline(trip, data)
   const distance = trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : null
   const liveLat = trip.current_lat ?? trip.start_lat
   const liveLng = trip.current_lng ?? trip.start_lng
@@ -368,6 +524,10 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
     {(trip.start_lat != null || trip.current_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}>📍 Điểm bắt đầu</a>}{trip.status === 'active' && (trip.current_lat ?? trip.start_lat) != null && (trip.current_lng ?? trip.start_lng) != null && <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: (trip.current_lat ?? trip.start_lat)!, lng: (trip.current_lng ?? trip.start_lng)! })}>⌖ Vị trí hiện tại</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}>🏁 Điểm kết thúc</a>}</div>{trip.location_updated_at && <small className="location-updated-label">Cập nhật GPS gần nhất: {formatDateTime(trip.location_updated_at)}</small>}</section>}
 
     {(trip.start_odometer_image_url || trip.end_odometer_image_url) && <section className="trip-detail-section"><h3>Ảnh đồng hồ kilomet</h3><div className="trip-media-grid">{trip.start_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.start_odometer_image_url}><img src={trip.start_odometer_image_url} alt="Đồng hồ KM đầu" /><span>Ảnh KM đầu</span></a>}{trip.end_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.end_odometer_image_url}><img src={trip.end_odometer_image_url} alt="Đồng hồ KM cuối" /><span>Ảnh KM cuối</span></a>}</div></section>}
+
+    <section className="trip-detail-section trip-history-section"><div className="section-title-row"><h3>Dòng thời gian chuyến đi</h3><strong>{timelineEvents.length} mốc</strong></div>
+      <div className="trip-history-timeline">{timelineEvents.map((event, index) => <div className={`trip-history-event ${event.tone}`} key={`${event.time}-${event.title}-${index}`}><span className="trip-history-dot" /><div><time>{formatDateTime(event.time)}</time><strong>{event.title}</strong><small>{event.detail}</small></div></div>)}</div>
+    </section>
 
     <section className="trip-detail-section"><h3>Checklist trước chuyến</h3>{checklist ? <div className="checklist-summary"><span className={checklist.fuel_ok ? 'ok' : 'bad'}>Nhiên liệu</span><span className={checklist.tires_ok ? 'ok' : 'bad'}>Lốp xe</span><span className={checklist.lights_horn_ok ? 'ok' : 'bad'}>Đèn, còi</span><span className={checklist.vehicle_clean ? 'ok' : 'bad'}>Xe sạch</span><span className={checklist.documents_ok ? 'ok' : 'bad'}>Giấy tờ</span>{checklist.notes && <p>{checklist.notes}</p>}</div> : <p className="muted-copy">Chưa có checklist.</p>}</section>
 

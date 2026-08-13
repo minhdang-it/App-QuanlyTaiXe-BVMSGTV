@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { VietnamDateInput } from '../components/VietnamDateInput'
@@ -8,6 +8,7 @@ import { useData } from '../context/DataContext'
 import { PURPOSE_LABELS } from '../lib/constants'
 import { formatDateTime, getErrorMessage } from '../lib/utils'
 import type { CreateVehicleRequestInput, TripPurpose, VehicleRequest } from '../types/models'
+import { consumeNavigationFocus } from '../lib/focusNavigation'
 
 const EMPTY_REQUEST: CreateVehicleRequestInput = {
   purpose: 'patient_pickup',
@@ -28,14 +29,34 @@ export function RequestsPage() {
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | VehicleRequest['status']>('all')
+  const [focusedRequestId, setFocusedRequestId] = useState<string | null>(null)
   const role = user!.profile.role
   const canCreate = role === 'department_head' || role === 'admin'
   const canReview = role === 'fleet' || role === 'admin'
+
+  const ownRequestStats = useMemo(() => {
+    const own = data.vehicleRequests.filter((item) => item.requester_id === user!.id)
+    return {
+      pending: own.filter((item) => item.status === 'pending_fleet').length,
+      approved: own.filter((item) => item.status === 'fleet_approved').length,
+      converted: own.filter((item) => item.status === 'converted').length,
+      rejected: own.filter((item) => item.status === 'rejected').length,
+    }
+  }, [data.vehicleRequests, user])
 
   const requests = useMemo(() => data.vehicleRequests
     .filter((item) => role !== 'department_head' || item.requester_id === user!.id)
     .filter((item) => filter === 'all' || item.status === filter)
     .sort((a, b) => b.created_at.localeCompare(a.created_at)), [data.vehicleRequests, filter, role, user])
+
+  useEffect(() => {
+    const focusId = consumeNavigationFocus('requests')
+    if (!focusId) return
+    setFilter('all')
+    setFocusedRequestId(focusId)
+    window.setTimeout(() => document.getElementById(`request-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+    window.setTimeout(() => setFocusedRequestId((current) => current === focusId ? null : current), 4000)
+  }, [data.vehicleRequests])
 
   async function approve(item: VehicleRequest) {
     try {
@@ -70,6 +91,16 @@ export function RequestsPage() {
   return <>
     {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)}>✕</button></div>}
 
+    {role === 'department_head' && <section className="department-request-summary">
+      <div className="department-request-summary-head"><div><span>VIỆC CẦN THEO DÕI</span><h2>Đề nghị của khoa/phòng</h2></div><strong>{ownRequestStats.pending + ownRequestStats.approved}</strong></div>
+      <div className="department-request-summary-grid">
+        <button type="button" onClick={() => setFilter('pending_fleet')}><span>🕒</span><strong>{ownRequestStats.pending}</strong><small>Chờ Hành chính</small></button>
+        <button type="button" onClick={() => setFilter('fleet_approved')}><span>✓</span><strong>{ownRequestStats.approved}</strong><small>Đã duyệt</small></button>
+        <button type="button" onClick={() => setFilter('converted')}><span>🚐</span><strong>{ownRequestStats.converted}</strong><small>Đã tạo chuyến</small></button>
+        <button type="button" className={ownRequestStats.rejected ? 'danger' : ''} onClick={() => setFilter('rejected')}><span>!</span><strong>{ownRequestStats.rejected}</strong><small>Cần xem lại</small></button>
+      </div>
+    </section>}
+
     {role === 'department_head' ? <section className="request-hero-card request-hero-compact">
       <div>
         <span className="eyebrow">ĐỀ NGHỊ TỪ KHOA / PHÒNG</span>
@@ -103,7 +134,7 @@ export function RequestsPage() {
         const requester = data.profiles.find((profile) => profile.id === item.requester_id)
         const reviewer = data.profiles.find((profile) => profile.id === item.fleet_reviewer_id)
         const canBypassDirector = Boolean(item.plan_document_url || item.plan_attachments?.length)
-        return <article key={item.id} className="request-card">
+        return <article id={`request-${item.id}`} key={item.id} className={`request-card ${focusedRequestId === item.id ? 'record-focus-pulse' : ''}`}>
           <div className="request-card-head">
             <div><span className="eyebrow">{PURPOSE_LABELS[item.purpose]}</span><h3>{item.pickup} → {item.destination}</h3></div>
             <StatusBadge status={item.status} />
