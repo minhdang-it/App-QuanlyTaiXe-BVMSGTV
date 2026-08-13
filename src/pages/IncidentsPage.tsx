@@ -62,7 +62,7 @@ export function IncidentsPage() {
     <section className="approval-workflow-banner">
       <div><span className="eyebrow">QUY TRÌNH SỰ CỐ</span><h2>Tài xế báo sự cố → Ban Giám đốc duyệt → Hành chính đội xe xử lý</h2></div>
     </section>
-    <section className="toolbar"><div className="filter-tabs">
+    <section className="toolbar incident-filter-toolbar"><div className="filter-tabs incident-filter-tabs">
       <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Đang mở</button>
       <button className={filter === 'pending_director' ? 'active' : ''} onClick={() => setFilter('pending_director')}>Chờ BGĐ</button>
       <button className={filter === 'handling' ? 'active' : ''} onClick={() => setFilter('handling')}>Đang xử lý</button>
