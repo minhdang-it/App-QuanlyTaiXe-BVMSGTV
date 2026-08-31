@@ -9,6 +9,7 @@ import { MediaInput } from '../components/MediaInput'
 import { StatusBadge } from '../components/StatusBadge'
 import { NetworkBanner } from '../components/NetworkBanner'
 import { EmptyState } from '../components/EmptyState'
+import { ImagePreview } from '../components/ImagePreview'
 import { AudioRecorder } from '../components/AudioRecorder'
 import { BrandLogo } from '../components/BrandLogo'
 import { readOdometerFromImage, type OdometerOcrResult } from '../lib/odometerOcr'
@@ -29,12 +30,12 @@ function getSavedOdometerAutoRead() {
   }
 }
 
-type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | 'vehicleTracking' | null
+type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | 'vehicleTracking' | 'handover' | 'finishTrip' | null
 type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported'
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, online, pending, syncNow, createChecklist, submitOdometer, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
+  const { data, loading, online, pending, syncNow, createChecklist, submitOdometer, completeTrip, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
   const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -131,6 +132,16 @@ export function DriverPage() {
   const currentTrip = trips.find((trip) => ['assigned', 'accepted', 'ready', 'active'].includes(trip.status)) ?? null
   const todayCompleted = trips.filter((trip) => trip.status === 'completed' && todayKey(new Date(trip.ended_at ?? trip.updated_at)) === todayKey())
   const vehicle = data.vehicles.find((item) => item.id === currentTrip?.vehicle_id) ?? data.vehicles.find((item) => item.regular_driver_id === user!.id) ?? null
+  const previousTrip = useMemo(() => {
+    if (!currentTrip?.vehicle_id) return null
+    return data.trips
+      .filter((item) => item.id !== currentTrip.id && item.vehicle_id === currentTrip.vehicle_id && item.status === 'completed')
+      .sort((a, b) => new Date(b.ended_at ?? b.updated_at).getTime() - new Date(a.ended_at ?? a.updated_at).getTime())[0] ?? null
+  }, [currentTrip?.id, currentTrip?.vehicle_id, data.trips])
+  const latestOwnIncident = useMemo(() => data.incidents
+    .filter((item) => item.driver_id === user!.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null, [data.incidents, user])
+  const latestIncidentDecision = latestOwnIncident && ['reported', 'handling', 'resolved', 'rejected'].includes(latestOwnIncident.status) ? latestOwnIncident : null
   const readinessIssues = useMemo(() => vehicleReadinessIssues(vehicle), [vehicle])
   const blockingVehicleIssue = useMemo(() => hasBlockingVehicleIssue(vehicle), [vehicle])
 
@@ -278,7 +289,7 @@ export function DriverPage() {
       return setDialog('startTrip')
     }
     if (currentTrip.end_odometer == null) return setDialog('odometer')
-    await guarded(async () => { await updateTrip(currentTrip.id, { status: 'completed', ended_at: new Date().toISOString() }) }, 'Chuyến đi đã hoàn thành.')
+    return setDialog('finishTrip')
   }
 
   function primaryLabel() {
@@ -289,7 +300,7 @@ export function DriverPage() {
     if (currentTrip.start_odometer == null) return 'CHỤP KM ĐẦU'
     if (currentTrip.status !== 'active') return 'BẮT ĐẦU CHUYẾN'
     if (currentTrip.end_odometer == null) return 'CHỤP KM CUỐI'
-    return 'KẾT THÚC CHUYẾN'
+    return 'CHỤP XE & KẾT THÚC'
   }
 
   return (
@@ -366,6 +377,15 @@ export function DriverPage() {
           </article>
         ) : <EmptyState icon="🚐" title="Chưa có chuyến được giao" description="Khi điều phối tạo chuyến, thông tin sẽ xuất hiện tại đây." />}
 
+        {currentTrip && <section className="driver-handover-card">
+          <div className="driver-handover-copy"><span className="driver-section-label">BÀN GIAO XE TRƯỚC CHUYẾN</span><strong>Kiểm tra KM & nhiên liệu từ chuyến trước</strong><small>{previousTrip ? `KM cuối ${Number(previousTrip.end_odometer ?? 0).toLocaleString('vi-VN')} · Nhiên liệu ${previousTrip.end_fuel_level_percent ?? '—'}%` : 'Đây là chuyến đầu tiên có dữ liệu bàn giao cho xe này.'}</small></div>
+          <button type="button" className="secondary-button compact" onClick={() => setDialog('handover')}>XEM & ĐỐI CHIẾU</button>
+        </section>}
+
+        {latestIncidentDecision && <section className={`driver-incident-decision ${latestIncidentDecision.status !== 'rejected' ? 'approved' : 'rejected'}`}>
+          <span>{latestIncidentDecision.status !== 'rejected' ? '✓' : '!'}</span><div><strong>{latestIncidentDecision.status !== 'rejected' ? 'BGĐ: ĐƯỢC PHÉP SỬA XE' : 'BGĐ: CHƯA ĐƯỢC PHÉP SỬA'}</strong><small>{latestIncidentDecision.status === 'handling' ? 'Hành chính đang sửa/xử lý xe.' : latestIncidentDecision.status === 'resolved' ? 'Sự cố đã được xử lý hoàn tất.' : latestIncidentDecision.status !== 'rejected' ? 'Hành chính đã có thể tiếp nhận xe để sửa/xử lý sự cố.' : (latestIncidentDecision.rejection_reason || 'Liên hệ Hành chính nếu cần bổ sung thông tin.')}</small></div>
+        </section>}
+
         {currentTrip && vehicle && currentTrip.status !== 'completed' && <section className={`driver-readiness-card ${blockingVehicleIssue ? 'blocked' : readinessIssues.length ? 'warning' : 'ready'}`}>
           <div className="driver-readiness-head"><span>{blockingVehicleIssue ? '!' : readinessIssues.length ? '⚠' : '✓'}</span><div><strong>{blockingVehicleIssue ? 'Xe chưa đủ điều kiện xuất phát' : readinessIssues.length ? 'Có cảnh báo cần lưu ý' : 'Xe sẵn sàng cho chuyến đi'}</strong><small>{vehicle.plate_number} · kiểm tra giấy tờ và bảo dưỡng tự động</small></div></div>
           {readinessIssues.length > 0 && <div className="driver-readiness-list">{readinessIssues.slice(0,4).map((item) => <div key={item.id} className={item.level}><strong>{item.title}</strong><small>{item.detail}</small></div>)}</div>}
@@ -439,6 +459,8 @@ export function DriverPage() {
         }, input.password ? 'Đã cập nhật hồ sơ và đổi mật khẩu.' : 'Đã cập nhật hồ sơ cá nhân.')}
       />}
       {dialog === 'trip' && currentTrip && <TripDetailModal trip={currentTrip} vehicleName={`${vehicle?.plate_number ?? ''} ${vehicle?.vehicle_name ?? ''}`} onClose={() => setDialog(null)} />}
+      {dialog === 'handover' && currentTrip && <HandoverModal trip={currentTrip} previousTrip={previousTrip} vehicle={vehicle} onClose={() => setDialog(null)} />}
+      {dialog === 'finishTrip' && currentTrip && <FinishTripModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(vehicleFile, fuelLevelPercent) => guarded(async () => { await completeTrip(currentTrip, vehicleFile, fuelLevelPercent) }, 'Đã chụp bàn giao xe, lưu nhiên liệu và hoàn thành chuyến.')} />}
       {dialog === 'checklist' && currentTrip && <ChecklistModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => { await createChecklist({ ...values, trip_id: currentTrip.id, driver_id: user!.id }) }, 'Checklist đã được ghi nhận.')} />}
       {dialog === 'startTrip' && currentTrip && <StartTripModal trip={currentTrip} vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={startTrip} />}
       {dialog === 'odometer' && currentTrip && <OdometerModal trip={currentTrip} vehicleOdometer={vehicle?.odometer ?? 0} saving={saving} onClose={() => setDialog(null)} onSubmit={(phase, odometer, file) => guarded(async () => {
@@ -447,11 +469,11 @@ export function DriverPage() {
         await submitOdometer(currentTrip, phase, odometer, file)
       }, `Đã lưu kilomet ${phase === 'start' ? 'đầu' : 'cuối'} chuyến.`)} />}
       {dialog === 'expense' && vehicle && <ExpenseModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, amount, description, file, fuelLiters) => guarded(async () => {
-        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_director', expense_date: todayKey() }, file)
-      }, 'Chi phí đã gửi và đang chờ kế toán duyệt.')} />}
+        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_fleet', expense_date: todayKey() }, file)
+      }, 'Chi phí đã gửi. Đang chờ Hành chính duyệt bước đầu.')} />}
       {dialog === 'incident' && vehicle && <IncidentModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, severity, description, file, audio) => guarded(async () => {
-        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_director' }, { file, secondFile: audio })
-      }, 'Đã gửi báo cáo sự cố đến điều phối.')} />}
+        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_fleet' }, { file, secondFile: audio })
+      }, 'Đã gửi báo cáo sự cố đến Hành chính. Hệ thống sẽ thông báo lại sau khi BGĐ duyệt sửa.')} />}
       {dialog === 'vehicleTracking' && vehicle && <DriverVehicleTrackingModal vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => {
         await updateDriverVehicleTracking(vehicle.id, values)
       }, 'Đã cập nhật thông tin theo dõi xe.')} />}
@@ -460,6 +482,45 @@ export function DriverPage() {
 
 }
 
+
+function HandoverModal({ trip, previousTrip, vehicle, onClose }: { trip: Trip; previousTrip: Trip | null; vehicle: Vehicle | null; onClose: () => void }) {
+  const previousKm = previousTrip?.end_odometer ?? null
+  const currentKm = trip.start_odometer ?? null
+  const delta = previousKm != null && currentKm != null ? currentKm - previousKm : null
+  return <Modal title="Đối chiếu bàn giao xe" onClose={onClose} wide>
+    <div className="handover-summary">
+      <div><span>Xe</span><strong>{vehicle?.plate_number ?? '—'}</strong><small>{vehicle?.vehicle_name ?? ''}</small></div>
+      <div><span>KM cuối chuyến trước</span><strong>{previousKm != null ? previousKm.toLocaleString('vi-VN') : 'Chưa có'}</strong><small>{previousTrip ? formatDateTime(previousTrip.ended_at ?? previousTrip.updated_at) : 'Không có dữ liệu trước đó'}</small></div>
+      <div><span>Nhiên liệu bàn giao</span><strong>{previousTrip?.end_fuel_level_percent != null ? `${previousTrip.end_fuel_level_percent}%` : 'Chưa có'}</strong><small>Mức tài xế trước ghi khi kết thúc</small></div>
+      <div className={delta != null && Math.abs(delta) > 10 ? 'warning' : ''}><span>KM đầu chuyến này</span><strong>{currentKm != null ? currentKm.toLocaleString('vi-VN') : 'Chưa chụp'}</strong><small>{delta == null ? 'Chụp KM đầu để đối chiếu' : `Chênh ${delta >= 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} km`}</small></div>
+    </div>
+    {delta != null && Math.abs(delta) > 10 && <div className="form-warning"><strong>KM đầu chênh đáng kể so với KM cuối chuyến trước.</strong> Hãy đối chiếu trực tiếp hai ảnh trước khi nhận xe.</div>}
+    <div className="handover-compare-grid">
+      <section><h3>Chuyến trước · KM cuối</h3>{previousTrip?.end_odometer_image_url ? <ImagePreview src={previousTrip.end_odometer_image_url} alt="Ảnh KM cuối chuyến trước" /> : <div className="handover-empty-image">Chưa có ảnh KM cuối chuyến trước</div>}</section>
+      <section><h3>Chuyến này · KM đầu</h3>{trip.start_odometer_image_url ? <ImagePreview src={trip.start_odometer_image_url} alt="Ảnh KM đầu chuyến hiện tại" /> : <div className="handover-empty-image">Chưa chụp KM đầu. Sau khi chụp, mở lại mục này để so sánh.</div>}</section>
+    </div>
+    {previousTrip?.end_vehicle_image_url && <section className="trip-detail-section"><h3>Hình tổng thể xe khi bàn giao chuyến trước</h3><ImagePreview src={previousTrip.end_vehicle_image_url} alt="Hình tổng thể xe cuối chuyến trước" /></section>}
+    <div className="handover-checklist"><strong>Trước khi nhận xe, tài xế kiểm tra:</strong><span>✓ KM trên đồng hồ khớp ảnh bàn giao</span><span>✓ Mức nhiên liệu thực tế gần với mức ghi nhận</span><span>✓ Ngoại thất xe không có hư hỏng mới bất thường</span></div>
+    <div className="form-actions"><button type="button" className="primary-button" onClick={onClose}>ĐÃ KIỂM TRA</button></div>
+  </Modal>
+}
+
+function FinishTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; saving: boolean; onClose: () => void; onSubmit: (vehicleFile: File, fuelLevelPercent: number) => void }) {
+  const [vehicleFile, setVehicleFile] = useState<File | null>(null)
+  const [fuelLevel, setFuelLevel] = useState(50)
+  return <Modal title="Bàn giao xe & kết thúc chuyến" onClose={onClose}>
+    <div className="finish-trip-requirements"><span>1</span><div><strong>KM cuối đã ghi nhận</strong><small>{trip.end_odometer != null ? `${trip.end_odometer.toLocaleString('vi-VN')} km` : 'Chưa có KM cuối'}</small></div></div>
+    <MediaInput label="Chụp hình tổng thể xe khi kết thúc" onChange={setVehicleFile} />
+    <div className="finish-fuel-card">
+      <div><strong>Mức nhiên liệu còn lại</strong><span>{fuelLevel}%</span></div>
+      <input type="range" min="0" max="100" step="5" value={fuelLevel} onChange={(event) => setFuelLevel(Number(event.target.value))} />
+      <div className="fuel-scale"><span>0%</span><span>1/4</span><span>1/2</span><span>3/4</span><span>100%</span></div>
+      <small>Ước lượng theo đồng hồ nhiên liệu trên xe để tài xế chuyến sau đối chiếu khi nhận xe.</small>
+    </div>
+    <div className="finish-trip-note"><strong>Bắt buộc trước khi hoàn tất</strong><span>Ảnh đồng hồ KM cuối + ảnh tổng thể xe + mức nhiên liệu sẽ trở thành dữ liệu bàn giao cho chuyến kế tiếp.</span></div>
+    <button className="primary-button full" disabled={saving || !vehicleFile || trip.end_odometer == null || !trip.end_odometer_image_url} onClick={() => vehicleFile && onSubmit(vehicleFile, fuelLevel)}>{saving ? 'Đang lưu bàn giao...' : 'LƯU BÀN GIAO & KẾT THÚC CHUYẾN'}</button>
+  </Modal>
+}
 
 function DriverVehicleTrackingModal({ vehicle, saving, onClose, onSubmit }: {
   vehicle: Vehicle

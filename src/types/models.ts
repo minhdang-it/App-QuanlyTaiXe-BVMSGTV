@@ -3,9 +3,9 @@ export type UserRole = 'driver' | 'department_head' | 'dispatcher' | 'accountant
 export type VehicleStatus = 'available' | 'in_use' | 'maintenance' | 'out_of_service'
 export type TripStatus = 'pending_fleet' | 'pending_director' | 'assigned' | 'accepted' | 'ready' | 'active' | 'completed' | 'cancelled'
 export type TripApprovalMode = 'director_required' | 'fleet_only'
-export type ExpenseStatus = 'pending_director' | 'pending_accountant' | 'approved' | 'rejected' | 'paid'
-export type ExpenseReviewAction = 'director_approve' | 'accountant_approve' | 'reject' | 'mark_paid'
-export type IncidentStatus = 'pending_director' | 'reported' | 'handling' | 'resolved' | 'rejected'
+export type ExpenseStatus = 'pending_fleet' | 'pending_accountant' | 'pending_director' | 'pending_accountant_final' | 'approved' | 'rejected' | 'paid'
+export type ExpenseReviewAction = 'fleet_approve' | 'accountant_precheck' | 'director_approve' | 'accountant_final_approve' | 'reject' | 'mark_paid'
+export type IncidentStatus = 'pending_fleet' | 'pending_director' | 'reported' | 'handling' | 'resolved' | 'rejected'
 export type MaintenanceStatus = 'pending_director' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'rejected'
 export type Severity = 'low' | 'medium' | 'high' | 'critical'
 export type VehicleRequestStatus = 'pending_fleet' | 'fleet_approved' | 'rejected' | 'converted'
@@ -145,6 +145,8 @@ export interface Trip {
   end_odometer?: number | null
   start_odometer_image_url?: string | null
   end_odometer_image_url?: string | null
+  end_vehicle_image_url?: string | null
+  end_fuel_level_percent?: number | null
   start_lat?: number | null
   start_lng?: number | null
   end_lat?: number | null
@@ -184,6 +186,10 @@ export interface Expense {
   status: ExpenseStatus
   reviewer_id?: string | null
   reviewed_at?: string | null
+  fleet_reviewer_id?: string | null
+  fleet_reviewed_at?: string | null
+  precheck_accountant_reviewer_id?: string | null
+  precheck_accountant_reviewed_at?: string | null
   director_reviewer_id?: string | null
   director_reviewed_at?: string | null
   accountant_reviewer_id?: string | null
@@ -218,6 +224,16 @@ export interface Incident {
   resolved_at?: string | null
 }
 
+export interface DriverLeave {
+  id: string
+  driver_id: string
+  leave_date: string
+  note?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Maintenance {
   id: string
   vehicle_id: string
@@ -246,6 +262,7 @@ export interface AppData {
   expenses: Expense[]
   incidents: Incident[]
   maintenances: Maintenance[]
+  driverLeaves: DriverLeave[]
 }
 
 export interface AuthUser {

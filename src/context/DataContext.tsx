@@ -6,6 +6,7 @@ import type {
   CreateVehicleRequestInput,
   DriverVehicleTrackingUpdate,
   CreateUserInput,
+  DriverLeave,
   Expense,
   ExpenseReviewAction,
   Incident,
@@ -39,6 +40,8 @@ interface DataContextValue {
   deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
+  completeTrip(trip: Trip, vehicleFile: File, fuelLevelPercent: number): Promise<Trip>
+  setDriverDayOff(driverId: string, leaveDate: string, isOff: boolean, note?: string): Promise<void>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
   reviewExpense(id: string, action: ExpenseReviewAction, reason?: string): Promise<Expense>
   createIncident(input: Omit<Incident, 'id' | 'created_at' | 'image_url' | 'audio_url'>, media?: MediaPayload): Promise<Incident>
@@ -51,7 +54,7 @@ interface DataContextValue {
 }
 
 const emptyData: AppData = {
-  profiles: [], vehicles: [], vehicleRequests: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [],
+  profiles: [], vehicles: [], vehicleRequests: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [], driverLeaves: [],
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -163,6 +166,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     deleteTrip: (id) => run(() => backend.deleteTrip(id)),
     createChecklist: (input) => run(() => backend.createChecklist(input)),
     submitOdometer: (trip, phase, odometer, file) => run(() => backend.submitOdometer(trip, phase, odometer, file)),
+    completeTrip: (trip, vehicleFile, fuelLevelPercent) => run(() => backend.completeTrip(trip, vehicleFile, fuelLevelPercent)),
+    setDriverDayOff: (driverId, leaveDate, isOff, note) => run(() => backend.setDriverDayOff(driverId, leaveDate, isOff, user!.id, note)),
     createExpense: (input, file) => run(() => backend.createExpense(input, file)),
     reviewExpense: (id, action, reason) => run(() => backend.reviewExpense(id, action, user!.id, user!.profile.role, reason)),
     createIncident: (input, media) => run(() => backend.createIncident(input, media)),

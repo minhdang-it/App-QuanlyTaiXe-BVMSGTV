@@ -28,8 +28,8 @@ function actionItemsForRole(role: UserRole, data: ReturnType<typeof useData>['da
     return items
   }
 
-  if (role === 'dispatcher' || role === 'admin') {
-    add({ key: 'approved-requests', icon: '📥', title: 'Đề nghị chờ tạo chuyến', detail: 'Đã được Hành chính duyệt', count: data.vehicleRequests.filter((item) => item.status === 'fleet_approved').length, tone: 'warning', page: 'dispatch' })
+  if (role === 'dispatcher' || role === 'fleet' || role === 'admin') {
+    add({ key: 'approved-requests', icon: '📥', title: 'Đề nghị chờ tạo chuyến', detail: 'Điều phối/Hành chính có thể tạo chuyến', count: data.vehicleRequests.filter((item) => item.status === 'fleet_approved').length, tone: 'warning', page: 'dispatch' })
     add({ key: 'late-trips', icon: '⏰', title: 'Chuyến trễ giờ', detail: 'Đã đến giờ nhưng chưa bắt đầu', count: data.trips.filter((item) => ['assigned','accepted','ready'].includes(item.status) && new Date(item.scheduled_start).getTime() < now).length, tone: 'danger', page: 'dispatch' })
     add({ key: 'checklist-review', icon: '☑', title: 'Checklist cần xác nhận', detail: 'Tài xế có mục kiểm tra bất thường', count: data.trips.filter((item) => item.status === 'accepted' && item.checklist_completed).length, tone: 'warning', page: 'dispatch' })
   }
@@ -37,7 +37,9 @@ function actionItemsForRole(role: UserRole, data: ReturnType<typeof useData>['da
   if (role === 'fleet' || role === 'admin') {
     add({ key: 'fleet-requests', icon: '📄', title: 'Đề nghị xe cần duyệt', detail: 'Khoa/phòng đang chờ Hành chính', count: data.vehicleRequests.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
     add({ key: 'fleet-trips', icon: '🚐', title: 'Yêu cầu điều xe cần xử lý', detail: 'Điều phối đang chờ Hành chính', count: data.trips.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'dispatch' })
-    add({ key: 'fleet-incidents', icon: '⚠️', title: 'Sự cố cần tiếp nhận', detail: 'Đã qua bước phê duyệt và cần xử lý', count: data.incidents.filter((item) => ['reported','handling'].includes(item.status)).length, tone: 'danger', page: 'incidents' })
+    add({ key: 'fleet-expenses', icon: '💵', title: 'Chi phí chờ Hành chính', detail: 'Tài xế vừa gửi, cần kiểm tra bước đầu', count: data.expenses.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'expenses' })
+    add({ key: 'fleet-incidents-new', icon: '⚠️', title: 'Sự cố chờ Hành chính', detail: 'Kiểm tra báo cáo và trình Ban Giám đốc', count: data.incidents.filter((item) => item.status === 'pending_fleet').length, tone: 'danger', page: 'incidents' })
+    add({ key: 'fleet-incidents', icon: '🛠', title: 'Sự cố được phép sửa', detail: 'Đã được BGĐ duyệt và cần tiếp nhận xử lý', count: data.incidents.filter((item) => ['reported','handling'].includes(item.status)).length, tone: 'danger', page: 'incidents' })
     add({ key: 'fleet-maintenance', icon: '🔧', title: 'Bảo dưỡng đang thực hiện', detail: 'Theo dõi lịch và tiến độ sửa chữa', count: data.maintenances.filter((item) => ['scheduled','in_progress'].includes(item.status)).length, tone: 'normal', page: 'maintenance' })
   }
 
@@ -49,8 +51,9 @@ function actionItemsForRole(role: UserRole, data: ReturnType<typeof useData>['da
   }
 
   if (role === 'accountant' || role === 'admin') {
-    add({ key: 'accountant-review', icon: '🧾', title: 'Chi phí chờ Kế toán', detail: 'Đã được BGĐ duyệt, cần kiểm tra chứng từ', count: data.expenses.filter((item) => item.status === 'pending_accountant').length, tone: 'warning', page: 'expenses' })
-    add({ key: 'accountant-pay', icon: '✓', title: 'Khoản chờ chi trả', detail: 'Đã duyệt kế toán, chưa xác nhận thanh toán', count: data.expenses.filter((item) => item.status === 'approved').length, tone: 'normal', page: 'expenses' })
+    add({ key: 'accountant-precheck', icon: '🧾', title: 'Chi phí chờ Kế toán kiểm tra', detail: 'Đã qua Hành chính, cần kiểm tra chứng từ trước khi trình BGĐ', count: data.expenses.filter((item) => item.status === 'pending_accountant').length, tone: 'warning', page: 'expenses' })
+    add({ key: 'accountant-final', icon: '✅', title: 'Chi phí chờ Kế toán xác nhận', detail: 'Đã được BGĐ duyệt, cần xác nhận lần cuối', count: data.expenses.filter((item) => item.status === 'pending_accountant_final').length, tone: 'warning', page: 'expenses' })
+    add({ key: 'accountant-pay', icon: '✓', title: 'Khoản chờ chi trả', detail: 'Đã đủ các bước duyệt, chưa xác nhận thanh toán', count: data.expenses.filter((item) => item.status === 'approved').length, tone: 'normal', page: 'expenses' })
   }
 
   return items

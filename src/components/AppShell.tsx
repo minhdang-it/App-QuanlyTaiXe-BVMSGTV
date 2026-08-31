@@ -39,7 +39,7 @@ const navigation: Array<{ key: PageKey; label: string; mobileLabel: string; icon
   { key: 'requests', label: 'Đề nghị từ khoa/phòng', mobileLabel: 'Đề nghị', icon: 'requests', hint: 'Gửi & Hành chính duyệt', roles: ['department_head', 'fleet', 'admin'] },
   { key: 'dispatch', label: 'Điều xe', mobileLabel: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
   { key: 'vehicles', label: 'Hồ sơ xe', mobileLabel: 'Hồ sơ xe', icon: 'vehicles', hint: 'Danh mục & trạng thái xe', roles: ['dispatcher', 'fleet', 'admin'] },
-  { key: 'expenses', label: 'Chi phí', mobileLabel: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'director', 'admin'] },
+  { key: 'expenses', label: 'Chi phí', mobileLabel: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
   { key: 'incidents', label: 'Sự cố', mobileLabel: 'Sự cố', icon: 'incidents', hint: 'Xử lý cảnh báo', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
   { key: 'maintenance', label: 'Bảo dưỡng', mobileLabel: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
   { key: 'reports', label: 'Báo cáo', mobileLabel: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
@@ -50,10 +50,10 @@ const navigation: Array<{ key: PageKey; label: string; mobileLabel: string; icon
 const pageDescriptions: Record<PageKey, string> = {
   dashboard: 'Màn hình điều hành trung tâm, hiển thị các chỉ số và cảnh báo quan trọng.',
   requests: 'Trưởng khoa/đơn vị gửi đề nghị xe; Hành chính đội xe duyệt trước khi Điều phối tạo chuyến.',
-  dispatch: 'Theo dõi toàn bộ chuyến xe, vị trí xe hoạt động và lịch điều xe theo thời gian thực.',
+  dispatch: 'Tạo chuyến, theo dõi lịch điều xe, lịch nghỉ tài xế và vị trí xe hoạt động theo thời gian thực.',
   vehicles: 'Quản lý hồ sơ xe, tình trạng xe, đăng kiểm, bảo hiểm và phân công tài xế.',
-  expenses: 'Quản lý chi phí phát sinh, hóa đơn, duyệt thanh toán và theo dõi nhiên liệu.',
-  incidents: 'Ghi nhận sự cố, mức độ nghiêm trọng và trạng thái xử lý của từng xe.',
+  expenses: 'Quản lý chi phí theo luồng Hành chính → Kế toán → Ban Giám đốc → Kế toán → Chi trả.',
+  incidents: 'Sự cố được Hành chính tiếp nhận, trình Ban Giám đốc quyết định và thông báo lại cho tài xế.',
   maintenance: 'Lên kế hoạch bảo dưỡng, sửa chữa và kiểm soát các mốc kỹ thuật.',
   reports: 'Tổng hợp số liệu nhanh giúp ban lãnh đạo nắm bắt hiệu quả vận hành.',
   account: 'Xem và cập nhật hồ sơ cá nhân trong hệ thống.',
@@ -78,8 +78,8 @@ const roleMeta: Record<RoleKey, { title: string; subtitle: string; security: str
   },
   fleet: {
     title: 'Trung tâm vận hành đội xe',
-    subtitle: 'Quản lý bảo dưỡng, sự cố, hồ sơ xe và giám sát khả năng sẵn sàng của từng xe.',
-    security: 'Bộ phận đội xe được theo dõi xe đang hoạt động, tình trạng kỹ thuật và cảnh báo bảo dưỡng.',
+    subtitle: 'Tạo chuyến, xếp lịch nghỉ tài xế, duyệt chi phí bước đầu, quản lý bảo dưỡng và sự cố.',
+    security: 'Hành chính đội xe được tạo/điều chỉnh chuyến trước duyệt, quản lý lịch nghỉ và tiếp nhận hồ sơ vận hành.',
   },
   director: {
     title: 'Trung tâm điều hành Ban lãnh đạo',

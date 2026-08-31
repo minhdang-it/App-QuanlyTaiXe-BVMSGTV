@@ -53,7 +53,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
       completed: todayTrips.filter((t) => t.status === 'completed').length,
       delayed: todayTrips.filter((t) => ['assigned', 'accepted', 'ready'].includes(t.status) && new Date(t.scheduled_start).getTime() < now).length,
       expense: todayExpenses.reduce((sum, item) => sum + item.amount, 0),
-      pendingExpenses: data.expenses.filter((e) => e.status === 'pending_director' || e.status === 'pending_accountant').length,
+      pendingExpenses: data.expenses.filter((e) => ['pending_fleet', 'pending_accountant', 'pending_director', 'pending_accountant_final'].includes(e.status)).length,
     }
   }, [data])
 
@@ -240,21 +240,21 @@ function DispatcherWorkspace({ data, activeTrips }: { data: AppData; activeTrips
 }
 
 function AccountantWorkspace({ data }: { data: AppData }) {
-  const pending = data.expenses.filter((item) => item.status === 'pending_accountant').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const pending = data.expenses.filter((item) => item.status === 'pending_accountant' || item.status === 'pending_accountant_final').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   const pendingAmount = pending.reduce((sum, item) => sum + item.amount, 0)
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
   const monthExpenses = data.expenses.filter((item) => new Date(item.expense_date).getTime() >= monthStart.getTime() && (item.status === 'approved' || item.status === 'paid'))
   const monthAmount = monthExpenses.reduce((sum, item) => sum + item.amount, 0)
   const topTypes = Object.entries(EXPENSE_LABELS).map(([key, label]) => ({ label, value: monthExpenses.filter((item) => item.type === key).reduce((sum, item) => sum + item.amount, 0) })).sort((a, b) => b.value - a.value).slice(0, 4)
   return <section className="role-workspace role-workspace-accountant">
-    <div className="role-workspace-heading"><div><span>KHÔNG GIAN KẾ TOÁN</span><h3>Kiểm soát chi phí và chứng từ</h3><p>Chỉ xử lý các khoản đã được Ban Giám đốc duyệt, sau đó xác nhận chi trả.</p></div><strong>{formatCurrency(pendingAmount)} chờ xử lý</strong></div>
+    <div className="role-workspace-heading"><div><span>KHÔNG GIAN KẾ TOÁN</span><h3>Kiểm soát chi phí và chứng từ</h3><p>Kế toán kiểm tra chứng từ trước BGĐ và xác nhận lần cuối sau khi BGĐ duyệt.</p></div><strong>{formatCurrency(pendingAmount)} chờ xử lý</strong></div>
     <div className="finance-overview-grid">
       <article><span>Chi phí tháng này</span><strong>{formatCurrency(monthAmount)}</strong><small>{monthExpenses.length} chứng từ hợp lệ</small></article>
-      <article><span>Chờ Kế toán duyệt</span><strong>{formatCurrency(pendingAmount)}</strong><small>{pending.length} khoản đã qua Ban Giám đốc</small></article>
+      <article><span>Chờ Kế toán xử lý</span><strong>{formatCurrency(pendingAmount)}</strong><small>{pending.length} khoản ở bước kiểm tra / xác nhận</small></article>
       <article><span>Đã thanh toán</span><strong>{data.expenses.filter((item) => item.status === 'paid').length}</strong><small>Khoản đã hoàn tất</small></article>
     </div>
     <div className="workspace-columns">
-      <WorkspaceList title="Chứng từ chờ Kế toán duyệt" tone="warning" empty="Không có khoản chờ duyệt" items={pending.slice(0, 5).map((item) => ({ title: formatCurrency(item.amount), detail: `${EXPENSE_LABELS[item.type]} · ${formatDateTime(item.created_at)}`, status: item.receipt_url ? 'Có hóa đơn' : 'Chưa có hóa đơn' }))} />
+      <WorkspaceList title="Chứng từ chờ Kế toán xử lý" tone="warning" empty="Không có khoản chờ xử lý" items={pending.slice(0, 5).map((item) => ({ title: formatCurrency(item.amount), detail: `${EXPENSE_LABELS[item.type]} · ${formatDateTime(item.created_at)}`, status: item.receipt_url ? 'Có hóa đơn' : 'Chưa có hóa đơn' }))} />
       <div className="workspace-breakdown"><h4>Nhóm chi phí lớn trong tháng</h4>{topTypes.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatCurrency(item.value)}</strong></div>)}</div>
     </div>
   </section>

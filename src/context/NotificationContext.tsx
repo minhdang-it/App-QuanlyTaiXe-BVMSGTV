@@ -123,7 +123,7 @@ function roleCanSeeIncidentEvents(role: UserRole) {
 }
 
 function roleCanSeeExpenseEvents(role: UserRole) {
-  return ['director', 'accountant', 'admin'].includes(role)
+  return ['fleet', 'director', 'accountant', 'admin'].includes(role)
 }
 
 function roleCanSeeMaintenanceEvents(role: UserRole) {
@@ -248,33 +248,47 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
 
   for (const incident of Object.values(current.incidents)) {
     const before = previous.incidents[incident.id]
-    if (!before && roleCanSeeIncidentEvents(role)) {
-      results.push({
-        id: `incident-new-${incident.id}`,
-        kind: 'incident',
-        priority: ['high', 'critical'].includes(incident.severity) ? 'urgent' : 'important',
-        title: incident.severity === 'critical' ? 'Sự cố khẩn cấp' : 'Có sự cố xe mới',
-        message: `${INCIDENT_LABELS[incident.type]} · Mức độ ${incident.severity}`,
-        createdAt: now,
-        read: false,
-        target: 'incidents',
-        recordId: incident.id,
-      })
+    if (!before) {
+      if (incident.status === 'pending_fleet' && ['fleet', 'admin'].includes(role)) {
+        results.push({
+          id: `incident-new-fleet-${incident.id}`,
+          kind: 'incident',
+          priority: ['high', 'critical'].includes(incident.severity) ? 'urgent' : 'important',
+          title: incident.severity === 'critical' ? 'Sự cố khẩn cấp chờ Hành chính' : 'Có sự cố mới chờ Hành chính',
+          message: `${INCIDENT_LABELS[incident.type]} · Mức độ ${incident.severity}`,
+          createdAt: now,
+          read: false,
+          target: 'incidents',
+          recordId: incident.id,
+        })
+      }
       continue
     }
 
-    if (before && role === 'driver' && incident.driver_id === userId && before.status !== incident.status) {
-      results.push({
-        id: `incident-status-${incident.id}-${incident.status}`,
-        kind: 'incident',
-        priority: 'normal',
-        title: 'Sự cố đã được cập nhật',
-        message: incident.status === 'resolved' ? 'Sự cố của bạn đã được xử lý.' : 'Người phụ trách đang tiếp nhận sự cố của bạn.',
-        createdAt: now,
-        read: false,
-        target: 'incidents',
-        recordId: incident.id,
-      })
+    if (before.status !== incident.status) {
+      if (incident.status === 'pending_director' && ['director', 'admin'].includes(role)) {
+        results.push({ id: `incident-director-${incident.id}`, kind: 'incident', priority: 'important', title: 'Hành chính trình sự cố chờ BGĐ duyệt', message: `${INCIDENT_LABELS[incident.type]} · Cần quyết định có được phép sửa/xử lý`, createdAt: now, read: false, target: 'incidents', recordId: incident.id })
+      }
+      if (incident.status === 'reported' && ['fleet', 'admin'].includes(role)) {
+        results.push({ id: `incident-approved-fleet-${incident.id}`, kind: 'incident', priority: 'important', title: 'BGĐ đã duyệt sửa xe', message: `${INCIDENT_LABELS[incident.type]} · Hành chính có thể tiếp nhận sửa/xử lý`, createdAt: now, read: false, target: 'incidents', recordId: incident.id })
+      }
+      if (role === 'driver' && incident.driver_id === userId) {
+        const approved = incident.status === 'reported'
+        const rejected = incident.status === 'rejected'
+        const title = approved ? '✓ BGĐ: ĐƯỢC PHÉP SỬA XE' : rejected ? '✕ BGĐ: CHƯA ĐƯỢC PHÉP SỬA' : incident.status === 'resolved' ? 'Sự cố đã xử lý xong' : 'Sự cố đã được cập nhật'
+        const message = approved ? 'Hành chính có thể tiếp nhận xe để sửa/xử lý.' : rejected ? 'Yêu cầu sửa/xử lý chưa được Ban Giám đốc duyệt. Xem chi tiết trong ứng dụng.' : incident.status === 'handling' ? 'Hành chính đang sửa/xử lý xe.' : 'Trạng thái sự cố của bạn vừa thay đổi.'
+        results.push({
+          id: `incident-status-${incident.id}-${incident.status}`,
+          kind: 'incident',
+          priority: approved || rejected ? 'urgent' : 'normal',
+          title,
+          message,
+          createdAt: now,
+          read: false,
+          target: 'incidents',
+          recordId: incident.id,
+        })
+      }
     }
   }
 
@@ -282,49 +296,37 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
     const before = previous.expenses[expense.id]
     const amountText = `${EXPENSE_LABELS[expense.type]} · ${expense.amount.toLocaleString('vi-VN')}đ`
 
-    if (!before && expense.status === 'pending_director' && ['director', 'admin'].includes(role) && expense.driver_id !== userId) {
-      results.push({
-        id: `expense-new-${expense.id}`,
-        kind: 'expense',
-        priority: 'important',
-        title: 'Chi phí chờ Ban Giám đốc duyệt',
-        message: amountText,
-        createdAt: now,
-        read: false,
-        target: 'expenses',
-        recordId: expense.id,
-      })
+    if (!before) {
+      if (expense.status === 'pending_fleet' && ['fleet', 'admin'].includes(role) && expense.driver_id !== userId) {
+        results.push({ id: `expense-fleet-new-${expense.id}`, kind: 'expense', priority: 'important', title: 'Chi phí mới chờ Hành chính duyệt', message: amountText, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
+      }
       continue
     }
 
-    if (before && before.status !== expense.status) {
+    if (before.status !== expense.status) {
       if (expense.status === 'pending_accountant' && ['accountant', 'admin'].includes(role)) {
-        results.push({
-          id: `expense-accountant-${expense.id}`,
-          kind: 'expense',
-          priority: 'important',
-          title: 'Chi phí đã được Ban Giám đốc duyệt',
-          message: `${amountText} · Chờ Kế toán kiểm tra`,
-          createdAt: now,
-          read: false,
-          target: 'expenses',
-          recordId: expense.id,
-        })
+        results.push({ id: `expense-accountant-pre-${expense.id}`, kind: 'expense', priority: 'important', title: 'Hành chính đã duyệt chi phí', message: `${amountText} · Chờ Kế toán kiểm tra chứng từ`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
       }
-
+      if (expense.status === 'pending_director' && ['director', 'admin'].includes(role)) {
+        results.push({ id: `expense-director-${expense.id}`, kind: 'expense', priority: 'important', title: 'Kế toán đã kiểm tra chi phí', message: `${amountText} · Chờ Ban Giám đốc duyệt`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
+      }
+      if (expense.status === 'pending_accountant_final' && ['accountant', 'admin'].includes(role)) {
+        results.push({ id: `expense-accountant-final-${expense.id}`, kind: 'expense', priority: 'important', title: 'Ban Giám đốc đã duyệt chi phí', message: `${amountText} · Chờ Kế toán xác nhận lần cuối`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
+      }
       if (role === 'driver' && expense.driver_id === userId) {
-        const title = expense.status === 'pending_accountant'
-          ? 'Ban Giám đốc đã duyệt chi phí'
-          : expense.status === 'approved'
-            ? 'Kế toán đã duyệt chi phí'
-            : expense.status === 'paid'
-              ? 'Chi phí đã được chi trả'
-              : 'Chi phí bị từ chối'
+        const titles: Partial<Record<Expense['status'], string>> = {
+          pending_accountant: 'Hành chính đã duyệt chi phí',
+          pending_director: 'Kế toán đã kiểm tra chi phí',
+          pending_accountant_final: 'Ban Giám đốc đã duyệt chi phí',
+          approved: 'Kế toán đã xác nhận khoản chi',
+          paid: 'Chi phí đã được chi trả',
+          rejected: 'Chi phí bị từ chối',
+        }
         results.push({
           id: `expense-status-${expense.id}-${expense.status}`,
           kind: 'expense',
-          priority: expense.status === 'rejected' ? 'important' : 'normal',
-          title,
+          priority: expense.status === 'rejected' || expense.status === 'paid' ? 'important' : 'normal',
+          title: titles[expense.status] ?? 'Chi phí đã được cập nhật',
           message: amountText,
           createdAt: now,
           read: false,

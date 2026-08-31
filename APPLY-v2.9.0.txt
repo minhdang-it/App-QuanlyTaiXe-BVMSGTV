@@ -1,0 +1,44 @@
+BVMSGTV ĐIỀU PHỐI XE v2.9.0 - THỨ TỰ CẬP NHẬT
+================================================
+
+QUAN TRỌNG: Bản này có thay đổi database. Phải chạy SQL migration trước khi đưa frontend v2.9.0 vào sử dụng chính thức.
+
+BƯỚC 1 - SAO LƯU
+1. Sao lưu source đang chạy.
+2. Sao lưu database Supabase nếu hệ thống đang có dữ liệu thật.
+
+BƯỚC 2 - CẬP NHẬT DATABASE SUPABASE
+1. Mở Supabase Dashboard -> SQL Editor.
+2. Mở file:
+   supabase/migrate-v2.9.0-workflow-driver-leave-handover.sql
+3. Copy toàn bộ nội dung và Run.
+4. Kiểm tra không có lỗi màu đỏ.
+
+BƯỚC 3 - CẬP NHẬT SOURCE
+Nếu dùng PATCH: chép đè các file trong patch vào project hiện tại.
+Nếu dùng FULL SOURCE: dùng nguyên thư mục source v2.9.0.
+
+BƯỚC 4 - BUILD
+npm install
+npm run check
+npm run build
+
+BƯỚC 5 - DEPLOY
+Deploy thư mục dist theo quy trình hiện tại của server.
+Sau khi deploy nên reload service/nginx nếu quy trình hiện tại có yêu cầu.
+
+BƯỚC 6 - XÓA CACHE PWA / KIỂM TRA
+1. Đóng PWA/website cũ trên điện thoại.
+2. Mở lại website; nếu giao diện chưa đổi thì xóa cache hoặc gỡ biểu tượng PWA cũ rồi thêm lại.
+3. Đăng nhập từng vai trò kiểm tra nhanh:
+   - Hành chính: có nút TẠO CHUYẾN + lịch nghỉ tài xế.
+   - Tài xế: gửi sự cố -> Hành chính.
+   - Hành chính: trình sự cố -> BGĐ.
+   - BGĐ: duyệt/không duyệt sửa; tài xế nhận thông báo.
+   - Chi phí: Hành chính -> Kế toán -> BGĐ -> Kế toán -> Chi trả.
+   - Tài xế: KM cuối -> chụp tổng thể xe -> nhiên liệu -> kết thúc.
+   - Chuyến sau: mở XEM & ĐỐI CHIẾU để xem ảnh/KM/nhiên liệu chuyến trước.
+
+LƯU Ý DỮ LIỆU CŨ
+- Chi phí đang `Chờ BGĐ` theo quy trình cũ được chuyển về `Chờ Hành chính` để bắt đầu quy trình mới.
+- Chi phí đang `Chờ Kế toán` theo quy trình cũ được chuyển thành `Chờ Kế toán xác nhận` vì đã có bước BGĐ duyệt trong quy trình cũ.
