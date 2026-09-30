@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Icon, iconFromEmoji } from './Icon'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
@@ -24,6 +25,15 @@ export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey, recor
   const [query, setQuery] = useState('')
   const allowed = rolePages[user!.profile.role] ?? new Set<PageKey>()
   const normalized = query.trim().toLocaleLowerCase('vi-VN')
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setOpen(true) }
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const results = useMemo<SearchResult[]>(() => {
     if (!normalized) return []
@@ -70,11 +80,11 @@ export function GlobalSearch({ onNavigate }: { onNavigate: (page: PageKey, recor
   }
 
   return <>
-    <button type="button" className="global-search-trigger" onClick={() => setOpen(true)} aria-label="Tìm kiếm toàn hệ thống"><span>⌕</span><strong>Tìm kiếm</strong></button>
+    <button type="button" className="global-search-trigger" onClick={() => setOpen(true)} aria-label="Tìm kiếm toàn hệ thống"><Icon name="search" size={16} /><strong>Tìm biển số, tài xế, địa điểm…</strong><kbd>Ctrl K</kbd></button>
     {open && createPortal(<><button type="button" className="global-search-overlay" onClick={() => setOpen(false)} aria-label="Đóng tìm kiếm" /><section className="global-search-panel">
-      <header><div><span>TÌM KIẾM NHANH</span><h2>Tìm trong hệ thống</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}>✕</button></header>
-      <div className="global-search-input"><span>⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Biển số, tài xế, địa điểm, SĐT, chi phí..." /></div>
-      <div className="global-search-results">{normalized ? results.length ? results.map((item) => <button type="button" key={item.id} onClick={() => openResult(item)}><span>{item.icon}</span><div><strong>{item.title}</strong><small>{item.detail}</small><time>{item.meta}</time></div><i>›</i></button>) : <div className="global-search-empty"><span>⌕</span><strong>Không tìm thấy dữ liệu phù hợp</strong><small>Thử biển số, tên người, địa điểm hoặc số điện thoại khác.</small></div> : <div className="global-search-empty"><span>⌕</span><strong>Tìm mọi dữ liệu từ một chỗ</strong><small>Kết quả được giới hạn theo quyền của tài khoản hiện tại.</small></div>}</div>
+      <header><div><span>TÌM KIẾM NHANH</span><h2>Tìm trong hệ thống</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)} aria-label="Đóng"><Icon name="x" /></button></header>
+      <div className="global-search-input"><Icon name="search" size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Biển số, tài xế, địa điểm, SĐT, chi phí..." /></div>
+      <div className="global-search-results">{normalized ? results.length ? results.map((item) => <button type="button" key={item.id} onClick={() => openResult(item)}><span><Icon name={iconFromEmoji(item.icon, 'search')} size={16} /></span><div><strong>{item.title}</strong><small>{item.detail}</small><time>{item.meta}</time></div><i><Icon name="chevron-right" size={16} /></i></button>) : <div className="global-search-empty"><span><Icon name="search" size={22} /></span><strong>Không tìm thấy dữ liệu phù hợp</strong><small>Thử biển số, tên người, địa điểm hoặc số điện thoại khác.</small></div> : <div className="global-search-empty"><span><Icon name="search" size={22} /></span><strong>Tìm mọi dữ liệu từ một chỗ</strong><small>Kết quả được giới hạn theo quyền của tài khoản hiện tại.</small></div>}</div>
     </section></>, document.body)}
   </>
 }

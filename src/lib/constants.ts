@@ -1,4 +1,4 @@
-import type { ExpenseType, IncidentType, TripPurpose, UserRole, VehicleStatus } from '../types/models'
+import type { AdhocReportStatus, ExpenseType, IncidentType, TripPurpose, UserRole, VehicleStatus } from '../types/models'
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Tài xế',
@@ -56,3 +56,12 @@ export const VEHICLE_STATUS_LABELS: Record<VehicleStatus, string> = {
   out_of_service: 'Ngừng sử dụng',
 }
 
+
+export const ADHOC_REPORT_LABELS: Record<AdhocReportStatus, string> = {
+  pending_review: 'Chờ Hành chính/Điều phối xác nhận',
+  acknowledged: 'Đã xác nhận báo cáo',
+  flagged: 'Cần tài xế giải trình',
+}
+
+/** Thời gian (ms) coi một tài khoản vẫn đang trực tuyến dựa trên nhịp hoạt động gần nhất. */
+export const PRESENCE_ONLINE_WINDOW_MS = 3 * 60 * 1000

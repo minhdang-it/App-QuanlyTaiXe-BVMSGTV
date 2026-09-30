@@ -1,5 +1,19 @@
 # Điều phối xe – Bệnh viện Mắt Sài Gòn Trà Vinh
 
+## Cập nhật v2.10.0 — Giao diện mới
+
+- Thiết kế lại toàn bộ giao diện theo phong cách dashboard doanh nghiệp: sidebar tối, nội dung sáng, bảng số liệu gọn.
+- Bộ biểu tượng nét thống nhất thay cho emoji; biển số và KM hiển thị bằng font số đơn cách.
+- CSS viết lại thành các module trong `src/styles/` (thay file 10.500 dòng cũ). Chỉ thay giao diện, không đổi nghiệp vụ và dữ liệu, không cần chạy SQL.
+- Xem `CHANGELOG-v2.10.0.md`.
+
+## Cập nhật v2.9.0
+
+- Tài xế tạo **chuyến đột xuất**, chạy ngay và báo cáo lại; Hành chính/Điều phối xác nhận sau.
+- Quy trình: **Điều phối → Hành chính điều phối duyệt → Tài xế**. BGĐ không duyệt chuyến, chỉ xem báo cáo cuối tháng và duyệt chi.
+- Trạng thái **trực tuyến** của các tài khoản.
+- Bắt buộc chạy `supabase/migrate-v2.9.0-adhoc-trips-presence.sql`. Xem `CHANGELOG-v2.9.0.md`.
+
 ## Cập nhật v2.7.1
 
 - Thêm vai trò **Trưởng khoa / Trưởng đơn vị** và trang **Đề nghị xe** kèm văn bản kế hoạch.

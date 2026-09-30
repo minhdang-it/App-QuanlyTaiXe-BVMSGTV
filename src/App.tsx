@@ -16,6 +16,7 @@ import { UsersPage } from './pages/UsersPage'
 import { AccountPage } from './pages/AccountPage'
 import { RequestsPage } from './pages/RequestsPage'
 import { NotificationProvider } from './context/NotificationContext'
+import { PresenceProvider } from './context/PresenceContext'
 
 export default function App() {
   const { user, loading } = useAuth()
@@ -44,7 +45,7 @@ export default function App() {
   if (loading) return <Loading label="Đang kiểm tra phiên đăng nhập..." />
   if (!user) return <LoginPage />
 
-  return <DataProvider><NotificationProvider><AuthenticatedArea role={user.profile.role} page={page} setPage={setPage} /></NotificationProvider></DataProvider>
+  return <DataProvider><PresenceProvider><NotificationProvider><AuthenticatedArea role={user.profile.role} page={page} setPage={setPage} /></NotificationProvider></PresenceProvider></DataProvider>
 }
 
 

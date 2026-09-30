@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { VietnamDateInput } from '../components/VietnamDateInput'
@@ -89,15 +90,15 @@ export function RequestsPage() {
   }
 
   return <>
-    {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)}>✕</button></div>}
+    {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)} aria-label="Đóng"><Icon name="x" size={15} /></button></div>}
 
     {role === 'department_head' && <section className="department-request-summary">
       <div className="department-request-summary-head"><div><span>VIỆC CẦN THEO DÕI</span><h2>Đề nghị của khoa/phòng</h2></div><strong>{ownRequestStats.pending + ownRequestStats.approved}</strong></div>
       <div className="department-request-summary-grid">
-        <button type="button" onClick={() => setFilter('pending_fleet')}><span>🕒</span><strong>{ownRequestStats.pending}</strong><small>Chờ Hành chính</small></button>
-        <button type="button" onClick={() => setFilter('fleet_approved')}><span>✓</span><strong>{ownRequestStats.approved}</strong><small>Đã duyệt</small></button>
-        <button type="button" onClick={() => setFilter('converted')}><span>🚐</span><strong>{ownRequestStats.converted}</strong><small>Đã tạo chuyến</small></button>
-        <button type="button" className={ownRequestStats.rejected ? 'danger' : ''} onClick={() => setFilter('rejected')}><span>!</span><strong>{ownRequestStats.rejected}</strong><small>Cần xem lại</small></button>
+        <button type="button" onClick={() => setFilter('pending_fleet')}><span><Icon name="clock" size={16} /></span><strong>{ownRequestStats.pending}</strong><small>Chờ Hành chính</small></button>
+        <button type="button" onClick={() => setFilter('fleet_approved')}><span><Icon name="check-circle" size={16} /></span><strong>{ownRequestStats.approved}</strong><small>Đã duyệt</small></button>
+        <button type="button" onClick={() => setFilter('converted')}><span><Icon name="bus" size={16} /></span><strong>{ownRequestStats.converted}</strong><small>Đã tạo chuyến</small></button>
+        <button type="button" className={ownRequestStats.rejected ? 'danger' : ''} onClick={() => setFilter('rejected')}><span><Icon name="alert" size={16} /></span><strong>{ownRequestStats.rejected}</strong><small>Cần xem lại</small></button>
       </div>
     </section>}
 
@@ -107,7 +108,7 @@ export function RequestsPage() {
         <h2>Gửi đề nghị sử dụng xe</h2>
         <p>Trưởng khoa gửi nhu cầu xe kèm văn bản/kế hoạch. Hành chính đội xe sẽ kiểm tra và duyệt trước khi Điều phối tạo chuyến.</p>
       </div>
-      {canCreate && <button className="primary-button" onClick={() => setCreating(true)}>＋ GỬI ĐỀ NGHỊ XE</button>}
+      {canCreate && <button className="primary-button" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Gửi đề nghị xe</button>}
     </section> : <section className="toolbar request-review-heading">
       <div>
         <span className="eyebrow">ĐỀ NGHỊ TỪ KHOA / PHÒNG</span>
@@ -133,7 +134,6 @@ export function RequestsPage() {
       {requests.map((item) => {
         const requester = data.profiles.find((profile) => profile.id === item.requester_id)
         const reviewer = data.profiles.find((profile) => profile.id === item.fleet_reviewer_id)
-        const canBypassDirector = Boolean(item.plan_document_url || item.plan_attachments?.length)
         return <article id={`request-${item.id}`} key={item.id} className={`request-card ${focusedRequestId === item.id ? 'record-focus-pulse' : ''}`}>
           <div className="request-card-head">
             <div><span className="eyebrow">{PURPOSE_LABELS[item.purpose]}</span><h3>{item.pickup} → {item.destination}</h3></div>
@@ -150,7 +150,6 @@ export function RequestsPage() {
             {(item.plan_attachments?.length || item.plan_document_url)
               ? <PlanAttachmentsViewer attachments={item.plan_attachments} legacyUrl={item.plan_document_url} legacyPath={item.plan_document_path} compact />
               : <span className="request-no-document">Chưa đính kèm văn bản</span>}
-            {canBypassDirector && <span className="approval-route-chip">Có kế hoạch · Hành chính duyệt trực tiếp, không qua BGĐ</span>}
           </div>
           {item.fleet_reviewed_at && <small>Hành chính xử lý: {formatDateTime(item.fleet_reviewed_at)}{reviewer ? ` · ${reviewer.full_name}` : ''}</small>}
           {item.rejection_reason && <div className="rejection-box"><strong>Lý do từ chối:</strong> {item.rejection_reason}</div>}
@@ -217,7 +216,7 @@ function CreateRequestModal({
         <label>Số người<input type="number" min="0" value={form.passenger_count ?? 0} onChange={(event) => setForm({ ...form, passenger_count: Number(event.target.value) })} /></label>
         <label className="span-2 plan-multi-upload-field">Văn bản / kế hoạch / hình ảnh
           <div className="plan-multi-upload-box">
-            <span className="plan-multi-upload-icon" aria-hidden="true">📎</span>
+            <span className="plan-multi-upload-icon" aria-hidden="true"><Icon name="paperclip" size={18} /></span>
             <div className="plan-multi-upload-copy"><strong>Thêm nhiều tệp hoặc hình ảnh</strong><small>Chọn nhiều tệp cùng lúc hoặc bấm lại nhiều lần để bổ sung.</small></div>
             <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*" onChange={(event) => {
               const incoming = Array.from(event.currentTarget.files ?? [])
@@ -238,7 +237,7 @@ function CreateRequestModal({
         <label className="span-2">Ghi chú<textarea value={form.notes ?? ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
       </div>
       {error && <div className="form-error">{error}</div>}
-      <div className="form-actions"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving ? 'Đang gửi...' : 'GỬI ĐỀ NGHỊ'}</button></div>
+      <div className="form-actions"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving ? 'Đang gửi...' : 'Gửi đề nghị'}</button></div>
     </form>
   </Modal>
 }

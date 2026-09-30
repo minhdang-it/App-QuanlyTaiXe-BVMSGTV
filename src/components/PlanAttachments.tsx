@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Icon } from './Icon'
 import type { PlanAttachment } from '../types/models'
 import { Modal } from './Modal'
 
@@ -20,14 +21,14 @@ function isImage(item: PlanAttachment) {
 }
 
 function fileIcon(item: PlanAttachment) {
-  if (isImage(item)) return '🖼️'
   const ext = extensionOf(item)
-  if (item.mime_type === 'application/pdf' || ext === 'pdf') return '📕'
-  if (['doc', 'docx'].includes(ext)) return '📘'
-  if (['xls', 'xlsx'].includes(ext)) return '📗'
-  if (['ppt', 'pptx'].includes(ext)) return '📙'
-  if (ext === 'txt') return '📄'
-  return '📎'
+  if (isImage(item)) return <span className="file-type file-image"><Icon name="image" size={15} /></span>
+  if (item.mime_type === 'application/pdf' || ext === 'pdf') return <span className="file-type file-pdf">PDF</span>
+  if (['doc', 'docx'].includes(ext)) return <span className="file-type file-doc">DOC</span>
+  if (['xls', 'xlsx'].includes(ext)) return <span className="file-type file-xls">XLS</span>
+  if (['ppt', 'pptx'].includes(ext)) return <span className="file-type file-ppt">PPT</span>
+  if (ext === 'txt') return <span className="file-type">TXT</span>
+  return <span className="file-type"><Icon name="paperclip" size={15} /></span>
 }
 
 
@@ -202,7 +203,7 @@ export function PlanAttachmentsViewer({
       rel="noreferrer"
       title="Mở văn bản ở tab mới"
     >
-      📎 Mở văn bản kế hoạch <span aria-hidden="true">↗</span>
+      <Icon name="paperclip" size={14} />Mở văn bản kế hoạch
     </a>
   }
 
@@ -217,7 +218,7 @@ export function PlanAttachmentsViewer({
 
   return <>
     <button type="button" className={`secondary-button ${compact ? 'compact' : ''} attachment-open-button`} onClick={showViewer}>
-      {files.length === 1 && imageItems.length === 1 ? '🖼️ Xem ảnh đính kèm' : `📎 Xem ${files.length} tệp đính kèm`}
+      <Icon name={files.length === 1 && imageItems.length === 1 ? 'image' : 'paperclip'} size={14} />{files.length === 1 && imageItems.length === 1 ? 'Xem ảnh đính kèm' : `Xem ${files.length} tệp đính kèm`}
     </button>
 
     {open && <Modal
@@ -231,7 +232,7 @@ export function PlanAttachmentsViewer({
         </div>}
 
         {activeImage && !activeImageUrl && <div className="attachment-simple-empty">
-          <span aria-hidden="true">🖼️</span>
+          <span aria-hidden="true"><Icon name="image" size={26} /></span>
           <strong>Không tải được ảnh</strong>
           <small>Hãy làm mới dữ liệu và thử lại.</small>
         </div>}
@@ -246,7 +247,7 @@ export function PlanAttachmentsViewer({
               onClick={() => setActiveImagePosition(imagePosition)}
               title={item.name || `Ảnh ${imagePosition + 1}`}
             >
-              {url ? <img src={url} alt={item.name || `Ảnh ${imagePosition + 1}`} /> : <span>🖼️</span>}
+              {url ? <img src={url} alt={item.name || `Ảnh ${imagePosition + 1}`} /> : <span><Icon name="image" size={18} /></span>}
             </button>
           })}
         </div>}
@@ -266,7 +267,7 @@ export function PlanAttachmentsViewer({
               >
                 <span aria-hidden="true">{fileIcon(item)}</span>
                 <span><b>{label}</b><small>{item.size_bytes ? fileSize(item.size_bytes) : 'Mở tab mới'}</small></span>
-                <em aria-hidden="true">↗</em>
+                <em aria-hidden="true"><Icon name="arrow-right" size={14} /></em>
               </a> : <div key={`${item.path}-${index}`} className="unavailable">
                 <span aria-hidden="true">{fileIcon(item)}</span>
                 <span><b>{label}</b><small>Không lấy được đường dẫn tệp</small></span>
@@ -301,7 +302,7 @@ export function SelectedPlanFiles({ files, onRemove }: { files: File[]; onRemove
     <div className="selected-plan-file-list">{files.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}>
       <span>{fileIcon({ path: file.name, name: file.name, mime_type: file.type })}</span>
       <div><strong>{file.name}</strong><small>{fileSize(file.size)}{file.type.startsWith('image/') ? ' · Ảnh' : ' · Tệp'}</small></div>
-      <button type="button" onClick={() => onRemove(index)} aria-label={`Bỏ tệp ${file.name}`}>✕</button>
+      <button type="button" onClick={() => onRemove(index)} aria-label={`Bỏ tệp ${file.name}`}><Icon name="x" size={14} /></button>
     </div>)}</div>
   </div>
 }

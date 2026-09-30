@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Icon, iconFromEmoji } from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { EXPENSE_ICONS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { daysUntil, formatCurrency, formatDate, formatDateTime, getSuggestedSecureUrl, googleMapsDirectionsUrl, googleMapsLocationUrl, isTrustedWebContext, requestCurrentLocation, safeNumber, todayKey, type ConfirmedLocation } from '../lib/utils'
-import type { DriverVehicleTrackingUpdate, ExpenseType, IncidentType, Profile, Severity, Trip, UpdateUserInput, Vehicle } from '../types/models'
+import { ADHOC_REPORT_LABELS, EXPENSE_ICONS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
+import { daysUntil, formatCurrency, formatDate, formatDateTime, getSuggestedSecureUrl, googleMapsDirectionsUrl, googleMapsLocationUrl, isTrustedWebContext, requestCurrentLocation, safeNumber, toDateTimeLocal, todayKey, type ConfirmedLocation } from '../lib/utils'
+import type { CreateAdhocTripInput, DriverVehicleTrackingUpdate, ExpenseType, IncidentType, Profile, Severity, Trip, TripPurpose, UpdateUserInput, Vehicle } from '../types/models'
 import { Modal } from '../components/Modal'
 import { MediaInput } from '../components/MediaInput'
 import { StatusBadge } from '../components/StatusBadge'
 import { NetworkBanner } from '../components/NetworkBanner'
 import { EmptyState } from '../components/EmptyState'
-import { ImagePreview } from '../components/ImagePreview'
 import { AudioRecorder } from '../components/AudioRecorder'
-import { BrandLogo } from '../components/BrandLogo'
 import { readOdometerFromImage, type OdometerOcrResult } from '../lib/odometerOcr'
 import { isGeminiOdometerAvailable, readOdometerWithGemini, type GeminiOdometerResult } from '../lib/odometerGemini'
 import { NotificationCenter } from '../components/NotificationCenter'
@@ -30,12 +29,12 @@ function getSavedOdometerAutoRead() {
   }
 }
 
-type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | 'vehicleTracking' | 'handover' | 'finishTrip' | null
+type Dialog = 'checklist' | 'odometer' | 'startTrip' | 'expense' | 'incident' | 'trip' | 'profile' | 'vehicleTracking' | 'adhoc' | null
 type DriverLocationPermission = 'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported'
 
 export function DriverPage() {
   const { user, logout, mode, refreshUser } = useAuth()
-  const { data, loading, online, pending, syncNow, createChecklist, submitOdometer, completeTrip, createExpense, createIncident, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
+  const { data, loading, online, pending, syncNow, createChecklist, submitOdometer, createExpense, createIncident, createAdhocTrip, updateTrip, updateTripLocation, updateUser, changeOwnPassword, updateDriverVehicleTracking } = useData()
   const { browserPermission, requestBrowserPermission, refreshBrowserPermission } = useNotifications()
   const [dialog, setDialog] = useState<Dialog>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -129,19 +128,15 @@ export function DriverPage() {
     .filter((trip) => trip.driver_id === user!.id && trip.status !== 'cancelled')
     .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()), [data.trips, user])
 
-  const currentTrip = trips.find((trip) => ['assigned', 'accepted', 'ready', 'active'].includes(trip.status)) ?? null
+  // Ưu tiên chuyến đang chạy/sẵn sàng để không bị chuyến giao sau (hoặc chuyến đột xuất) che mất.
+  const currentTrip = trips.find((trip) => trip.status === 'active')
+    ?? trips.find((trip) => trip.status === 'ready')
+    ?? trips.find((trip) => ['assigned', 'accepted'].includes(trip.status))
+    ?? null
+  const canCreateAdhoc = !currentTrip || !['ready', 'active'].includes(currentTrip.status)
+  const recentAdhocTrips = trips.filter((trip) => trip.is_adhoc).sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime()).slice(0, 5)
   const todayCompleted = trips.filter((trip) => trip.status === 'completed' && todayKey(new Date(trip.ended_at ?? trip.updated_at)) === todayKey())
   const vehicle = data.vehicles.find((item) => item.id === currentTrip?.vehicle_id) ?? data.vehicles.find((item) => item.regular_driver_id === user!.id) ?? null
-  const previousTrip = useMemo(() => {
-    if (!currentTrip?.vehicle_id) return null
-    return data.trips
-      .filter((item) => item.id !== currentTrip.id && item.vehicle_id === currentTrip.vehicle_id && item.status === 'completed')
-      .sort((a, b) => new Date(b.ended_at ?? b.updated_at).getTime() - new Date(a.ended_at ?? a.updated_at).getTime())[0] ?? null
-  }, [currentTrip?.id, currentTrip?.vehicle_id, data.trips])
-  const latestOwnIncident = useMemo(() => data.incidents
-    .filter((item) => item.driver_id === user!.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null, [data.incidents, user])
-  const latestIncidentDecision = latestOwnIncident && ['reported', 'handling', 'resolved', 'rejected'].includes(latestOwnIncident.status) ? latestOwnIncident : null
   const readinessIssues = useMemo(() => vehicleReadinessIssues(vehicle), [vehicle])
   const blockingVehicleIssue = useMemo(() => hasBlockingVehicleIssue(vehicle), [vehicle])
 
@@ -289,38 +284,37 @@ export function DriverPage() {
       return setDialog('startTrip')
     }
     if (currentTrip.end_odometer == null) return setDialog('odometer')
-    return setDialog('finishTrip')
+    await guarded(async () => { await updateTrip(currentTrip.id, { status: 'completed', ended_at: new Date().toISOString() }) }, 'Chuyến đi đã hoàn thành.')
   }
 
   function primaryLabel() {
-    if (!currentTrip) return 'CHƯA CÓ CHUYẾN'
-    if (currentTrip.status === 'assigned') return 'NHẬN CHUYẾN'
-    if (!currentTrip.checklist_completed) return 'CHECKLIST TRƯỚC KHI ĐI'
-    if (currentTrip.status === 'accepted' && currentTrip.checklist_completed) return 'CHỜ ĐIỀU PHỐI DUYỆT'
-    if (currentTrip.start_odometer == null) return 'CHỤP KM ĐẦU'
-    if (currentTrip.status !== 'active') return 'BẮT ĐẦU CHUYẾN'
-    if (currentTrip.end_odometer == null) return 'CHỤP KM CUỐI'
-    return 'CHỤP XE & KẾT THÚC'
+    if (!currentTrip) return 'Chưa có chuyến'
+    if (currentTrip.status === 'assigned') return 'Nhận chuyến'
+    if (!currentTrip.checklist_completed) return 'Checklist trước khi đi'
+    if (currentTrip.status === 'accepted' && currentTrip.checklist_completed) return 'Chờ Điều phối duyệt'
+    if (currentTrip.start_odometer == null) return 'Chụp KM đầu'
+    if (currentTrip.status !== 'active') return 'Bắt đầu chuyến'
+    if (currentTrip.end_odometer == null) return 'Chụp KM cuối'
+    return 'Kết thúc chuyến'
   }
 
   return (
-    <main className={`driver-app driver-app-modern ${currentTrip?.status === 'active' ? 'driver-active-mode' : ''}`}>
+    <main className={`driver-app ${currentTrip?.status === 'active' ? 'driver-active-mode' : ''}`}>
       <NetworkBanner />
-      <header className="driver-header driver-header-modern">
-        <BrandLogo className="driver-brand" compact />
-        <NotificationCenter compact />
-        <button className="driver-account-button" onClick={() => setDialog('profile')} aria-label="Mở hồ sơ cá nhân">
-          <span className="driver-header-avatar">
+      <header className="driver-header">
+        <div className="driver-header-row">
+          <span className="driver-header-logo"><img src="/logo-bvmsgtv-v201.png" alt="Bệnh viện Mắt Sài Gòn Trà Vinh" /></span>
+          <div className="driver-header-greeting">
+            <small>{new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date())}</small>
+            <strong>Xin chào, {user?.profile.full_name.split(' ').slice(-1)[0]}</strong>
+          </div>
+          <NotificationCenter compact />
+          <button className="driver-account-button" onClick={() => setDialog('profile')} aria-label="Mở hồ sơ cá nhân">
             {user?.profile.avatar_url
-              ? <img src={user.profile.avatar_url} alt={`Ảnh đại diện ${user.profile.full_name}`} />
+              ? <img src={user.profile.avatar_url} alt="" />
               : user?.profile.full_name.slice(0, 1).toUpperCase()}
-          </span>
-          <span className="driver-account-copy">
-            <strong>{user?.profile.full_name}</strong>
-            <small>Hồ sơ cá nhân</small>
-          </span>
-          <span className="driver-account-arrow">›</span>
-        </button>
+          </button>
+        </div>
       </header>
 
       {!driverSetupReady ? <DriverPermissionGate
@@ -333,22 +327,14 @@ export function DriverPage() {
         onEnableLocation={() => void enableDriverLocation()}
         onEnableNotifications={() => void enableDriverNotifications()}
         onRecheck={() => void recheckDriverPermissions()}
-      /> : <section className="driver-content driver-content-modern">
-        <section className="driver-welcome-card">
-          <div>
-            <span className="driver-section-label">CA LÀM VIỆC HÔM NAY</span>
-            <h1>Xin chào, {user?.profile.full_name.split(' ').slice(-1)[0]}</h1>
-            <p>{new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</p>
-          </div>
-          <button className="driver-profile-shortcut" onClick={() => setDialog('profile')}>👤 Tài khoản</button>
-        </section>
+      /> : <section className="driver-content">
 
-        {message && <button type="button" className="driver-toast" onClick={() => setMessage(null)}><span>{message}</span><strong>✕</strong></button>}
+        {message && <button type="button" className="driver-toast" onClick={() => setMessage(null)}><span>{message}</span><strong><Icon name="x" size={16} /></strong></button>}
 
         {(!online || pending > 0) && <section className={`driver-sync-card ${online ? 'pending' : 'offline'}`}>
-          <span>{online ? '↻' : '☁'}</span>
+          <span><Icon name={online ? 'refresh' : 'cloud-off'} size={18} /></span>
           <div><strong>{online ? `${pending} thao tác chờ đồng bộ` : 'Đang làm việc ngoại tuyến'}</strong><small>{online ? 'Dữ liệu đã lưu tạm trên máy và sẵn sàng gửi lên server.' : 'KM, chi phí và sự cố sẽ được lưu tạm, tự đồng bộ khi có mạng.'}</small></div>
-          {online && pending > 0 && <button type="button" onClick={() => void syncNow()}>ĐỒNG BỘ</button>}
+          {online && pending > 0 && <button type="button" onClick={() => void syncNow()}>Đồng bộ</button>}
         </section>}
 
         {currentTrip && <section className="driver-trip-progress">
@@ -363,9 +349,9 @@ export function DriverPage() {
 
         {loading ? <div className="driver-trip-card skeleton-card" /> : currentTrip ? (
           <article className="driver-trip-card driver-trip-card-modern" onClick={() => setDialog('trip')}>
-            <div className="trip-card-top"><span>CHUYẾN ĐANG PHỤ TRÁCH</span><StatusBadge status={currentTrip.status} /></div>
+            <div className="trip-card-top"><span>{currentTrip.is_adhoc ? 'Chuyến đột xuất' : 'Chuyến đang phụ trách'}</span><StatusBadge status={currentTrip.status} /></div>
             <div className="driver-vehicle-line">
-              <span>🚐</span>
+              <span><Icon name="bus" size={20} /></span>
               <div><strong>{vehicle?.plate_number ?? 'Chưa gán xe'}</strong><small>{vehicle?.vehicle_name || 'Chưa cập nhật tên xe'}</small></div>
             </div>
             <div className="driver-route-card">
@@ -373,52 +359,57 @@ export function DriverPage() {
               <div className="route-line" />
               <div className="route-view"><div className="route-dot end" /><div><small>Điểm đến</small><strong>{currentTrip.destination}</strong></div></div>
             </div>
-            <div className="trip-meta"><span>🕒 {formatDateTime(currentTrip.scheduled_start)}</span><span>🏥 {PURPOSE_LABELS[currentTrip.purpose]}</span><span>Xem chi tiết →</span></div>
+            <div className="trip-meta"><span><Icon name="clock" size={14} />{formatDateTime(currentTrip.scheduled_start)}</span><span><Icon name="hospital" size={14} />{PURPOSE_LABELS[currentTrip.purpose]}</span><span className="trip-meta-link">Chi tiết<Icon name="chevron-right" size={14} /></span></div>
           </article>
-        ) : <EmptyState icon="🚐" title="Chưa có chuyến được giao" description="Khi điều phối tạo chuyến, thông tin sẽ xuất hiện tại đây." />}
-
-        {currentTrip && <section className="driver-handover-card">
-          <div className="driver-handover-copy"><span className="driver-section-label">BÀN GIAO XE TRƯỚC CHUYẾN</span><strong>Kiểm tra KM & nhiên liệu từ chuyến trước</strong><small>{previousTrip ? `KM cuối ${Number(previousTrip.end_odometer ?? 0).toLocaleString('vi-VN')} · Nhiên liệu ${previousTrip.end_fuel_level_percent ?? '—'}%` : 'Đây là chuyến đầu tiên có dữ liệu bàn giao cho xe này.'}</small></div>
-          <button type="button" className="secondary-button compact" onClick={() => setDialog('handover')}>XEM & ĐỐI CHIẾU</button>
-        </section>}
-
-        {latestIncidentDecision && <section className={`driver-incident-decision ${latestIncidentDecision.status !== 'rejected' ? 'approved' : 'rejected'}`}>
-          <span>{latestIncidentDecision.status !== 'rejected' ? '✓' : '!'}</span><div><strong>{latestIncidentDecision.status !== 'rejected' ? 'BGĐ: ĐƯỢC PHÉP SỬA XE' : 'BGĐ: CHƯA ĐƯỢC PHÉP SỬA'}</strong><small>{latestIncidentDecision.status === 'handling' ? 'Hành chính đang sửa/xử lý xe.' : latestIncidentDecision.status === 'resolved' ? 'Sự cố đã được xử lý hoàn tất.' : latestIncidentDecision.status !== 'rejected' ? 'Hành chính đã có thể tiếp nhận xe để sửa/xử lý sự cố.' : (latestIncidentDecision.rejection_reason || 'Liên hệ Hành chính nếu cần bổ sung thông tin.')}</small></div>
-        </section>}
+        ) : <EmptyState icon="bus" title="Chưa có chuyến được giao" description="Khi điều phối tạo chuyến, thông tin sẽ xuất hiện tại đây. Phát sinh việc gấp? Bấm “Tạo chuyến đột xuất” bên dưới." />}
 
         {currentTrip && vehicle && currentTrip.status !== 'completed' && <section className={`driver-readiness-card ${blockingVehicleIssue ? 'blocked' : readinessIssues.length ? 'warning' : 'ready'}`}>
-          <div className="driver-readiness-head"><span>{blockingVehicleIssue ? '!' : readinessIssues.length ? '⚠' : '✓'}</span><div><strong>{blockingVehicleIssue ? 'Xe chưa đủ điều kiện xuất phát' : readinessIssues.length ? 'Có cảnh báo cần lưu ý' : 'Xe sẵn sàng cho chuyến đi'}</strong><small>{vehicle.plate_number} · kiểm tra giấy tờ và bảo dưỡng tự động</small></div></div>
+          <div className="driver-readiness-head"><span><Icon name={blockingVehicleIssue ? 'alert' : readinessIssues.length ? 'incident' : 'shield'} size={18} /></span><div><strong>{blockingVehicleIssue ? 'Xe chưa đủ điều kiện xuất phát' : readinessIssues.length ? 'Có cảnh báo cần lưu ý' : 'Xe sẵn sàng cho chuyến đi'}</strong><small>{vehicle.plate_number} · kiểm tra giấy tờ và bảo dưỡng tự động</small></div></div>
           {readinessIssues.length > 0 && <div className="driver-readiness-list">{readinessIssues.slice(0,4).map((item) => <div key={item.id} className={item.level}><strong>{item.title}</strong><small>{item.detail}</small></div>)}</div>}
         </section>}
 
         {currentTrip?.status === 'active' && <section className="driver-driving-focus">
           <span className="driver-section-label">CHẾ ĐỘ ĐANG CHẠY</span><h2>{currentTrip.destination}</h2><p>{vehicle?.plate_number} · GPS đang cập nhật vị trí cho bộ phận theo dõi.</p>
-          <div><a href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.current_lat != null && currentTrip.current_lng != null ? { lat: currentTrip.current_lat, lng: currentTrip.current_lng } : null)} target="_blank" rel="noreferrer">🗺 MỞ BẢN ĐỒ</a><button type="button" onClick={() => setDialog('incident')}>⚠ BÁO SỰ CỐ</button></div>
+          <div><a href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.current_lat != null && currentTrip.current_lng != null ? { lat: currentTrip.current_lat, lng: currentTrip.current_lng } : null)} target="_blank" rel="noreferrer"><Icon name="map" size={17} />Mở bản đồ</a><button type="button" onClick={() => setDialog('incident')}><Icon name="incident" size={17} />Báo sự cố</button></div>
         </section>}
 
         <button className="driver-primary-journey" onClick={() => void primaryTripAction()} disabled={saving || !currentTrip}>
-          <span className="driver-primary-icon">▶</span>
+          <span className="driver-primary-icon"><Icon name="play" size={18} /></span>
           <span><strong>{primaryLabel()}</strong><small>Thao tác tiếp theo của chuyến hiện tại</small></span>
-          <span className="driver-primary-arrow">›</span>
+          <span className="driver-primary-arrow"><Icon name="chevron-right" size={20} /></span>
+        </button>
+
+        <button type="button" className="driver-adhoc-button" onClick={() => canCreateAdhoc ? setDialog('adhoc') : setMessage('Bạn đang có chuyến sẵn sàng hoặc đang chạy. Hãy hoàn tất chuyến đó trước khi tạo chuyến đột xuất.')} disabled={saving}>
+          <span className="driver-adhoc-icon" aria-hidden="true"><Icon name="zap" size={20} /></span>
+          <span><strong>Tạo chuyến đột xuất</strong><small>Đi ngay, báo cáo lại Hành chính/Điều phối sau</small></span>
+          <span className="driver-primary-arrow"><Icon name="chevron-right" size={20} /></span>
         </button>
 
         <div className="driver-section-heading"><div><strong>Thao tác nhanh</strong><span>Chọn đúng công việc cần thực hiện</span></div></div>
         <section className="driver-quick-actions" aria-label="Thao tác tài xế">
           <button className="driver-quick-action" onClick={() => setDialog('odometer')} disabled={!currentTrip || !['ready', 'active'].includes(currentTrip.status)}>
-            <span className="driver-quick-icon camera">📷</span><span><strong>Chụp KM</strong><small>KM đầu hoặc cuối</small></span>
+            <span className="driver-quick-icon camera"><Icon name="camera" size={20} /></span><span><strong>Chụp KM</strong><small>KM đầu hoặc cuối</small></span>
           </button>
           <button className="driver-quick-action" onClick={() => setDialog('expense')} disabled={!vehicle}>
-            <span className="driver-quick-icon receipt">🧾</span><span><strong>Gửi chi phí</strong><small>Hóa đơn và số tiền</small></span>
+            <span className="driver-quick-icon receipt"><Icon name="receipt" size={20} /></span><span><strong>Gửi chi phí</strong><small>Hóa đơn và số tiền</small></span>
           </button>
           <button className="driver-quick-action incident" onClick={() => setDialog('incident')} disabled={!vehicle}>
-            <span className="driver-quick-icon warning">⚠️</span><span><strong>Báo sự cố</strong><small>Ảnh, ghi âm, vị trí</small></span>
+            <span className="driver-quick-icon warning"><Icon name="incident" size={20} /></span><span><strong>Báo sự cố</strong><small>Ảnh, ghi âm, vị trí</small></span>
           </button>
           <button className="driver-quick-action vehicle-tracking" onClick={() => setDialog('vehicleTracking')} disabled={!vehicle}>
-            <span className="driver-quick-icon vehicle">🚘</span><span><strong>Theo dõi xe</strong><small>Giấy tờ & bảo dưỡng</small></span>
+            <span className="driver-quick-icon vehicle"><Icon name="vehicle" size={20} /></span><span><strong>Theo dõi xe</strong><small>Giấy tờ & bảo dưỡng</small></span>
           </button>
         </section>
 
-        {currentTrip?.status === 'active' && <a className="maps-launch-button" href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.start_lat != null && currentTrip.start_lng != null ? { lat: currentTrip.start_lat, lng: currentTrip.start_lng } : null)} target="_blank" rel="noreferrer">🗺 TIẾP TỤC DẪN ĐƯỜNG GOOGLE MAPS</a>}
+        {currentTrip?.status === 'active' && <a className="maps-launch-button" href={googleMapsDirectionsUrl(currentTrip.destination, currentTrip.start_lat != null && currentTrip.start_lng != null ? { lat: currentTrip.start_lat, lng: currentTrip.start_lng } : null)} target="_blank" rel="noreferrer"><Icon name="navigation" size={17} />Tiếp tục dẫn đường Google Maps</a>}
+
+        {recentAdhocTrips.length > 0 && <section className="driver-adhoc-history">
+          <div className="driver-section-heading"><div><strong>Chuyến đột xuất gần đây</strong><span>Trạng thái xác nhận của Hành chính/Điều phối</span></div></div>
+          {recentAdhocTrips.map((trip) => <article key={trip.id} className={`driver-adhoc-item ${trip.adhoc_report_status ?? ''}`}>
+            <div><strong>{trip.destination}</strong><small>{formatDateTime(trip.scheduled_start)} · {trip.adhoc_reason || '—'}</small>{trip.adhoc_report_status === 'flagged' && trip.adhoc_review_note && <small className="driver-adhoc-note">Cần giải trình: {trip.adhoc_review_note}</small>}</div>
+            <span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}>{trip.status === 'cancelled' ? 'Đã hủy' : ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span>
+          </article>)}
+        </section>}
 
         <section className="driver-day-summary">
           <div><span>Chuyến hoàn thành</span><strong>{todayCompleted.length}</strong></div>
@@ -427,9 +418,9 @@ export function DriverPage() {
       </section>}
 
       {driverSetupReady && <nav className="driver-bottom-nav" aria-label="Điều hướng tài xế">
-        <button className="active"><span>⌂</span><small>Trang chính</small></button>
-        <button onClick={() => setDialog('profile')}><span>👤</span><small>Tài khoản</small></button>
-        <a href={`tel:${coordinatorPhone}`}><span>☎</span><small>Điều phối</small></a>
+        <button className="active"><span><Icon name="home" size={20} /></span><small>Trang chính</small></button>
+        <button onClick={() => setDialog('profile')}><span><Icon name="user" size={20} /></span><small>Tài khoản</small></button>
+        <a href={`tel:${coordinatorPhone}`}><span><Icon name="phone" size={20} /></span><small>Gọi Điều phối</small></a>
       </nav>}
 
       {dialog === 'profile' && user && <DriverProfileModal
@@ -458,9 +449,18 @@ export function DriverPage() {
           await refreshUser()
         }, input.password ? 'Đã cập nhật hồ sơ và đổi mật khẩu.' : 'Đã cập nhật hồ sơ cá nhân.')}
       />}
-      {dialog === 'trip' && currentTrip && <TripDetailModal trip={currentTrip} vehicleName={`${vehicle?.plate_number ?? ''} ${vehicle?.vehicle_name ?? ''}`} onClose={() => setDialog(null)} />}
-      {dialog === 'handover' && currentTrip && <HandoverModal trip={currentTrip} previousTrip={previousTrip} vehicle={vehicle} onClose={() => setDialog(null)} />}
-      {dialog === 'finishTrip' && currentTrip && <FinishTripModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(vehicleFile, fuelLevelPercent) => guarded(async () => { await completeTrip(currentTrip, vehicleFile, fuelLevelPercent) }, 'Đã chụp bàn giao xe, lưu nhiên liệu và hoàn thành chuyến.')} />}
+      {dialog === 'trip' && currentTrip && <TripDetailModal trip={currentTrip} vehicleName={`${vehicle?.plate_number ?? ''} ${vehicle?.vehicle_name ?? ''}`} saving={saving} onClose={() => setDialog(null)} onCancelAdhoc={() => {
+        if (!window.confirm('Hủy chuyến đột xuất này? Chỉ hủy được khi chưa ghi KM đầu và chưa xuất phát.')) return
+        void guarded(async () => { await updateTrip(currentTrip.id, { status: 'cancelled' }) }, 'Đã hủy chuyến đột xuất.')
+      }} />}
+      {dialog === 'adhoc' && <AdhocTripModal
+        vehicles={data.vehicles}
+        defaultVehicleId={vehicle?.id ?? data.vehicles.find((item) => item.regular_driver_id === user!.id)?.id ?? null}
+        ownTrips={trips}
+        saving={saving}
+        onClose={() => setDialog(null)}
+        onSubmit={(input) => guarded(async () => { await createAdhocTrip(input) }, 'Đã tạo chuyến đột xuất. Hãy làm checklist, chụp KM đầu rồi bắt đầu chuyến. Hành chính/Điều phối sẽ xác nhận báo cáo sau.')}
+      />}
       {dialog === 'checklist' && currentTrip && <ChecklistModal trip={currentTrip} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => { await createChecklist({ ...values, trip_id: currentTrip.id, driver_id: user!.id }) }, 'Checklist đã được ghi nhận.')} />}
       {dialog === 'startTrip' && currentTrip && <StartTripModal trip={currentTrip} vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={startTrip} />}
       {dialog === 'odometer' && currentTrip && <OdometerModal trip={currentTrip} vehicleOdometer={vehicle?.odometer ?? 0} saving={saving} onClose={() => setDialog(null)} onSubmit={(phase, odometer, file) => guarded(async () => {
@@ -469,11 +469,11 @@ export function DriverPage() {
         await submitOdometer(currentTrip, phase, odometer, file)
       }, `Đã lưu kilomet ${phase === 'start' ? 'đầu' : 'cuối'} chuyến.`)} />}
       {dialog === 'expense' && vehicle && <ExpenseModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, amount, description, file, fuelLiters) => guarded(async () => {
-        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_fleet', expense_date: todayKey() }, file)
-      }, 'Chi phí đã gửi. Đang chờ Hành chính duyệt bước đầu.')} />}
+        await createExpense({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, amount, fuel_liters: fuelLiters || null, fuel_unit_price: fuelLiters ? amount / fuelLiters : null, description, status: 'pending_director', expense_date: todayKey() }, file)
+      }, 'Chi phí đã gửi và đang chờ kế toán duyệt.')} />}
       {dialog === 'incident' && vehicle && <IncidentModal saving={saving} onClose={() => setDialog(null)} onSubmit={(type, severity, description, file, audio) => guarded(async () => {
-        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_fleet' }, { file, secondFile: audio })
-      }, 'Đã gửi báo cáo sự cố đến Hành chính. Hệ thống sẽ thông báo lại sau khi BGĐ duyệt sửa.')} />}
+        await createIncident({ trip_id: currentTrip?.id ?? null, vehicle_id: vehicle.id, driver_id: user!.id, type, severity, description, status: 'pending_director' }, { file, secondFile: audio })
+      }, 'Đã gửi báo cáo sự cố đến điều phối.')} />}
       {dialog === 'vehicleTracking' && vehicle && <DriverVehicleTrackingModal vehicle={vehicle} saving={saving} onClose={() => setDialog(null)} onSubmit={(values) => guarded(async () => {
         await updateDriverVehicleTracking(vehicle.id, values)
       }, 'Đã cập nhật thông tin theo dõi xe.')} />}
@@ -482,45 +482,6 @@ export function DriverPage() {
 
 }
 
-
-function HandoverModal({ trip, previousTrip, vehicle, onClose }: { trip: Trip; previousTrip: Trip | null; vehicle: Vehicle | null; onClose: () => void }) {
-  const previousKm = previousTrip?.end_odometer ?? null
-  const currentKm = trip.start_odometer ?? null
-  const delta = previousKm != null && currentKm != null ? currentKm - previousKm : null
-  return <Modal title="Đối chiếu bàn giao xe" onClose={onClose} wide>
-    <div className="handover-summary">
-      <div><span>Xe</span><strong>{vehicle?.plate_number ?? '—'}</strong><small>{vehicle?.vehicle_name ?? ''}</small></div>
-      <div><span>KM cuối chuyến trước</span><strong>{previousKm != null ? previousKm.toLocaleString('vi-VN') : 'Chưa có'}</strong><small>{previousTrip ? formatDateTime(previousTrip.ended_at ?? previousTrip.updated_at) : 'Không có dữ liệu trước đó'}</small></div>
-      <div><span>Nhiên liệu bàn giao</span><strong>{previousTrip?.end_fuel_level_percent != null ? `${previousTrip.end_fuel_level_percent}%` : 'Chưa có'}</strong><small>Mức tài xế trước ghi khi kết thúc</small></div>
-      <div className={delta != null && Math.abs(delta) > 10 ? 'warning' : ''}><span>KM đầu chuyến này</span><strong>{currentKm != null ? currentKm.toLocaleString('vi-VN') : 'Chưa chụp'}</strong><small>{delta == null ? 'Chụp KM đầu để đối chiếu' : `Chênh ${delta >= 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} km`}</small></div>
-    </div>
-    {delta != null && Math.abs(delta) > 10 && <div className="form-warning"><strong>KM đầu chênh đáng kể so với KM cuối chuyến trước.</strong> Hãy đối chiếu trực tiếp hai ảnh trước khi nhận xe.</div>}
-    <div className="handover-compare-grid">
-      <section><h3>Chuyến trước · KM cuối</h3>{previousTrip?.end_odometer_image_url ? <ImagePreview src={previousTrip.end_odometer_image_url} alt="Ảnh KM cuối chuyến trước" /> : <div className="handover-empty-image">Chưa có ảnh KM cuối chuyến trước</div>}</section>
-      <section><h3>Chuyến này · KM đầu</h3>{trip.start_odometer_image_url ? <ImagePreview src={trip.start_odometer_image_url} alt="Ảnh KM đầu chuyến hiện tại" /> : <div className="handover-empty-image">Chưa chụp KM đầu. Sau khi chụp, mở lại mục này để so sánh.</div>}</section>
-    </div>
-    {previousTrip?.end_vehicle_image_url && <section className="trip-detail-section"><h3>Hình tổng thể xe khi bàn giao chuyến trước</h3><ImagePreview src={previousTrip.end_vehicle_image_url} alt="Hình tổng thể xe cuối chuyến trước" /></section>}
-    <div className="handover-checklist"><strong>Trước khi nhận xe, tài xế kiểm tra:</strong><span>✓ KM trên đồng hồ khớp ảnh bàn giao</span><span>✓ Mức nhiên liệu thực tế gần với mức ghi nhận</span><span>✓ Ngoại thất xe không có hư hỏng mới bất thường</span></div>
-    <div className="form-actions"><button type="button" className="primary-button" onClick={onClose}>ĐÃ KIỂM TRA</button></div>
-  </Modal>
-}
-
-function FinishTripModal({ trip, saving, onClose, onSubmit }: { trip: Trip; saving: boolean; onClose: () => void; onSubmit: (vehicleFile: File, fuelLevelPercent: number) => void }) {
-  const [vehicleFile, setVehicleFile] = useState<File | null>(null)
-  const [fuelLevel, setFuelLevel] = useState(50)
-  return <Modal title="Bàn giao xe & kết thúc chuyến" onClose={onClose}>
-    <div className="finish-trip-requirements"><span>1</span><div><strong>KM cuối đã ghi nhận</strong><small>{trip.end_odometer != null ? `${trip.end_odometer.toLocaleString('vi-VN')} km` : 'Chưa có KM cuối'}</small></div></div>
-    <MediaInput label="Chụp hình tổng thể xe khi kết thúc" onChange={setVehicleFile} />
-    <div className="finish-fuel-card">
-      <div><strong>Mức nhiên liệu còn lại</strong><span>{fuelLevel}%</span></div>
-      <input type="range" min="0" max="100" step="5" value={fuelLevel} onChange={(event) => setFuelLevel(Number(event.target.value))} />
-      <div className="fuel-scale"><span>0%</span><span>1/4</span><span>1/2</span><span>3/4</span><span>100%</span></div>
-      <small>Ước lượng theo đồng hồ nhiên liệu trên xe để tài xế chuyến sau đối chiếu khi nhận xe.</small>
-    </div>
-    <div className="finish-trip-note"><strong>Bắt buộc trước khi hoàn tất</strong><span>Ảnh đồng hồ KM cuối + ảnh tổng thể xe + mức nhiên liệu sẽ trở thành dữ liệu bàn giao cho chuyến kế tiếp.</span></div>
-    <button className="primary-button full" disabled={saving || !vehicleFile || trip.end_odometer == null || !trip.end_odometer_image_url} onClick={() => vehicleFile && onSubmit(vehicleFile, fuelLevel)}>{saving ? 'Đang lưu bàn giao...' : 'LƯU BÀN GIAO & KẾT THÚC CHUYẾN'}</button>
-  </Modal>
-}
 
 function DriverVehicleTrackingModal({ vehicle, saving, onClose, onSubmit }: {
   vehicle: Vehicle
@@ -548,7 +509,7 @@ function DriverVehicleTrackingModal({ vehicle, saving, onClose, onSubmit }: {
 
   return <Modal title={`Theo dõi xe ${vehicle.plate_number}`} onClose={onClose} wide>
     <div className="driver-vehicle-tracking-head">
-      <div><span>🚘</span><div><strong>{vehicle.plate_number}</strong><small>{vehicle.vehicle_name} · {vehicle.odometer.toLocaleString('vi-VN')} km</small></div></div>
+      <div><span><Icon name="vehicle" size={22} /></span><div><strong className="plate">{vehicle.plate_number}</strong><small>{vehicle.vehicle_name} · {vehicle.odometer.toLocaleString('vi-VN')} km</small></div></div>
       <p>Tài xế được cập nhật các mốc giấy tờ và kỹ thuật của xe đang phụ trách. Mọi thay đổi đều được lưu lịch sử hệ thống.</p>
     </div>
 
@@ -588,7 +549,7 @@ function DriverVehicleTrackingModal({ vehicle, saving, onClose, onSubmit }: {
         <label>Mốc KM bảo dưỡng<input type="number" min="0" inputMode="numeric" value={form.next_maintenance_odometer} onChange={(e) => setForm({ ...form, next_maintenance_odometer: e.target.value })} /></label>
       </fieldset>
       <div className="form-help driver-date-format-note">Ngày tháng nhập theo định dạng <strong>DD/MM/YYYY</strong>.</div>
-      <button className="primary-button full" disabled={saving}>{saving ? 'ĐANG LƯU...' : 'LƯU THEO DÕI XE'}</button>
+      <button className="primary-button full" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu theo dõi xe'}</button>
     </form>
   </Modal>
 }
@@ -620,7 +581,7 @@ function DriverPermissionGate({
   return <section className="driver-permission-screen">
     <div className="driver-permission-card">
       <div className="driver-permission-hero">
-        <span className="driver-permission-lock">🛡</span>
+        <span className="driver-permission-lock"><Icon name="shield" size={26} /></span>
         <div>
           <span className="driver-section-label">THIẾT LẬP BẮT BUỘC</span>
           <h1>Sẵn sàng nhận chuyến</h1>
@@ -630,21 +591,21 @@ function DriverPermissionGate({
 
       <div className="driver-permission-steps">
         <article className={secure ? 'ready' : 'blocked'}>
-          <span>{secure ? '✓' : '1'}</span>
+          <span>{secure ? <Icon name="check" size={16} /> : '1'}</span>
           <div><strong>Kết nối HTTPS bảo mật</strong><small>{secure ? 'Địa chỉ hiện tại đã đủ điều kiện dùng GPS và thông báo.' : 'Địa chỉ HTTP hiện tại bị trình duyệt chặn GPS và thông báo.'}</small></div>
-          {!secure && <button type="button" onClick={() => window.location.assign(secureUrl)}>MỞ HTTPS</button>}
+          {!secure && <button type="button" onClick={() => window.location.assign(secureUrl)}>Mở HTTPS</button>}
         </article>
 
         <article className={locationReady ? 'ready' : locationPermission === 'denied' ? 'blocked' : ''}>
-          <span>{locationReady ? '✓' : '2'}</span>
+          <span>{locationReady ? <Icon name="check" size={16} /> : '2'}</span>
           <div><strong>Quyền vị trí GPS</strong><small>{locationReady ? 'Đã cho phép lấy vị trí khi bắt đầu và trong chuyến.' : locationPermission === 'denied' ? 'Quyền đang bị chặn trong Cài đặt trang web.' : 'Bật GPS để xác nhận điểm xuất phát và cập nhật vị trí xe.'}</small></div>
-          {!locationReady && <button type="button" disabled={!secure || busy === 'location'} onClick={onEnableLocation}>{busy === 'location' ? 'ĐANG LẤY...' : 'BẬT VỊ TRÍ'}</button>}
+          {!locationReady && <button type="button" disabled={!secure || busy === 'location'} onClick={onEnableLocation}>{busy === 'location' ? 'Đang lấy...' : 'Bật vị trí'}</button>}
         </article>
 
         <article className={notificationReady ? 'ready' : notificationPermission === 'denied' ? 'blocked' : ''}>
-          <span>{notificationReady ? '✓' : '3'}</span>
+          <span>{notificationReady ? <Icon name="check" size={16} /> : '3'}</span>
           <div><strong>Thông báo chuyến xe</strong><small>{notificationReady ? 'Đã bật cảnh báo khi có chuyến mới hoặc thay đổi.' : notificationPermission === 'denied' ? 'Thông báo đang bị chặn trong Cài đặt trang web.' : 'Bắt buộc bật để tài xế không bỏ lỡ chuyến được giao.'}</small></div>
-          {!notificationReady && <button type="button" disabled={!secure || busy === 'notification'} onClick={onEnableNotifications}>{busy === 'notification' ? 'ĐANG BẬT...' : 'BẬT THÔNG BÁO'}</button>}
+          {!notificationReady && <button type="button" disabled={!secure || busy === 'notification'} onClick={onEnableNotifications}>{busy === 'notification' ? 'Đang bật...' : 'Bật thông báo'}</button>}
         </article>
       </div>
 
@@ -654,7 +615,7 @@ function DriverPermissionGate({
         <strong>Cách bật lại quyền đã chặn</strong>
         <p>Nhấn biểu tượng ổ khóa hoặc thông tin trang cạnh thanh địa chỉ → Quyền trang web → cho phép Vị trí và Thông báo. Sau đó quay lại ứng dụng và bấm kiểm tra.</p>
       </div>}
-      <button type="button" className="driver-permission-recheck" onClick={onRecheck}>↻ KIỂM TRA LẠI QUYỀN</button>
+      <button type="button" className="driver-permission-recheck" onClick={onRecheck}><Icon name="refresh" size={16} />Kiểm tra lại quyền</button>
       <p className="driver-permission-footnote">Ứng dụng chỉ mở chức năng chuyến xe sau khi ba mục trên đều hoàn tất.</p>
     </div>
   </section>
@@ -738,7 +699,7 @@ function DriverProfileModal({
           <span>{profile.job_title || 'Tài xế'} · {profile.department || 'Chưa cập nhật phòng ban'}</span>
           <div className="driver-avatar-actions">
             <label className="secondary-button compact">
-              📷 Đổi ảnh
+              <Icon name="camera" size={15} />Đổi ảnh
               <input type="file" accept="image/*" capture="user" hidden onChange={(event) => chooseAvatar(event.target.files?.[0] ?? null)} />
             </label>
             {preview && <button type="button" className="driver-avatar-remove" onClick={removeAvatar}>Xóa ảnh</button>}
@@ -762,16 +723,108 @@ function DriverProfileModal({
       {error && <div className="form-error">{error}</div>}
 
       <div className="driver-profile-actions">
-        <button type="button" className="driver-profile-logout" onClick={() => void onLogout()}>↪ ĐĂNG XUẤT</button>
-        <button className="primary-button" disabled={saving}>{saving ? 'ĐANG LƯU...' : 'LƯU THÔNG TIN'}</button>
+        <button type="button" className="driver-profile-logout" onClick={() => void onLogout()}><Icon name="logout" size={16} />Đăng xuất</button>
+        <button className="primary-button" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu thông tin'}</button>
       </div>
     </form>
   </Modal>
 }
 
-function TripDetailModal({ trip, vehicleName, onClose }: { trip: Trip; vehicleName: string; onClose: () => void }) {
+function TripDetailModal({ trip, vehicleName, saving, onClose, onCancelAdhoc }: { trip: Trip; vehicleName: string; saving: boolean; onClose: () => void; onCancelAdhoc: () => void }) {
   const origin = trip.start_lat != null && trip.start_lng != null ? { lat: trip.start_lat, lng: trip.start_lng } : null
-  return <Modal title="Chi tiết chuyến" onClose={onClose}><div className="detail-list"><div><span>Xe</span><strong>{vehicleName}</strong></div><div><span>Xuất phát</span><strong>{formatDateTime(trip.scheduled_start)}</strong></div><div><span>Dự kiến về</span><strong>{formatDateTime(trip.expected_end)}</strong></div><div><span>Điểm đón</span><strong>{trip.pickup}</strong></div><div><span>Điểm đến</span><strong>{trip.destination}</strong></div><div><span>Người liên hệ</span><strong>{trip.contact_name || '—'}</strong></div><div><span>Số điện thoại</span><strong>{trip.contact_phone ? <a href={`tel:${trip.contact_phone}`}>{trip.contact_phone}</a> : '—'}</strong></div><div><span>Loại chuyến</span><strong>{PURPOSE_LABELS[trip.purpose]}</strong></div><div><span>Ghi chú</span><strong>{trip.notes || '—'}</strong></div></div><a className="maps-launch-button" href={googleMapsDirectionsUrl(trip.destination, origin)} target="_blank" rel="noreferrer">🗺 MỞ TUYẾN ĐƯỜNG GOOGLE MAPS</a></Modal>
+  const canCancelAdhoc = Boolean(trip.is_adhoc) && ['accepted', 'ready'].includes(trip.status) && trip.start_odometer == null && !trip.started_at
+  return <Modal title={trip.is_adhoc ? 'Chi tiết chuyến đột xuất' : 'Chi tiết chuyến'} onClose={onClose}>{trip.is_adhoc && <div className="adhoc-reason-box"><strong>Chuyến đột xuất:</strong> {trip.adhoc_reason || '—'}<br /><small>{ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</small></div>}<div className="detail-list"><div><span>Xe</span><strong>{vehicleName}</strong></div><div><span>Xuất phát</span><strong>{formatDateTime(trip.scheduled_start)}</strong></div><div><span>Dự kiến về</span><strong>{formatDateTime(trip.expected_end)}</strong></div><div><span>Điểm đón</span><strong>{trip.pickup}</strong></div><div><span>Điểm đến</span><strong>{trip.destination}</strong></div><div><span>Người liên hệ</span><strong>{trip.contact_name || '—'}</strong></div><div><span>Số điện thoại</span><strong>{trip.contact_phone ? <a href={`tel:${trip.contact_phone}`}>{trip.contact_phone}</a> : '—'}</strong></div><div><span>Loại chuyến</span><strong>{PURPOSE_LABELS[trip.purpose]}</strong></div><div><span>Ghi chú</span><strong>{trip.notes || '—'}</strong></div></div><a className="maps-launch-button" href={googleMapsDirectionsUrl(trip.destination, origin)} target="_blank" rel="noreferrer"><Icon name="map" size={17} />Mở tuyến đường Google Maps</a>{canCancelAdhoc && <button type="button" className="reject-button full" disabled={saving} onClick={onCancelAdhoc}>Hủy chuyến đột xuất</button>}</Modal>
+}
+
+const ADHOC_PURPOSES: TripPurpose[] = ['patient_pickup', 'patient_return', 'medicine_supply', 'staff_transport', 'board_business', 'administrative', 'community_exam', 'marketing_care', 'personal_other']
+
+function AdhocTripModal({ vehicles, defaultVehicleId, ownTrips, saving, onClose, onSubmit }: {
+  vehicles: Vehicle[]
+  defaultVehicleId: string | null
+  ownTrips: Trip[]
+  saving: boolean
+  onClose: () => void
+  onSubmit: (input: CreateAdhocTripInput) => void
+}) {
+  const eligibleVehicles = vehicles.filter((item) => !['maintenance', 'out_of_service'].includes(item.status))
+  const initialVehicle = eligibleVehicles.find((item) => item.id === defaultVehicleId)?.id ?? eligibleVehicles[0]?.id ?? ''
+  const [form, setForm] = useState(() => {
+    const start = new Date()
+    start.setSeconds(0, 0)
+    return {
+      vehicle_id: initialVehicle,
+      purpose: 'patient_pickup' as TripPurpose,
+      pickup: 'Bệnh viện Mắt Sài Gòn Trà Vinh',
+      destination: '',
+      adhoc_reason: '',
+      contact_name: '',
+      contact_phone: '',
+      passenger_count: '1',
+      scheduled_start: toDateTimeLocal(start),
+      expected_end: toDateTimeLocal(new Date(start.getTime() + 2 * 60 * 60 * 1000)),
+      notes: '',
+    }
+  })
+  const [error, setError] = useState<string | null>(null)
+  const selectedVehicle = eligibleVehicles.find((item) => item.id === form.vehicle_id) ?? null
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setError(null)
+    const start = new Date(form.scheduled_start).getTime()
+    const end = form.expected_end ? new Date(form.expected_end).getTime() : start + 60 * 60 * 1000
+    const now = Date.now()
+    if (!form.vehicle_id) return setError('Vui lòng chọn xe.')
+    if (!form.destination.trim()) return setError('Vui lòng nhập điểm đến.')
+    if (!form.adhoc_reason.trim()) return setError('Vui lòng nhập lý do phát sinh / người yêu cầu chuyến đột xuất.')
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return setError('Thời gian dự kiến về phải sau giờ xuất phát.')
+    if (start < now - 2 * 60 * 60 * 1000 || start > now + 12 * 60 * 60 * 1000) return setError('Giờ xuất phát chuyến đột xuất phải trong khoảng 2 giờ trước đến 12 giờ tới.')
+    const conflict = ownTrips.some((item) => {
+      if (['cancelled', 'completed'].includes(item.status)) return false
+      const itemStart = new Date(item.scheduled_start).getTime()
+      const itemEnd = item.expected_end ? new Date(item.expected_end).getTime() : itemStart + 60 * 60 * 1000
+      return start < itemEnd && itemStart < end
+    })
+    if (conflict) return setError('Bạn đã có chuyến khác trùng khoảng thời gian này. Hãy kiểm tra lại giờ đi/về.')
+    onSubmit({
+      vehicle_id: form.vehicle_id,
+      purpose: form.purpose,
+      pickup: form.pickup.trim(),
+      destination: form.destination.trim(),
+      adhoc_reason: form.adhoc_reason.trim(),
+      contact_name: form.contact_name.trim(),
+      contact_phone: form.contact_phone.trim(),
+      passenger_count: Number(form.passenger_count) || 0,
+      scheduled_start: new Date(start).toISOString(),
+      expected_end: new Date(end).toISOString(),
+      notes: form.notes.trim(),
+    })
+  }
+
+  return <Modal title="Tạo chuyến đột xuất" onClose={onClose}>
+    <div className="adhoc-flow-note"><strong><Icon name="zap" size={15} />Đi ngay, báo cáo sau</strong><span>Chuyến được tạo ở trạng thái “Đã nhận”. Tài xế làm checklist → chụp KM đầu → bắt đầu → chụp KM cuối như chuyến thường. Hành chính/Điều phối sẽ nhận thông báo và xác nhận báo cáo sau.</span></div>
+    <form className="adhoc-trip-form" onSubmit={submit}>
+      <label>Xe sử dụng<select value={form.vehicle_id} onChange={(event) => setForm({ ...form, vehicle_id: event.target.value })} required>{eligibleVehicles.map((item) => <option key={item.id} value={item.id}>{item.plate_number} — {item.vehicle_name}{item.status === 'in_use' ? ' (đang chạy)' : ''}</option>)}</select></label>
+      {selectedVehicle?.status === 'in_use' && <div className="form-warning">Xe này đang được ghi nhận là đang chạy. Kiểm tra lại trước khi tạo chuyến.</div>}
+      <label>Loại chuyến<select value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as TripPurpose })}>{ADHOC_PURPOSES.map((key) => <option key={key} value={key}>{PURPOSE_LABELS[key]}</option>)}</select></label>
+      <label>Lý do phát sinh / người yêu cầu *<textarea value={form.adhoc_reason} onChange={(event) => setForm({ ...form, adhoc_reason: event.target.value })} placeholder="Ví dụ: BS. An yêu cầu đón bệnh nhân cấp cứu tại xã Hòa Thuận" required /></label>
+      <label>Điểm đón<input value={form.pickup} onChange={(event) => setForm({ ...form, pickup: event.target.value })} required /></label>
+      <label>Điểm đến *<input value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder="Xã, bệnh viện hoặc địa chỉ" required /></label>
+      <div className="adhoc-form-row">
+        <label>Giờ xuất phát<VietnamDateInput mode="datetime" value={form.scheduled_start} onChange={(value) => setForm({ ...form, scheduled_start: value })} required /></label>
+        <label>Dự kiến về<VietnamDateInput mode="datetime" value={form.expected_end} onChange={(value) => setForm({ ...form, expected_end: value })} /></label>
+      </div>
+      <div className="adhoc-form-row">
+        <label>Người liên hệ<input value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} /></label>
+        <label>Số điện thoại<input inputMode="tel" value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
+      </div>
+      <label>Số người đi cùng<input type="number" min="0" inputMode="numeric" value={form.passenger_count} onChange={(event) => setForm({ ...form, passenger_count: event.target.value })} /></label>
+      <label>Ghi chú<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Thông tin thêm cho Hành chính/Điều phối" /></label>
+      {!eligibleVehicles.length && <div className="form-error">Không có xe đủ điều kiện sử dụng.</div>}
+      {error && <div className="form-error">{error}</div>}
+      <button className="primary-button full" disabled={saving || !eligibleVehicles.length}>{saving ? 'Đang tạo chuyến...' : 'Tạo chuyến & bắt đầu chuẩn bị'}</button>
+    </form>
+  </Modal>
 }
 
 function StartTripModal({ trip, vehicle, saving, onClose, onSubmit }: { trip: Trip; vehicle: Vehicle | null; saving: boolean; onClose: () => void; onSubmit: (location: ConfirmedLocation) => Promise<void> }) {
@@ -810,24 +863,24 @@ function StartTripModal({ trip, vehicle, saving, onClose, onSubmit }: { trip: Tr
     <p className="form-help">Hệ thống sẽ lưu vị trí hiện tại làm điểm bắt đầu. Sau khi chuyến được kích hoạt, Google Maps tự mở để dẫn đường.</p>
 
     <div className="start-route-confirmation">
-      <div><span>📍 ĐIỂM ĐÓN</span><strong>{trip.pickup}</strong></div>
-      <div className="route-confirm-arrow">↓</div>
-      <div><span>🏁 ĐIỂM ĐẾN</span><strong>{trip.destination}</strong></div>
+      <div><span><Icon name="pin" size={13} />Điểm đón</span><strong>{trip.pickup}</strong></div>
+      <div className="route-confirm-arrow"><Icon name="arrow-right" size={16} /></div>
+      <div><span><Icon name="flag" size={13} />Điểm đến</span><strong>{trip.destination}</strong></div>
     </div>
 
     <div className={`location-confirm-card ${location ? 'success' : locationError ? 'error' : ''}`}>
       <div className="location-confirm-head">
         <div><strong>{locating ? 'Đang lấy vị trí GPS...' : location ? 'Đã xác định vị trí hiện tại' : 'Chưa xác định vị trí'}</strong><span>{location ? `Độ chính xác khoảng ${Math.round(location.accuracy)} m` : isTrustedWebContext() ? 'Bấm Lấy vị trí và cho phép quyền GPS khi trình duyệt hỏi.' : 'Website HTTP không thể sử dụng GPS trên điện thoại.'}</span></div>
-        <button type="button" className="secondary-button compact" disabled={locating || saving || !isTrustedWebContext()} onClick={() => void locate()}>{locating ? 'ĐANG LẤY...' : location ? 'LẤY LẠI' : 'LẤY VỊ TRÍ'}</button>
+        <button type="button" className="secondary-button compact" disabled={locating || saving || !isTrustedWebContext()} onClick={() => void locate()}>{locating ? 'Đang lấy...' : location ? 'Lấy lại' : 'Lấy vị trí'}</button>
       </div>
       {location && <div className="location-coordinates"><code>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</code><a href={googleMapsLocationUrl(location)} target="_blank" rel="noreferrer">Xem vị trí hiện tại</a></div>}
       {location && location.accuracy > 200 && <div className="form-warning">GPS đang có sai số lớn. Nên ra khu vực thoáng và bấm “Lấy lại” trước khi bắt đầu.</div>}
       {locationError && <div className="form-error">{locationError}</div>}
-      {!isTrustedWebContext() && <button type="button" className="secure-open-button" onClick={() => window.location.assign(getSuggestedSecureUrl())}>MỞ ĐỊA CHỈ HTTPS</button>}
+      {!isTrustedWebContext() && <button type="button" className="secure-open-button" onClick={() => window.location.assign(getSuggestedSecureUrl())}>Mở địa chỉ HTTPS</button>}
     </div>
 
     <section className={`start-readiness-check ${blocked ? 'blocked' : readinessIssues.length ? 'warning' : 'ready'}`}>
-      <div className="start-readiness-title"><span>{blocked ? '!' : readinessIssues.length ? '⚠' : '✓'}</span><div><strong>{blocked ? 'Chưa thể xuất phát' : readinessIssues.length ? 'Kiểm tra cảnh báo trước khi đi' : 'Xe đủ điều kiện xuất phát'}</strong><small>{vehicle?.plate_number ?? 'Chưa rõ xe'}</small></div></div>
+      <div className="start-readiness-title"><span><Icon name={blocked ? 'alert' : readinessIssues.length ? 'incident' : 'shield'} size={17} /></span><div><strong>{blocked ? 'Chưa thể xuất phát' : readinessIssues.length ? 'Kiểm tra cảnh báo trước khi đi' : 'Xe đủ điều kiện xuất phát'}</strong><small>{vehicle?.plate_number ?? 'Chưa rõ xe'}</small></div></div>
       {readinessIssues.length > 0 && <div className="start-readiness-items">{readinessIssues.map((item) => <div key={item.id} className={item.level}><strong>{item.title}</strong><small>{item.detail}</small></div>)}</div>}
       {blocked && <div className="form-error">Cần Hành chính/Điều phối xử lý cảnh báo nghiêm trọng trước khi tài xế bắt đầu chuyến.</div>}
     </section>
@@ -838,7 +891,7 @@ function StartTripModal({ trip, vehicle, saving, onClose, onSubmit }: { trip: Tr
     </label>
 
     <button className="primary-button full start-navigation-button" disabled={saving || locating || !location || !confirmed || blocked} onClick={() => location && void onSubmit(location)}>
-      {saving ? 'ĐANG BẮT ĐẦU CHUYẾN...' : 'BẮT ĐẦU & MỞ GOOGLE MAPS'}
+      {saving ? 'Đang bắt đầu chuyến...' : 'Bắt đầu & mở Google Maps'}
     </button>
   </Modal>
 }
@@ -847,7 +900,7 @@ function ChecklistModal({ trip, saving, onClose, onSubmit }: { trip: Trip; savin
   const [values, setValues] = useState({ fuel_ok: true, tires_ok: true, lights_horn_ok: true, vehicle_clean: true, documents_ok: true, notes: '' })
   const fields: Array<[keyof typeof values, string]> = [['fuel_ok', 'Nhiên liệu đủ'], ['tires_ok', 'Lốp xe bình thường'], ['lights_horn_ok', 'Đèn và còi hoạt động'], ['vehicle_clean', 'Xe sạch'], ['documents_ok', 'Giấy tờ xe đầy đủ']]
   const hasNo = fields.some(([key]) => values[key] === false)
-  return <Modal title="Checklist trước chuyến" onClose={onClose}><p className="form-help">Chuyến đi {trip.destination}. Kiểm tra nhanh trong khoảng 30 giây.</p><div className="checklist-list">{fields.map(([key, label]) => <div className="check-row" key={key}><strong>{label}</strong><div className="yes-no"><button type="button" className={values[key] === true ? 'yes active' : 'yes'} onClick={() => setValues({ ...values, [key]: true })}>CÓ</button><button type="button" className={values[key] === false ? 'no active' : 'no'} onClick={() => setValues({ ...values, [key]: false })}>KHÔNG</button></div></div>)}</div><label>Ghi chú khi có mục “Không”<textarea value={values.notes} onChange={(e) => setValues({ ...values, notes: e.target.value })} placeholder="Mô tả ngắn tình trạng xe" /></label>{hasNo && !values.notes && <div className="form-warning">Cần ghi chú tình trạng bất thường trước khi gửi.</div>}<button className="primary-button full" disabled={saving || (hasNo && !values.notes.trim())} onClick={() => onSubmit(values)}>{saving ? 'Đang lưu...' : 'XÁC NHẬN CHECKLIST'}</button></Modal>
+  return <Modal title="Checklist trước chuyến" onClose={onClose}><p className="form-help">Chuyến đi {trip.destination}. Kiểm tra nhanh trong khoảng 30 giây.</p><div className="checklist-list">{fields.map(([key, label]) => <div className="check-row" key={key}><strong>{label}</strong><div className="yes-no"><button type="button" className={values[key] === true ? 'yes active' : 'yes'} onClick={() => setValues({ ...values, [key]: true })}>CÓ</button><button type="button" className={values[key] === false ? 'no active' : 'no'} onClick={() => setValues({ ...values, [key]: false })}>KHÔNG</button></div></div>)}</div><label>Ghi chú khi có mục “Không”<textarea value={values.notes} onChange={(e) => setValues({ ...values, notes: e.target.value })} placeholder="Mô tả ngắn tình trạng xe" /></label>{hasNo && !values.notes && <div className="form-warning">Cần ghi chú tình trạng bất thường trước khi gửi.</div>}<button className="primary-button full" disabled={saving || (hasNo && !values.notes.trim())} onClick={() => onSubmit(values)}>{saving ? 'Đang lưu...' : 'Xác nhận checklist'}</button></Modal>
 }
 
 function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { trip: Trip; vehicleOdometer: number; saving: boolean; onClose: () => void; onSubmit: (phase: 'start' | 'end', odometer: number, file: File | null) => void }) {
@@ -1025,12 +1078,12 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
 
   return <Modal title="Chụp đồng hồ kilomet" onClose={onClose}>
     <div className="segment-control">
-      <button type="button" disabled={trip.status === 'active'} className={phase === 'start' ? 'active' : ''} onClick={() => selectPhase('start')}>KM ĐẦU</button>
-      <button type="button" disabled={trip.status !== 'active'} className={phase === 'end' ? 'active' : ''} onClick={() => selectPhase('end')}>KM CUỐI</button>
+      <button type="button" disabled={trip.status === 'active'} className={phase === 'start' ? 'active' : ''} onClick={() => selectPhase('start')}>KM đầu</button>
+      <button type="button" disabled={trip.status !== 'active'} className={phase === 'end' ? 'active' : ''} onClick={() => selectPhase('end')}>KM cuối</button>
     </div>
 
     <div className="odometer-guide">
-      <strong>📸 Chụp riêng vùng số ODO</strong>
+      <strong><Icon name="camera" size={15} />Chụp riêng vùng số ODO</strong>
       <span>Đưa dãy số ODO/TOTAL vào giữa ảnh, chụp gần và giữ máy thẳng. Ảnh vẫn được lưu dù tài xế tắt AI.</span>
     </div>
 
@@ -1047,7 +1100,7 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
 
     {file && !autoReadEnabled && ocrState === 'idle' && <div className="odometer-manual-mode">
       <div><strong>Ảnh đã sẵn sàng</strong><span>AI tự động đang tắt. Nhập số KM bên dưới để lưu ngay, hoặc dùng AI khi ảnh khó nhìn.</span></div>
-      <button type="button" className="secondary-button compact" onClick={() => void runRecognition(file)}>AI ĐỌC ẢNH NÀY</button>
+      <button type="button" className="secondary-button compact" onClick={() => void runRecognition(file)}>AI đọc ảnh này</button>
     </div>}
 
     {ocrState !== 'idle' && <div className={`ocr-status ${ocrState}`}>
@@ -1058,7 +1111,7 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
 
     {file && <div className={`gemini-verify-card ${geminiState}`}>
       <div className="gemini-verify-head">
-        <div><strong>✦ Gemini kiểm tra lại ODO</strong><span>{geminiMessage || (geminiAvailable ? 'Gemini sẽ kiểm tra số ODO và loại bỏ Trip/giờ/nhiệt độ.' : 'Chưa triển khai Edge Function Gemini.')}</span></div>
+        <div><strong><Icon name="sparkles" size={15} />Gemini kiểm tra lại ODO</strong><span>{geminiMessage || (geminiAvailable ? 'Gemini sẽ kiểm tra số ODO và loại bỏ Trip/giờ/nhiệt độ.' : 'Chưa triển khai Edge Function Gemini.')}</span></div>
         {geminiResult && <small>{Math.round(geminiResult.confidence)}%</small>}
       </div>
       {geminiState === 'reading' && <div className="ocr-progress"><span style={{ width: '72%' }} /></div>}
@@ -1066,7 +1119,7 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
         <span>Loại: <strong>{geminiResult.displayType === 'odometer' ? 'ODO tổng' : geminiResult.displayType === 'trip' ? 'Trip' : 'Chưa rõ'}</strong></span>
         <span>Ảnh: <strong>{geminiResult.quality === 'clear' ? 'Rõ' : geminiResult.quality === 'glare' ? 'Bị lóa' : geminiResult.quality === 'blur' ? 'Bị mờ' : geminiResult.quality === 'cropped' ? 'Bị cắt' : geminiResult.quality === 'dark' ? 'Thiếu sáng' : 'Chưa rõ'}</strong></span>
       </div>}
-      <button type="button" className="secondary-button compact gemini-retry-button" disabled={geminiState === 'reading'} onClick={() => file && void runGemini(file, localResult, true)}>{geminiState === 'reading' ? 'Gemini đang đọc...' : geminiResult ? 'GEMINI ĐỌC LẠI' : 'DÙNG GEMINI KIỂM TRA'}</button>
+      <button type="button" className="secondary-button compact gemini-retry-button" disabled={geminiState === 'reading'} onClick={() => file && void runGemini(file, localResult, true)}>{geminiState === 'reading' ? 'Gemini đang đọc...' : geminiResult ? 'Gemini đọc lại' : 'Dùng Gemini kiểm tra'}</button>
     </div>}
 
     {(localResult?.value != null || geminiResult?.value != null) && <div className="ocr-comparison-grid">
@@ -1074,13 +1127,13 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
         <span>OCR trên điện thoại</span>
         <strong>{localResult.value.toLocaleString('vi-VN')} km</strong>
         <small>Tin cậy {Math.round(localResult.confidence)}%</small>
-        <button type="button" onClick={() => chooseValue(localResult.value, geminiResult?.value === localResult.value ? 'verified' : 'local')}>CHỌN SỐ NÀY</button>
+        <button type="button" onClick={() => chooseValue(localResult.value, geminiResult?.value === localResult.value ? 'verified' : 'local')}>Chọn số này</button>
       </article>}
       {geminiResult?.value != null && <article className={selectedSource === 'gemini' ? 'selected' : selectedSource === 'verified' ? 'verified' : ''}>
         <span>Gemini Vision</span>
         <strong>{geminiResult.value.toLocaleString('vi-VN')} km</strong>
         <small>Tin cậy {Math.round(geminiResult.confidence)}%</small>
-        <button type="button" onClick={() => chooseValue(geminiResult.value, localResult?.value === geminiResult.value ? 'verified' : 'gemini')}>CHỌN SỐ NÀY</button>
+        <button type="button" onClick={() => chooseValue(geminiResult.value, localResult?.value === geminiResult.value ? 'verified' : 'gemini')}>Chọn số này</button>
       </article>}
     </div>}
 
@@ -1095,7 +1148,7 @@ function OdometerModal({ trip, vehicleOdometer, saving, onClose, onSubmit }: { t
     </label>
     <p className="form-help">Chế độ AI được ghi nhớ trên điện thoại. Dù nhập thủ công hay dùng AI, tài xế vẫn phải xác nhận số ODO trước khi lưu.</p>
     {invalidOrder && <div className="form-error">Kilomet cuối không được nhỏ hơn kilomet đầu {Number(trip.start_odometer).toLocaleString('vi-VN')} km.</div>}
-    <button className="primary-button full" disabled={saving || aiBusy || invalidValue || invalidOrder || !file || !confirmed} onClick={() => onSubmit(phase, numericOdometer, file)}>{saving ? 'Đang lưu ảnh và kilomet...' : `LƯU ${phase === 'start' ? 'KM ĐẦU' : 'KM CUỐI'}`}</button>
+    <button className="primary-button full" disabled={saving || aiBusy || invalidValue || invalidOrder || !file || !confirmed} onClick={() => onSubmit(phase, numericOdometer, file)}>{saving ? 'Đang lưu ảnh và kilomet...' : `Lưu ${phase === 'start' ? 'KM đầu' : 'KM cuối'}`}</button>
   </Modal>
 }
 
@@ -1105,7 +1158,7 @@ function ExpenseModal({ saving, onClose, onSubmit }: { saving: boolean; onClose:
   const [description, setDescription] = useState('')
   const [fuelLiters, setFuelLiters] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  return <Modal title="Gửi chi phí" onClose={onClose}><div className="choice-grid">{(Object.keys(EXPENSE_LABELS) as ExpenseType[]).map((item) => <button type="button" className={type === item ? 'active' : ''} key={item} onClick={() => setType(item)}><span>{EXPENSE_ICONS[item]}</span>{EXPENSE_LABELS[item]}</button>)}</div><MediaInput label="Chụp hóa đơn hoặc phiếu thu" onChange={setFile} /><label>Số tiền<input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ví dụ: 500000" /></label>{type === 'fuel' && <label>Số lít nhiên liệu<input type="number" inputMode="decimal" min="0" step="0.01" value={fuelLiters} onChange={(e) => setFuelLiters(e.target.value)} placeholder="Ví dụ: 22.5" /></label>}<label>Ghi chú<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Nội dung chi phí" /></label>{amount && <div className="amount-preview">Số tiền: <strong>{formatCurrency(Number(amount))}</strong></div>}<button className="primary-button full" disabled={saving || safeNumber(amount) <= 0 || !file || (type === 'fuel' && safeNumber(fuelLiters) <= 0)} onClick={() => onSubmit(type, Number(amount), description, file, Number(fuelLiters))}>{saving ? 'Đang gửi...' : 'GỬI CHI PHÍ'}</button></Modal>
+  return <Modal title="Gửi chi phí" onClose={onClose}><div className="choice-grid">{(Object.keys(EXPENSE_LABELS) as ExpenseType[]).map((item) => <button type="button" className={type === item ? 'active' : ''} key={item} onClick={() => setType(item)}><span><Icon name={iconFromEmoji(EXPENSE_ICONS[item], 'receipt')} size={18} /></span>{EXPENSE_LABELS[item]}</button>)}</div><MediaInput label="Chụp hóa đơn hoặc phiếu thu" onChange={setFile} /><label>Số tiền<input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ví dụ: 500000" /></label>{type === 'fuel' && <label>Số lít nhiên liệu<input type="number" inputMode="decimal" min="0" step="0.01" value={fuelLiters} onChange={(e) => setFuelLiters(e.target.value)} placeholder="Ví dụ: 22.5" /></label>}<label>Ghi chú<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Nội dung chi phí" /></label>{amount && <div className="amount-preview">Số tiền: <strong>{formatCurrency(Number(amount))}</strong></div>}<button className="primary-button full" disabled={saving || safeNumber(amount) <= 0 || !file || (type === 'fuel' && safeNumber(fuelLiters) <= 0)} onClick={() => onSubmit(type, Number(amount), description, file, Number(fuelLiters))}>{saving ? 'Đang gửi...' : 'Gửi chi phí'}</button></Modal>
 }
 
 function IncidentModal({ saving, onClose, onSubmit }: { saving: boolean; onClose: () => void; onSubmit: (type: IncidentType, severity: Severity, description: string, file: File | null, audio: File | null) => void }) {
@@ -1114,5 +1167,5 @@ function IncidentModal({ saving, onClose, onSubmit }: { saving: boolean; onClose
   const [description, setDescription] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [audio, setAudio] = useState<File | null>(null)
-  return <Modal title="Báo sự cố" onClose={onClose}><div className="incident-choice">{(Object.keys(INCIDENT_LABELS) as IncidentType[]).map((item) => <button type="button" className={type === item ? 'active' : ''} key={item} onClick={() => setType(item)}>{INCIDENT_LABELS[item]}</button>)}</div><label>Mức độ<select value={severity} onChange={(e) => setSeverity(e.target.value as Severity)}><option value="low">Nhẹ — vẫn có thể di chuyển</option><option value="medium">Cần kiểm tra sớm</option><option value="high">Nghiêm trọng — nên dừng xe</option><option value="critical">Khẩn cấp / tai nạn</option></select></label><MediaInput label="Chụp ảnh tình trạng xe" onChange={setFile} /><AudioRecorder onChange={setAudio} /><label>Mô tả ngắn<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Xe phát tiếng kêu, vị trí xảy ra..." /></label>{severity === 'critical' && <a className="emergency-call" href={`tel:${coordinatorPhone}`}>☎ GỌI ĐIỀU PHỐI NGAY</a>}<button className="danger-button full" disabled={saving || !description.trim()} onClick={() => onSubmit(type, severity, description, file, audio)}>{saving ? 'Đang gửi...' : 'GỬI BÁO SỰ CỐ'}</button></Modal>
+  return <Modal title="Báo sự cố" onClose={onClose}><div className="incident-choice">{(Object.keys(INCIDENT_LABELS) as IncidentType[]).map((item) => <button type="button" className={type === item ? 'active' : ''} key={item} onClick={() => setType(item)}>{INCIDENT_LABELS[item]}</button>)}</div><label>Mức độ<select value={severity} onChange={(e) => setSeverity(e.target.value as Severity)}><option value="low">Nhẹ — vẫn có thể di chuyển</option><option value="medium">Cần kiểm tra sớm</option><option value="high">Nghiêm trọng — nên dừng xe</option><option value="critical">Khẩn cấp / tai nạn</option></select></label><MediaInput label="Chụp ảnh tình trạng xe" onChange={setFile} /><AudioRecorder onChange={setAudio} /><label>Mô tả ngắn<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Xe phát tiếng kêu, vị trí xảy ra..." /></label>{severity === 'critical' && <a className="emergency-call" href={`tel:${coordinatorPhone}`}>Gọi Điều phối ngay</a>}<button className="danger-button full" disabled={saving || !description.trim()} onClick={() => onSubmit(type, severity, description, file, audio)}>{saving ? 'Đang gửi...' : 'Gửi báo sự cố'}</button></Modal>
 }

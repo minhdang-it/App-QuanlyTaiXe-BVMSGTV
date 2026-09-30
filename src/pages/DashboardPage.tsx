@@ -10,6 +10,8 @@ import { TripDetailModal } from './DispatchPage'
 import { ImagePreview } from '../components/ImagePreview'
 import { ActionCenter } from '../components/ActionCenter'
 import { detectOperationalInsights } from '../lib/operationalInsights'
+import { OnlineUsersPanel } from '../components/Presence'
+import { Icon, type IconName } from '../components/Icon'
 import type { PageKey } from '../components/AppShell'
 import type { AppData, Expense, Incident, Trip, UserRole } from '../types/models'
 
@@ -53,7 +55,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
       completed: todayTrips.filter((t) => t.status === 'completed').length,
       delayed: todayTrips.filter((t) => ['assigned', 'accepted', 'ready'].includes(t.status) && new Date(t.scheduled_start).getTime() < now).length,
       expense: todayExpenses.reduce((sum, item) => sum + item.amount, 0),
-      pendingExpenses: data.expenses.filter((e) => ['pending_fleet', 'pending_accountant', 'pending_director', 'pending_accountant_final'].includes(e.status)).length,
+      pendingExpenses: data.expenses.filter((e) => e.status === 'pending_director' || e.status === 'pending_accountant').length,
     }
   }, [data])
 
@@ -97,66 +99,72 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
   const operationalInsights = useMemo(() => detectOperationalInsights(data).slice(0, 8), [data])
   const todayPending = todayTrips.filter((trip) => ['pending_fleet','pending_director','assigned','accepted','ready'].includes(trip.status)).length
 
+  const todayLabel = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+
   return (
-    <div className="dashboard-grid executive-dashboard-grid">
-
-      <section className="mobile-today-hero">
-        <div><span>HÔM NAY</span><h2>{new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</h2><p>Tình hình điều hành nhanh trên điện thoại</p></div>
-        <div className="mobile-today-stats">
-          <article><span>🚐</span><strong>{todayTrips.length}</strong><small>Chuyến</small></article>
-          <article><span>🟢</span><strong>{activeTrips.length}</strong><small>Đang chạy</small></article>
-          <article><span>🕒</span><strong>{todayPending}</strong><small>Chờ xử lý</small></article>
-          <article><span>⚠️</span><strong>{operationalInsights.length}</strong><small>Cảnh báo</small></article>
+    <div className="dashboard">
+      <section className="dashboard-heading">
+        <div><span className="eyebrow">Hôm nay</span><h2>{todayLabel}</h2></div>
+        <div className="dashboard-heading-stats">
+          <span><b>{todayTrips.length}</b> chuyến trong ngày</span>
+          <span><b>{activeTrips.length}</b> đang chạy</span>
+          <span><b>{todayPending}</b> chờ xử lý</span>
         </div>
       </section>
 
-      <ActionCenter onNavigate={onNavigate} />
-
-      <section className="metric-grid compact-metric-grid">
-        <Metric icon="🚘" label="Tổng số xe" value={metrics.totalVehicles} />
-        <Metric icon="🟢" label="Xe đang chạy" value={metrics.running} tone="success" />
-        <Metric icon="🅿️" label="Xe đang trống" value={metrics.available} />
-        <Metric icon="🔧" label="Xe đang sửa" value={metrics.maintenance} tone="warning" />
-        <Metric icon="✓" label="Chuyến hoàn thành" value={metrics.completed} tone="success" />
-        <Metric icon="⏰" label="Chuyến trễ giờ" value={metrics.delayed} tone={metrics.delayed ? 'danger' : undefined} />
-        <Metric icon="💵" label="Chi phí đã duyệt hôm nay" value={formatCurrency(metrics.expense)} wide />
-        <Metric icon="🧾" label="Chi phí chờ duyệt" value={metrics.pendingExpenses} tone={metrics.pendingExpenses ? 'warning' : undefined} wide />
+      <section className="metric-grid">
+        <Metric icon="vehicle" label="Tổng số xe" value={metrics.totalVehicles} hint={`${metrics.available} xe đang trống`} />
+        <Metric icon="navigation" label="Xe đang chạy" value={metrics.running} tone="success" hint={`${activeTrips.length} chuyến có GPS`} />
+        <Metric icon="wrench" label="Xe đang sửa" value={metrics.maintenance} tone={metrics.maintenance ? 'warning' : undefined} hint="Không điều được" />
+        <Metric icon="check-circle" label="Hoàn thành hôm nay" value={metrics.completed} tone="success" hint={`${metrics.delayed} chuyến trễ giờ`} />
+        <Metric icon="money" label="Chi phí đã duyệt hôm nay" value={formatCurrency(metrics.expense)} hint="Đã duyệt hoặc đã chi" />
+        <Metric icon="receipt" label="Chi phí chờ duyệt" value={metrics.pendingExpenses} tone={metrics.pendingExpenses ? 'warning' : undefined} hint="BGĐ và Kế toán" />
       </section>
 
-      <DepartmentWorkspace role={role} data={data} metrics={metrics} activeTrips={activeTrips} />
+      <div className="dashboard-columns">
+        <div className="dashboard-main">
+          <ActionCenter onNavigate={onNavigate} />
 
-      <section className="panel trip-panel modern-panel-span-2">
-        <div className="panel-header"><div><h2>Lịch xe hôm nay</h2><p>Toàn bộ hành trình đã điều trong ngày</p></div><span className="count-pill">{todayTrips.length} chuyến</span></div>
-        {todayTrips.length ? <div className="table-wrap"><table><thead><tr><th>Giờ</th><th>Xe / Tài xế</th><th>Hành trình</th><th>Loại chuyến</th><th>Trạng thái</th></tr></thead><tbody>{todayTrips.map((trip) => {
-          const vehicle = data.vehicles.find((v) => v.id === trip.vehicle_id)
-          const driver = data.profiles.find((p) => p.id === trip.driver_id)
-          return <tr className="clickable-table-row" tabIndex={0} role="button" aria-label={`Xem chi tiết chuyến ${vehicle?.plate_number ?? ''}`} onClick={() => setSelectedTrip(trip)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedTrip(trip) }} key={trip.id}><td><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong></td><td><strong>{vehicle?.plate_number}</strong><small>{driver?.full_name}</small></td><td><strong>{trip.destination}</strong><small>{trip.pickup}</small></td><td>{PURPOSE_LABELS[trip.purpose]}</td><td><StatusBadge status={trip.status} /></td></tr>
-        })}</tbody></table></div> : <EmptyState icon="📅" title="Hôm nay chưa có lịch xe" />}
-      </section>
+          <DepartmentWorkspace role={role} data={data} metrics={metrics} activeTrips={activeTrips} />
 
-      <LiveTrackingPanel data={data} trips={activeTrips} />
+          <section className="panel trip-panel">
+            <div className="panel-header"><div><h2>Lịch xe hôm nay</h2><p>Bấm vào một dòng để xem chi tiết chuyến</p></div><span className="count-pill">{todayTrips.length} chuyến</span></div>
+            {todayTrips.length ? <div className="table-wrap"><table><thead><tr><th>Giờ</th><th>Xe / Tài xế</th><th>Hành trình</th><th>Loại chuyến</th><th>Trạng thái</th></tr></thead><tbody>{todayTrips.map((trip) => {
+              const vehicle = data.vehicles.find((v) => v.id === trip.vehicle_id)
+              const driver = data.profiles.find((p) => p.id === trip.driver_id)
+              return <tr className="clickable-table-row" tabIndex={0} role="button" aria-label={`Xem chi tiết chuyến ${vehicle?.plate_number ?? ''}`} onClick={() => setSelectedTrip(trip)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedTrip(trip) }} key={trip.id}><td className="time-cell">{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</td><td><strong className="plate">{vehicle?.plate_number}</strong><small>{driver?.full_name}</small></td><td><strong>{trip.destination}</strong><small>{trip.is_adhoc ? <span className="inline-adhoc">Đột xuất</span> : null}{trip.pickup}</small></td><td>{PURPOSE_LABELS[trip.purpose]}</td><td><StatusBadge status={trip.status} /></td></tr>
+            })}</tbody></table></div> : <EmptyState icon="calendar" title="Hôm nay chưa có lịch xe" />}
+          </section>
 
-      <section className="panel insight-panel modern-panel-span-2">
-        <div className="panel-header"><div><h2>Kiểm tra dữ liệu & vận hành</h2><p>Tự phát hiện các dữ liệu thiếu, quá hạn hoặc bất thường cần kiểm tra.</p></div><span className={`count-pill ${operationalInsights.some((item) => item.level === 'danger') ? 'danger' : ''}`}>{operationalInsights.length} mục</span></div>
-        {operationalInsights.length ? <div className="operational-insight-list">{operationalInsights.map((item) => <button type="button" key={item.id} className={`operational-insight-item ${item.level}`} onClick={() => onNavigate(item.entity === 'vehicle' ? 'vehicles' : item.entity === 'expense' ? 'expenses' : 'dispatch')}>
-          <span>{item.level === 'danger' ? '!' : item.level === 'warning' ? '⚠' : 'i'}</span><div><strong>{item.title}</strong><small>{item.detail}</small></div><i>›</i>
-        </button>)}</div> : <EmptyState icon="✅" title="Dữ liệu vận hành đang ổn" description="Chưa phát hiện vấn đề cần kiểm tra." />}
-      </section>
-
-      <section className="panel alert-panel">
-        <div className="panel-header"><div><h2>Cảnh báo cần chú ý</h2><p>Giấy tờ, bảo dưỡng, sự cố và chậm chuyến</p></div></div>
-        {alerts.length ? <div className="alert-list">{alerts.map((item, index) => <div className={`alert-item ${item.level}`} key={`${item.title}-${index}`}><span>{item.level === 'danger' ? '!' : item.level === 'warning' ? '⚠' : 'i'}</span><div><strong>{item.title}</strong><small>{item.detail}</small></div></div>)}</div> : <EmptyState icon="✅" title="Không có cảnh báo khẩn" description="Hệ thống chưa phát hiện giấy tờ hoặc xe cần xử lý ngay." />}
-      </section>
-
-      <section className="panel activity-panel">
-        <div className="panel-header"><div><h2>Hoạt động gần đây</h2><p>Bấm vào từng hoạt động để xem đầy đủ thông tin</p></div></div>
-        <div className="timeline interactive-timeline">
-          {recentActivities.map((activity) => activity.kind === 'incident'
-            ? <button type="button" className="timeline-item timeline-action" onClick={() => setSelectedActivity(activity)} key={`incident-${activity.item.id}`}><span className="timeline-dot danger" /><div><strong>{INCIDENT_LABELS[activity.item.type]}</strong><p>{activity.item.description || 'Không có mô tả'}</p><small>{formatDateTime(activity.item.created_at)}</small></div><span className="timeline-chevron">›</span></button>
-            : <button type="button" className="timeline-item timeline-action" onClick={() => setSelectedActivity(activity)} key={`expense-${activity.item.id}`}><span className="timeline-dot" /><div><strong>{EXPENSE_LABELS[activity.item.type]} · {formatCurrency(activity.item.amount)}</strong><p>{localizedExpenseDescription(activity.item)}</p><small>{formatDateTime(activity.item.created_at)}</small></div><span className="timeline-chevron">›</span></button>)}
-          {!recentActivities.length && <EmptyState title="Chưa có hoạt động" />}
+          <LiveTrackingPanel data={data} trips={activeTrips} />
         </div>
-      </section>
+
+        <aside className="dashboard-side">
+          <section className="panel alert-panel">
+            <div className="panel-header"><div><h2>Cảnh báo cần chú ý</h2><p>Giấy tờ, bảo dưỡng, sự cố, chậm chuyến</p></div><span className={`count-pill ${alerts.some((item) => item.level === 'danger') ? 'danger' : ''}`}>{alerts.length}</span></div>
+            {alerts.length ? <div className="alert-list">{alerts.map((item, index) => <div className={`alert-item ${item.level}`} key={`${item.title}-${index}`}><span><Icon name={item.level === 'info' ? 'alert' : 'incident'} size={15} /></span><div><strong>{item.title}</strong><small>{item.detail}</small></div></div>)}</div> : <EmptyState icon="check-circle" title="Không có cảnh báo khẩn" description="Chưa phát hiện giấy tờ hoặc xe cần xử lý ngay." />}
+          </section>
+
+          <section className="panel insight-panel">
+            <div className="panel-header"><div><h2>Kiểm tra dữ liệu</h2><p>Dữ liệu thiếu, quá hạn hoặc bất thường</p></div><span className={`count-pill ${operationalInsights.some((item) => item.level === 'danger') ? 'danger' : ''}`}>{operationalInsights.length}</span></div>
+            {operationalInsights.length ? <div className="operational-insight-list">{operationalInsights.map((item) => <button type="button" key={item.id} className={`operational-insight-item ${item.level}`} onClick={() => onNavigate(item.entity === 'vehicle' ? 'vehicles' : item.entity === 'expense' ? 'expenses' : 'dispatch')}>
+              <span><Icon name={item.level === 'danger' ? 'incident' : 'alert'} size={15} /></span><div><strong>{item.title}</strong><small>{item.detail}</small></div><i><Icon name="chevron-right" size={15} /></i>
+            </button>)}</div> : <EmptyState icon="check-circle" title="Dữ liệu vận hành đang ổn" description="Chưa phát hiện vấn đề cần kiểm tra." />}
+          </section>
+
+          <OnlineUsersPanel />
+
+          <section className="panel activity-panel">
+            <div className="panel-header"><div><h2>Hoạt động gần đây</h2><p>Chi phí và sự cố mới nhất</p></div></div>
+            <div className="timeline">
+              {recentActivities.map((activity) => activity.kind === 'incident'
+                ? <button type="button" className="timeline-item" onClick={() => setSelectedActivity(activity)} key={`incident-${activity.item.id}`}><span className="timeline-dot danger"><Icon name="incident" size={14} /></span><div><strong>{INCIDENT_LABELS[activity.item.type]}</strong><p>{activity.item.description || 'Không có mô tả'}</p><small>{formatDateTime(activity.item.created_at)}</small></div><Icon name="chevron-right" size={15} className="timeline-chevron" /></button>
+                : <button type="button" className="timeline-item" onClick={() => setSelectedActivity(activity)} key={`expense-${activity.item.id}`}><span className="timeline-dot"><Icon name="receipt" size={14} /></span><div><strong>{EXPENSE_LABELS[activity.item.type]} · {formatCurrency(activity.item.amount)}</strong><p>{localizedExpenseDescription(activity.item)}</p><small>{formatDateTime(activity.item.created_at)}</small></div><Icon name="chevron-right" size={15} className="timeline-chevron" /></button>)}
+              {!recentActivities.length && <EmptyState title="Chưa có hoạt động" />}
+            </div>
+          </section>
+        </aside>
+      </div>
 
       {selectedTrip && <TripDetailModal trip={data.trips.find((item) => item.id === selectedTrip.id) ?? selectedTrip} canManage={false} onClose={() => setSelectedTrip(null)} onEdit={() => undefined} onCancel={() => undefined} onDelete={() => undefined} />}
       {selectedActivity && <ActivityDetailModal activity={selectedActivity} data={data} onClose={() => setSelectedActivity(null)} onOpenTrip={(tripId) => { const trip = data.trips.find((item) => item.id === tripId); if (trip) { setSelectedActivity(null); setSelectedTrip(trip) } }} />}
@@ -240,21 +248,21 @@ function DispatcherWorkspace({ data, activeTrips }: { data: AppData; activeTrips
 }
 
 function AccountantWorkspace({ data }: { data: AppData }) {
-  const pending = data.expenses.filter((item) => item.status === 'pending_accountant' || item.status === 'pending_accountant_final').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const pending = data.expenses.filter((item) => item.status === 'pending_accountant').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   const pendingAmount = pending.reduce((sum, item) => sum + item.amount, 0)
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
   const monthExpenses = data.expenses.filter((item) => new Date(item.expense_date).getTime() >= monthStart.getTime() && (item.status === 'approved' || item.status === 'paid'))
   const monthAmount = monthExpenses.reduce((sum, item) => sum + item.amount, 0)
   const topTypes = Object.entries(EXPENSE_LABELS).map(([key, label]) => ({ label, value: monthExpenses.filter((item) => item.type === key).reduce((sum, item) => sum + item.amount, 0) })).sort((a, b) => b.value - a.value).slice(0, 4)
   return <section className="role-workspace role-workspace-accountant">
-    <div className="role-workspace-heading"><div><span>KHÔNG GIAN KẾ TOÁN</span><h3>Kiểm soát chi phí và chứng từ</h3><p>Kế toán kiểm tra chứng từ trước BGĐ và xác nhận lần cuối sau khi BGĐ duyệt.</p></div><strong>{formatCurrency(pendingAmount)} chờ xử lý</strong></div>
+    <div className="role-workspace-heading"><div><span>KHÔNG GIAN KẾ TOÁN</span><h3>Kiểm soát chi phí và chứng từ</h3><p>Chỉ xử lý các khoản đã được Ban Giám đốc duyệt, sau đó xác nhận chi trả.</p></div><strong>{formatCurrency(pendingAmount)} chờ xử lý</strong></div>
     <div className="finance-overview-grid">
       <article><span>Chi phí tháng này</span><strong>{formatCurrency(monthAmount)}</strong><small>{monthExpenses.length} chứng từ hợp lệ</small></article>
-      <article><span>Chờ Kế toán xử lý</span><strong>{formatCurrency(pendingAmount)}</strong><small>{pending.length} khoản ở bước kiểm tra / xác nhận</small></article>
+      <article><span>Chờ Kế toán duyệt</span><strong>{formatCurrency(pendingAmount)}</strong><small>{pending.length} khoản đã qua Ban Giám đốc</small></article>
       <article><span>Đã thanh toán</span><strong>{data.expenses.filter((item) => item.status === 'paid').length}</strong><small>Khoản đã hoàn tất</small></article>
     </div>
     <div className="workspace-columns">
-      <WorkspaceList title="Chứng từ chờ Kế toán xử lý" tone="warning" empty="Không có khoản chờ xử lý" items={pending.slice(0, 5).map((item) => ({ title: formatCurrency(item.amount), detail: `${EXPENSE_LABELS[item.type]} · ${formatDateTime(item.created_at)}`, status: item.receipt_url ? 'Có hóa đơn' : 'Chưa có hóa đơn' }))} />
+      <WorkspaceList title="Chứng từ chờ Kế toán duyệt" tone="warning" empty="Không có khoản chờ duyệt" items={pending.slice(0, 5).map((item) => ({ title: formatCurrency(item.amount), detail: `${EXPENSE_LABELS[item.type]} · ${formatDateTime(item.created_at)}`, status: item.receipt_url ? 'Có hóa đơn' : 'Chưa có hóa đơn' }))} />
       <div className="workspace-breakdown"><h4>Nhóm chi phí lớn trong tháng</h4>{topTypes.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatCurrency(item.value)}</strong></div>)}</div>
     </div>
   </section>
@@ -296,8 +304,11 @@ function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metr
   const costPerKm = monthKm > 0 ? monthExpense / monthKm : 0
   const vehicleUse = data.vehicles.map((vehicle) => ({ vehicle, trips: monthTrips.filter((trip) => trip.vehicle_id === vehicle.id).length })).sort((a,b) => b.trips - a.trips)[0]
   const openIncidents = data.incidents.filter((item) => !['resolved','rejected'].includes(item.status)).length
+  const monthAdhoc = monthTrips.filter((item) => item.is_adhoc)
+  const monthAdhocPending = monthAdhoc.filter((item) => item.adhoc_report_status === 'pending_review').length
+  const pendingExpenseApproval = data.expenses.filter((item) => item.status === 'pending_director').length
   return <section className="role-workspace role-workspace-director">
-    <div className="role-workspace-heading"><div><span>TRUNG TÂM QUYẾT ĐỊNH</span><h3>Tổng hợp điều hành dành cho lãnh đạo</h3><p>Các con số quan trọng được cô đọng để cập nhật và ra quyết định nhanh.</p></div><strong>Cập nhật tức thời</strong></div>
+    <div className="role-workspace-heading"><div><span>TRUNG TÂM QUYẾT ĐỊNH</span><h3>Tổng hợp điều hành dành cho lãnh đạo</h3><p>Ban Giám đốc không cần duyệt từng chuyến xe (Hành chính điều phối duyệt là xe đi). BGĐ xem báo cáo tổng hợp cuối tháng và duyệt chi.</p></div><strong>Cập nhật tức thời</strong></div>
     <div className="director-kpi-grid">
       <article><span>Xe đang vận hành</span><strong>{activeTrips.length}</strong><small>trên {metrics.totalVehicles} xe</small></article>
       <article><span>Mức sẵn sàng</span><strong>{readiness}%</strong><small>{metrics.available} xe có thể điều ngay</small></article>
@@ -309,6 +320,8 @@ function DirectorWorkspace({ data, metrics, activeTrips }: { data: AppData; metr
       <article><span>Chi phí / km</span><strong>{monthKm ? formatCurrency(costPerKm) : '—'}</strong><small>Tính trên KM đã có đủ đầu/cuối</small></article>
       <article><span>Xe sử dụng nhiều</span><strong>{vehicleUse?.vehicle.plate_number ?? '—'}</strong><small>{vehicleUse?.trips ?? 0} chuyến trong tháng</small></article>
       <article className={openIncidents ? 'warning' : ''}><span>Sự cố đang mở</span><strong>{openIncidents}</strong><small>Cần theo dõi đến khi hoàn tất</small></article>
+      <article className={monthAdhocPending ? 'warning' : ''}><span>Chuyến đột xuất trong tháng</span><strong>{monthAdhoc.length}</strong><small>{monthAdhocPending ? `${monthAdhocPending} chuyến chờ Hành chính/Điều phối xác nhận` : 'Đã được xác nhận báo cáo'}</small></article>
+      <article className={pendingExpenseApproval ? 'warning' : ''}><span>Chi phí chờ BGĐ duyệt</span><strong>{pendingExpenseApproval}</strong><small>Việc cần duyệt duy nhất của BGĐ</small></article>
     </div>
   </section>
 }
@@ -364,7 +377,7 @@ function LiveTrackingPanel({ data, trips }: { data: AppData; trips: Trip[] }) {
           <div className="live-trip-location"><code>{liveLat!.toFixed(6)}, {liveLng!.toFixed(6)}</code><a href={googleMapsLocationUrl({ lat: liveLat!, lng: liveLng! })} target="_blank" rel="noreferrer">Mở Google Maps</a></div>
         </> : <div className="live-trip-location empty">Tài xế chưa cấp quyền vị trí hoặc GPS chưa sẵn sàng.</div>}
       </article>
-    })}</div> : <EmptyState icon="📍" title="Chưa có xe đang chạy" description="Khi tài xế bắt đầu chuyến, vị trí xe sẽ xuất hiện tại đây." />}
+    })}</div> : <EmptyState icon="pin" title="Chưa có xe đang chạy" description="Khi tài xế bắt đầu chuyến, vị trí xe sẽ xuất hiện tại đây." />}
   </section>
 }
 
@@ -397,6 +410,10 @@ function driverName(data: AppData, trip: Trip) {
   return data.profiles.find((item) => item.id === trip.driver_id)?.full_name ?? 'Chưa gán tài xế'
 }
 
-function Metric({ icon, label, value, tone, wide }: { icon: string; label: string; value: string | number; tone?: string; wide?: boolean }) {
-  return <article className={`metric-card ${tone ?? ''} ${wide ? 'wide' : ''}`}><span className="metric-icon">{icon}</span><div><p>{label}</p><strong>{value}</strong></div></article>
+function Metric({ icon, label, value, tone, hint }: { icon: IconName; label: string; value: string | number; tone?: string; hint?: string }) {
+  return <article className={`metric-card ${tone ?? ''}`}>
+    <div className="metric-top"><p>{label}</p><span className="metric-icon"><Icon name={icon} size={16} /></span></div>
+    <strong>{value}</strong>
+    {hint && <small>{hint}</small>}
+  </article>
 }

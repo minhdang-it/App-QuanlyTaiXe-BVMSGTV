@@ -4,10 +4,11 @@ import { useData } from '../context/DataContext'
 import { daysUntil, formatDateTime } from '../lib/utils'
 import type { UserRole } from '../types/models'
 import type { PageKey } from './AppShell'
+import { Icon, type IconName } from './Icon'
 
 type ActionItem = {
   key: string
-  icon: string
+  icon: IconName
   title: string
   detail: string
   count: number
@@ -22,38 +23,38 @@ function actionItemsForRole(role: UserRole, data: ReturnType<typeof useData>['da
 
   if (role === 'department_head') {
     const own = data.vehicleRequests.filter((item) => item.requester_id === userId)
-    add({ key: 'request-pending', icon: '📄', title: 'Đề nghị đang chờ Hành chính', detail: 'Theo dõi trạng thái duyệt của khoa/phòng', count: own.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
-    add({ key: 'request-approved', icon: '✅', title: 'Đề nghị đã được duyệt', detail: 'Đang chờ Điều phối tạo chuyến', count: own.filter((item) => item.status === 'fleet_approved').length, tone: 'success', page: 'requests' })
-    add({ key: 'request-rejected', icon: '!', title: 'Đề nghị cần xem lại', detail: 'Có đề nghị không được duyệt', count: own.filter((item) => item.status === 'rejected').length, tone: 'danger', page: 'requests' })
+    add({ key: 'request-pending', icon: 'requests', title: 'Đề nghị đang chờ Hành chính', detail: 'Theo dõi trạng thái duyệt của khoa/phòng', count: own.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
+    add({ key: 'request-approved', icon: 'check-circle', title: 'Đề nghị đã được duyệt', detail: 'Đang chờ Điều phối tạo chuyến', count: own.filter((item) => item.status === 'fleet_approved').length, tone: 'success', page: 'requests' })
+    add({ key: 'request-rejected', icon: 'alert', title: 'Đề nghị cần xem lại', detail: 'Có đề nghị không được duyệt', count: own.filter((item) => item.status === 'rejected').length, tone: 'danger', page: 'requests' })
     return items
   }
 
+  if (role === 'dispatcher' || role === 'admin') {
+    add({ key: 'approved-requests', icon: 'inbox', title: 'Đề nghị chờ tạo chuyến', detail: 'Đã được Hành chính duyệt', count: data.vehicleRequests.filter((item) => item.status === 'fleet_approved').length, tone: 'warning', page: 'dispatch' })
+    add({ key: 'late-trips', icon: 'clock', title: 'Chuyến trễ giờ', detail: 'Đã đến giờ nhưng chưa bắt đầu', count: data.trips.filter((item) => ['assigned','accepted','ready'].includes(item.status) && new Date(item.scheduled_start).getTime() < now).length, tone: 'danger', page: 'dispatch' })
+    add({ key: 'checklist-review', icon: 'check-circle', title: 'Checklist cần xác nhận', detail: 'Tài xế có mục kiểm tra bất thường', count: data.trips.filter((item) => item.status === 'accepted' && item.checklist_completed).length, tone: 'warning', page: 'dispatch' })
+  }
+
   if (role === 'dispatcher' || role === 'fleet' || role === 'admin') {
-    add({ key: 'approved-requests', icon: '📥', title: 'Đề nghị chờ tạo chuyến', detail: 'Điều phối/Hành chính có thể tạo chuyến', count: data.vehicleRequests.filter((item) => item.status === 'fleet_approved').length, tone: 'warning', page: 'dispatch' })
-    add({ key: 'late-trips', icon: '⏰', title: 'Chuyến trễ giờ', detail: 'Đã đến giờ nhưng chưa bắt đầu', count: data.trips.filter((item) => ['assigned','accepted','ready'].includes(item.status) && new Date(item.scheduled_start).getTime() < now).length, tone: 'danger', page: 'dispatch' })
-    add({ key: 'checklist-review', icon: '☑', title: 'Checklist cần xác nhận', detail: 'Tài xế có mục kiểm tra bất thường', count: data.trips.filter((item) => item.status === 'accepted' && item.checklist_completed).length, tone: 'warning', page: 'dispatch' })
+    add({ key: 'adhoc-review', icon: 'zap', title: 'Chuyến đột xuất chờ xác nhận', detail: 'Tài xế tự tạo, cần xác nhận báo cáo', count: data.trips.filter((item) => item.is_adhoc && item.adhoc_report_status === 'pending_review').length, tone: 'warning', page: 'dispatch' })
   }
 
   if (role === 'fleet' || role === 'admin') {
-    add({ key: 'fleet-requests', icon: '📄', title: 'Đề nghị xe cần duyệt', detail: 'Khoa/phòng đang chờ Hành chính', count: data.vehicleRequests.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
-    add({ key: 'fleet-trips', icon: '🚐', title: 'Yêu cầu điều xe cần xử lý', detail: 'Điều phối đang chờ Hành chính', count: data.trips.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'dispatch' })
-    add({ key: 'fleet-expenses', icon: '💵', title: 'Chi phí chờ Hành chính', detail: 'Tài xế vừa gửi, cần kiểm tra bước đầu', count: data.expenses.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'expenses' })
-    add({ key: 'fleet-incidents-new', icon: '⚠️', title: 'Sự cố chờ Hành chính', detail: 'Kiểm tra báo cáo và trình Ban Giám đốc', count: data.incidents.filter((item) => item.status === 'pending_fleet').length, tone: 'danger', page: 'incidents' })
-    add({ key: 'fleet-incidents', icon: '🛠', title: 'Sự cố được phép sửa', detail: 'Đã được BGĐ duyệt và cần tiếp nhận xử lý', count: data.incidents.filter((item) => ['reported','handling'].includes(item.status)).length, tone: 'danger', page: 'incidents' })
-    add({ key: 'fleet-maintenance', icon: '🔧', title: 'Bảo dưỡng đang thực hiện', detail: 'Theo dõi lịch và tiến độ sửa chữa', count: data.maintenances.filter((item) => ['scheduled','in_progress'].includes(item.status)).length, tone: 'normal', page: 'maintenance' })
+    add({ key: 'fleet-requests', icon: 'requests', title: 'Đề nghị xe cần duyệt', detail: 'Khoa/phòng đang chờ Hành chính', count: data.vehicleRequests.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
+    add({ key: 'fleet-trips', icon: 'bus', title: 'Yêu cầu điều xe cần duyệt', detail: 'Hành chính duyệt là xe đi', count: data.trips.filter((item) => item.status === 'pending_fleet' || item.status === 'pending_director').length, tone: 'warning', page: 'dispatch' })
+    add({ key: 'fleet-incidents', icon: 'incident', title: 'Sự cố cần tiếp nhận', detail: 'Đã qua bước phê duyệt và cần xử lý', count: data.incidents.filter((item) => ['reported','handling'].includes(item.status)).length, tone: 'danger', page: 'incidents' })
+    add({ key: 'fleet-maintenance', icon: 'wrench', title: 'Bảo dưỡng đang thực hiện', detail: 'Theo dõi lịch và tiến độ sửa chữa', count: data.maintenances.filter((item) => ['scheduled','in_progress'].includes(item.status)).length, tone: 'normal', page: 'maintenance' })
   }
 
   if (role === 'director' || role === 'admin') {
-    add({ key: 'director-trips', icon: '🚐', title: 'Chuyến chờ BGĐ duyệt', detail: 'Yêu cầu điều xe đã qua Hành chính', count: data.trips.filter((item) => item.status === 'pending_director').length, tone: 'warning', page: 'dispatch' })
-    add({ key: 'director-expenses', icon: '💵', title: 'Chi phí chờ BGĐ duyệt', detail: 'Khoản phát sinh cần phê duyệt', count: data.expenses.filter((item) => item.status === 'pending_director').length, tone: 'warning', page: 'expenses' })
-    add({ key: 'director-incidents', icon: '⚠️', title: 'Sự cố chờ BGĐ duyệt', detail: 'Ưu tiên sự cố mức cao và khẩn cấp', count: data.incidents.filter((item) => item.status === 'pending_director').length, tone: 'danger', page: 'incidents' })
-    add({ key: 'director-maintenance', icon: '🔧', title: 'Bảo dưỡng chờ BGĐ duyệt', detail: 'Đề nghị sửa chữa/bảo dưỡng mới', count: data.maintenances.filter((item) => item.status === 'pending_director').length, tone: 'warning', page: 'maintenance' })
+    add({ key: 'director-expenses', icon: 'money', title: 'Chi phí chờ BGĐ duyệt', detail: 'Khoản phát sinh cần phê duyệt', count: data.expenses.filter((item) => item.status === 'pending_director').length, tone: 'warning', page: 'expenses' })
+    add({ key: 'director-incidents', icon: 'incident', title: 'Sự cố chờ BGĐ duyệt', detail: 'Ưu tiên sự cố mức cao và khẩn cấp', count: data.incidents.filter((item) => item.status === 'pending_director').length, tone: 'danger', page: 'incidents' })
+    add({ key: 'director-maintenance', icon: 'wrench', title: 'Bảo dưỡng chờ BGĐ duyệt', detail: 'Đề nghị sửa chữa/bảo dưỡng mới', count: data.maintenances.filter((item) => item.status === 'pending_director').length, tone: 'warning', page: 'maintenance' })
   }
 
   if (role === 'accountant' || role === 'admin') {
-    add({ key: 'accountant-precheck', icon: '🧾', title: 'Chi phí chờ Kế toán kiểm tra', detail: 'Đã qua Hành chính, cần kiểm tra chứng từ trước khi trình BGĐ', count: data.expenses.filter((item) => item.status === 'pending_accountant').length, tone: 'warning', page: 'expenses' })
-    add({ key: 'accountant-final', icon: '✅', title: 'Chi phí chờ Kế toán xác nhận', detail: 'Đã được BGĐ duyệt, cần xác nhận lần cuối', count: data.expenses.filter((item) => item.status === 'pending_accountant_final').length, tone: 'warning', page: 'expenses' })
-    add({ key: 'accountant-pay', icon: '✓', title: 'Khoản chờ chi trả', detail: 'Đã đủ các bước duyệt, chưa xác nhận thanh toán', count: data.expenses.filter((item) => item.status === 'approved').length, tone: 'normal', page: 'expenses' })
+    add({ key: 'accountant-review', icon: 'receipt', title: 'Chi phí chờ Kế toán', detail: 'Đã được BGĐ duyệt, cần kiểm tra chứng từ', count: data.expenses.filter((item) => item.status === 'pending_accountant').length, tone: 'warning', page: 'expenses' })
+    add({ key: 'accountant-pay', icon: 'check', title: 'Khoản chờ chi trả', detail: 'Đã duyệt kế toán, chưa xác nhận thanh toán', count: data.expenses.filter((item) => item.status === 'approved').length, tone: 'normal', page: 'expenses' })
   }
 
   return items
@@ -69,14 +70,14 @@ export function ActionCenter({ onNavigate, compact = false }: { onNavigate: (pag
   return <section className={`action-center ${compact ? 'compact' : ''}`}>
     <div className="action-center-heading">
       <div><span>VIỆC CẦN XỬ LÝ</span><h2>{total ? `${total} việc đang chờ` : 'Không có việc tồn'}</h2><p>{total ? 'Bấm vào từng nhóm để đi thẳng đến màn hình xử lý.' : `Cập nhật gần nhất ${formatDateTime(new Date().toISOString())}`}</p></div>
-      <strong className={total ? 'has-work' : 'all-done'}>{total || '✓'}</strong>
+      <strong className={total ? 'has-work' : 'all-done'}>{total || <Icon name="check" size={18} />}</strong>
     </div>
     {items.length ? <div className="action-center-grid">{items.map((item) => <button type="button" key={item.key} className={`action-center-card ${item.tone}`} onClick={() => onNavigate(item.page)}>
-      <span className="action-center-icon">{item.icon}</span>
+      <span className="action-center-icon"><Icon name={item.icon} size={17} /></span>
       <span className="action-center-copy"><strong>{item.title}</strong><small>{item.detail}</small></span>
       <b>{item.count}</b>
-      <i aria-hidden="true">›</i>
-    </button>)}</div> : <div className="action-center-empty"><span>✓</span><strong>Đã xử lý hết công việc hiện tại</strong><small>Thông báo mới sẽ xuất hiện tự động tại đây.</small></div>}
+      <i aria-hidden="true"><Icon name="chevron-right" size={16} /></i>
+    </button>)}</div> : <div className="action-center-empty"><span><Icon name="check" size={16} /></span><strong>Đã xử lý hết công việc hiện tại</strong><small>Thông báo mới sẽ xuất hiện tự động tại đây.</small></div>}
   </section>
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Icon } from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { ROLE_LABELS } from '../lib/constants'
@@ -152,7 +153,7 @@ function SelfAccountForm({
         </div>
         <div className="self-avatar-buttons">
           <label className="secondary-button compact self-avatar-upload">
-            📷 Đổi ảnh đại diện
+            <Icon name="camera" size={15} />Đổi ảnh đại diện
             <input type="file" accept="image/*" capture="user" hidden onChange={(event) => chooseAvatar(event.target.files?.[0] ?? null)} />
           </label>
           {preview && <button type="button" className="text-button danger-text" onClick={removeAvatar}>Xóa ảnh</button>}
@@ -193,9 +194,9 @@ function SelfAccountForm({
 
         <div className="self-account-actions">
           <button type="button" className="self-account-logout" onClick={() => void handleLogout()} disabled={loggingOut}>
-            {loggingOut ? 'ĐANG ĐĂNG XUẤT...' : '↪ ĐĂNG XUẤT'}
+            {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
           </button>
-          <button className="primary-button" disabled={saving}>{saving ? 'ĐANG LƯU...' : 'LƯU THAY ĐỔI'}</button>
+          <button className="primary-button" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu thay đổi'}</button>
         </div>
       </form>
     </div>

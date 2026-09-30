@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
+import { ADHOC_REPORT_LABELS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
 import { formatCurrency, formatDate, formatDateTime, googleMapsLocationUrl, toDateTimeLocal, todayKey } from '../lib/utils'
 import type { AppData, CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
 import { Modal } from '../components/Modal'
@@ -10,6 +10,9 @@ import { EmptyState } from '../components/EmptyState'
 import { VietnamDateInput } from '../components/VietnamDateInput'
 import { mergeSelectedPlanFiles, PlanAttachmentsViewer, SelectedPlanFiles } from '../components/PlanAttachments'
 import { consumeNavigationFocus, NAVIGATION_FOCUS_EVENT } from '../lib/focusNavigation'
+import { usePresence } from '../context/PresenceContext'
+import { PresenceLabel } from '../components/Presence'
+import { Icon } from '../components/Icon'
 
 
 function nextDefaultTripDateTime() {
@@ -18,10 +21,12 @@ function nextDefaultTripDateTime() {
   return toDateTimeLocal(date)
 }
 
-const statusFilters: Array<{ value: 'all' | TripStatus; label: string }> = [
+type TripFilter = 'all' | 'adhoc' | TripStatus
+
+const statusFilters: Array<{ value: TripFilter; label: string }> = [
   { value: 'all', label: 'Tất cả' },
   { value: 'pending_fleet', label: 'Chờ Hành chính' },
-  { value: 'pending_director', label: 'Chờ BGĐ' },
+  { value: 'adhoc', label: 'Đột xuất' },
   { value: 'assigned', label: 'Đã giao' },
   { value: 'accepted', label: 'Đã nhận' },
   { value: 'ready', label: 'Sẵn sàng' },
@@ -34,15 +39,15 @@ export function DispatchPage() {
   const { user } = useAuth()
   const { data, createTrip, updateTrip, deleteTrip } = useData()
   const role = user!.profile.role
-  const canManage = role === 'dispatcher' || role === 'fleet' || role === 'admin'
-  const canManageDriverLeave = role === 'fleet' || role === 'admin'
+  const canManage = role === 'dispatcher' || role === 'admin'
   const canFleetReview = role === 'fleet' || role === 'admin'
-  const canDirectorReview = role === 'director' || role === 'admin'
+  // Hành chính / Điều phối xác nhận báo cáo chuyến đột xuất do tài xế tự tạo.
+  const canAdhocReview = role === 'fleet' || role === 'dispatcher' || role === 'admin'
   const [showCreate, setShowCreate] = useState(false)
   const [createRequestId, setCreateRequestId] = useState<string | null>(null)
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null)
-  const [filter, setFilter] = useState<'all' | TripStatus>('all')
+  const [filter, setFilter] = useState<TripFilter>('all')
   const [purpose, setPurpose] = useState<'all' | TripPurpose>('all')
   const [query, setQuery] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -58,7 +63,7 @@ export function DispatchPage() {
     const toTime = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : null
 
     return data.trips
-      .filter((trip) => filter === 'all' || trip.status === filter)
+      .filter((trip) => filter === 'all' || (filter === 'adhoc' ? Boolean(trip.is_adhoc) : trip.status === filter))
       .filter((trip) => purpose === 'all' || trip.purpose === purpose)
       .filter((trip) => {
         const time = new Date(trip.scheduled_start).getTime()
@@ -78,11 +83,17 @@ export function DispatchPage() {
           trip.contact_name,
           trip.contact_phone,
           trip.notes,
+          trip.adhoc_reason,
+          trip.is_adhoc ? 'đột xuất' : null,
           PURPOSE_LABELS[trip.purpose],
         ].some((value) => value?.toLocaleLowerCase('vi-VN').includes(normalizedQuery))
       })
       .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime())
   }, [data.profiles, data.trips, data.vehicles, dateFrom, dateTo, filter, purpose, query])
+
+  const pendingAdhocReports = useMemo(() => data.trips
+    .filter((trip) => trip.is_adhoc && trip.adhoc_report_status === 'pending_review')
+    .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime()), [data.trips])
 
   const approvedDepartmentRequests = useMemo(() => data.vehicleRequests
     .filter((request) => request.status === 'fleet_approved')
@@ -156,28 +167,14 @@ export function DispatchPage() {
 
   async function fleetApproveTrip(trip: Trip) {
     try {
-      const bypassDirector = trip.approval_mode === 'fleet_only' && trip.approved_plan && Boolean(trip.plan_document_path || trip.plan_document_url)
+      // v2.9.0: Hành chính điều phối duyệt là xe đi, không trình Ban Giám đốc.
       await updateTrip(trip.id, {
-        status: bypassDirector ? 'assigned' : 'pending_director',
+        status: 'assigned',
         fleet_reviewer_id: user!.id,
         fleet_reviewed_at: new Date().toISOString(),
         approval_rejection_reason: null,
       })
-      setMessage({ text: bypassDirector ? 'Hành chính đã duyệt. Chuyến có văn bản kế hoạch hợp lệ nên được giao thẳng cho tài xế.' : 'Hành chính đã duyệt và chuyển Ban Giám đốc phê duyệt.' })
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
-    }
-  }
-
-  async function directorApproveTrip(trip: Trip) {
-    try {
-      await updateTrip(trip.id, {
-        status: 'assigned',
-        director_reviewer_id: user!.id,
-        director_reviewed_at: new Date().toISOString(),
-        approval_rejection_reason: null,
-      })
-      setMessage({ text: 'Ban Giám đốc đã duyệt. Tài xế đã nhận được chuyến để tiếp nhận.' })
+      setMessage({ text: 'Hành chính đã duyệt. Chuyến đã được giao cho tài xế.' })
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
     }
@@ -195,21 +192,19 @@ export function DispatchPage() {
   }
 
   return <>
-    {message && <div className={`inline-message ${message.error ? 'error' : ''}`}>{message.text}<button onClick={() => setMessage(null)}>✕</button></div>}
+    {message && <div className={`inline-message ${message.error ? 'error' : ''}`}>{message.text}<button onClick={() => setMessage(null)} aria-label="Đóng"><Icon name="x" size={15} /></button></div>}
 
     <section className="toolbar trip-toolbar">
       <div>
         <h2 className="toolbar-title">Quản lý và lịch sử chuyến đi</h2>
         <p className="toolbar-note">Xem lại hành trình, kilomet, chi phí và sự cố của từng chuyến.</p>
       </div>
-      {canManage && <button className="primary-button" onClick={() => { setCreateRequestId(null); setShowCreate(true) }}>＋ TẠO CHUYẾN</button>}
+      {canManage && <button className="primary-button" onClick={() => { setCreateRequestId(null); setShowCreate(true) }}><Icon name="plus" size={16} />Tạo chuyến</button>}
     </section>
-
-    {canManageDriverLeave && <DriverLeaveWeekPanel />}
 
     {canManage && approvedDepartmentRequests.length > 0 && <section className="approved-request-queue">
       <div className="panel-header">
-        <div><span className="eyebrow">ĐỀ NGHỊ ĐÃ ĐƯỢC HÀNH CHÍNH DUYỆT</span><h2>Chờ tạo chuyến</h2><p>Điều phối hoặc Hành chính bấm “Tạo chuyến” để lấy sẵn thông tin từ đề nghị của khoa/phòng.</p></div>
+        <div><span className="eyebrow">ĐỀ NGHỊ ĐÃ ĐƯỢC HÀNH CHÍNH DUYỆT</span><h2>Chờ Điều phối tạo chuyến</h2><p>Bấm “Tạo chuyến” để lấy sẵn thông tin từ đề nghị của khoa/phòng.</p></div>
         <span className="count-pill">{approvedDepartmentRequests.length} đề nghị</span>
       </div>
       <div className="approved-request-list">{approvedDepartmentRequests.map((request) => {
@@ -221,11 +216,36 @@ export function DispatchPage() {
       })}</div>
     </section>}
 
-    {!canManage && <div className="readonly-notice">Bạn đang xem dữ liệu ở chế độ chỉ đọc. Điều phối/Hành chính tạo chuyến; các bước duyệt tiếp theo thực hiện theo đúng quy trình phân quyền.</div>}
+    {canAdhocReview && pendingAdhocReports.length > 0 && <section className="adhoc-review-queue">
+      <div className="panel-header">
+        <div><span className="eyebrow">CHUYẾN ĐỘT XUẤT DO TÀI XẾ TẠO</span><h2>Chờ Hành chính/Điều phối xác nhận báo cáo</h2><p>Tài xế đã tự tạo và thực hiện chuyến. Kiểm tra lý do, KM và chi phí rồi xác nhận hoặc yêu cầu giải trình.</p></div>
+        <span className="count-pill">{pendingAdhocReports.length} chuyến</span>
+      </div>
+      <div className="adhoc-review-list">{pendingAdhocReports.map((trip) => {
+        const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
+        const driver = data.profiles.find((item) => item.id === trip.driver_id)
+        const distance = trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : null
+        return <article key={trip.id} className="adhoc-review-row">
+          <div className="adhoc-review-main">
+            <strong>{vehicle?.plate_number ?? 'Chưa rõ xe'} · {driver?.full_name ?? 'Chưa rõ tài xế'} <StatusBadge status={trip.status} /></strong>
+            <span>{formatDateTime(trip.scheduled_start)} · {trip.pickup} → {trip.destination}{distance != null ? ` · ${distance.toLocaleString('vi-VN')} km` : ''}</span>
+            <small>Lý do: {trip.adhoc_reason || '—'}</small>
+          </div>
+          <div className="adhoc-review-actions">
+            <button type="button" className="secondary-button compact" onClick={() => setSelectedTrip(trip)}>Xem chi tiết</button>
+            <AdhocReviewButtons trip={trip} onDone={(text, error) => setMessage({ text, error })} />
+          </div>
+        </article>
+      })}</div>
+    </section>}
+
+    {!canManage && <div className="readonly-notice">{role === 'director'
+      ? 'Ban Giám đốc không còn duyệt từng chuyến xe. Xem tổng hợp tại mục Báo cáo (cuối tháng) và duyệt chi phí tại mục Chi phí.'
+      : 'Bạn đang xem dữ liệu ở chế độ chỉ đọc. Điều phối tạo yêu cầu chuyến; Hành chính điều phối duyệt là xe đi.'}</div>}
 
     <section className="trip-filter-panel">
       <div className="filter-tabs trip-status-tabs">
-        {statusFilters.map((item) => <button key={item.value} className={filter === item.value ? 'active' : ''} onClick={() => setFilter(item.value)}>{item.label}</button>)}
+        {statusFilters.map((item) => <button key={item.value} className={filter === item.value ? 'active' : ''} onClick={() => setFilter(item.value)}>{item.label}{item.value === 'adhoc' && pendingAdhocReports.length > 0 ? ` (${pendingAdhocReports.length})` : ''}</button>)}
       </div>
       <div className="trip-filter-grid">
         <label>Tìm chuyến
@@ -245,7 +265,7 @@ export function DispatchPage() {
 
     <section className="dispatch-view-switch">
       <div className="dispatch-view-tabs">
-        <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>☰ Danh sách</button>
+        <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}><Icon name="list" size={15} />Danh sách</button>
         <button type="button" className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Ngày</button>
         <button type="button" className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Tuần</button>
         <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Tháng</button>
@@ -280,25 +300,24 @@ export function DispatchPage() {
         return <article id={`trip-${trip.id}`} className="dispatch-card" key={trip.id}>
           <div className="dispatch-time"><strong>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(trip.scheduled_start))}</strong><small>{formatDate(trip.scheduled_start)}</small></div>
           <div className="dispatch-main">
-            <div className="dispatch-title"><h3>{vehicle?.plate_number ?? 'Chưa rõ xe'} · {driver?.full_name ?? 'Chưa rõ tài xế'}</h3><StatusBadge status={trip.status} /></div>
-            <p><strong>{trip.pickup}</strong> → <strong>{trip.destination}</strong></p>
-            {checklistHasIssue && <div className="checklist-alert">⚠ Checklist có mục Không: {checklist?.notes || 'Chưa có ghi chú'}</div>}
-            <div className="dispatch-meta"><span>🏥 {PURPOSE_LABELS[trip.purpose]}</span><span>⏱ Về: {formatDateTime(trip.expected_end)}</span>{trip.contact_phone && <a href={`tel:${trip.contact_phone}`}>☎ {trip.contact_phone}</a>}</div>
-            {trip.approval_mode === 'fleet_only' && <span className="approval-route-chip">Văn bản đã duyệt · Hành chính duyệt là giao tài xế</span>}
+            <div className="dispatch-title"><h3><span className="plate">{vehicle?.plate_number ?? 'Chưa rõ xe'}</span><span className="dispatch-driver">{driver?.full_name ?? 'Chưa rõ tài xế'}</span></h3><StatusBadge status={trip.status} /></div>
+            <p className="dispatch-route"><span>{trip.pickup}</span><Icon name="arrow-right" size={14} /><strong>{trip.destination}</strong></p>
+            {checklistHasIssue && <div className="checklist-alert"><Icon name="incident" size={14} />Checklist có mục Không: {checklist?.notes || 'Chưa có ghi chú'}</div>}
+            <div className="dispatch-meta"><span><Icon name="hospital" size={14} />{PURPOSE_LABELS[trip.purpose]}</span><span><Icon name="clock" size={14} />Về {formatDateTime(trip.expected_end)}</span>{trip.contact_phone && <a href={`tel:${trip.contact_phone}`}><Icon name="phone" size={14} />{trip.contact_phone}</a>}</div>
+            {trip.is_adhoc && <span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}><Icon name="zap" size={12} />Đột xuất · {ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span>}
           </div>
           <div className="dispatch-actions">
             <button className="secondary-button compact" onClick={() => setSelectedTrip(trip)}>Xem chi tiết</button>
             {canEditTrip && <button className="secondary-button compact" onClick={() => setEditingTrip(trip)}>Sửa</button>}
-            {trip.status === 'pending_fleet' && canFleetReview && <button className="approve-button" onClick={() => void fleetApproveTrip(trip)}>{trip.approval_mode === 'fleet_only' ? 'Hành chính duyệt & giao tài xế' : 'Hành chính trình BGĐ'}</button>}
-            {trip.status === 'pending_fleet' && canFleetReview && <button className="reject-button" onClick={() => void rejectApproval(trip)}>Không duyệt</button>}
-            {trip.status === 'pending_director' && canDirectorReview && <button className="approve-button" onClick={() => void directorApproveTrip(trip)}>BGĐ duyệt</button>}
-            {trip.status === 'pending_director' && canDirectorReview && <button className="reject-button" onClick={() => void rejectApproval(trip)}>Không duyệt</button>}
+            {['pending_fleet', 'pending_director'].includes(trip.status) && canFleetReview && <button className="approve-button" onClick={() => void fleetApproveTrip(trip)}>Hành chính duyệt & giao tài xế</button>}
+            {['pending_fleet', 'pending_director'].includes(trip.status) && canFleetReview && <button className="reject-button" onClick={() => void rejectApproval(trip)}>Không duyệt</button>}
+            {trip.is_adhoc && trip.adhoc_report_status === 'pending_review' && canAdhocReview && <AdhocReviewButtons trip={trip} onDone={(text, error) => setMessage({ text, error })} />}
             {trip.status === 'accepted' && trip.checklist_completed && canManage && <button className="approve-button" onClick={async () => { await updateTrip(trip.id, { status: 'ready' }); setMessage({ text: 'Đã duyệt ngoại lệ, tài xế có thể tiếp tục.' }) }}>Duyệt xuất phát</button>}
             {canManage && !['pending_fleet', 'pending_director', 'completed', 'cancelled'].includes(trip.status) && <button className="reject-button" onClick={() => void cancelTrip(trip)}>Hủy chuyến</button>}
             {canDeleteTrip && <button className="text-button danger-text" onClick={() => void removeTrip(trip)}>Xóa</button>}
           </div>
         </article>
-      })}</div> : <EmptyState icon="🚐" title="Không có chuyến phù hợp" />}
+      })}</div> : <EmptyState icon="bus" title="Không có chuyến phù hợp" />}
     </section>}
 
     {showCreate && <TripFormModal initialRequestId={createRequestId ?? undefined} onClose={() => { setShowCreate(false); setCreateRequestId(null) }} onSubmit={async (input, planFiles) => {
@@ -307,11 +326,13 @@ export function DispatchPage() {
       setCreateRequestId(null)
       setMessage({ text: input.vehicle_request_id
         ? 'Đã tạo chuyến từ đề nghị đã được Hành chính duyệt. Tài xế đã nhận được chuyến.'
-        : 'Đã tạo yêu cầu điều xe. Chuyến đang chờ Hành chính đội xe duyệt.' })
+        : 'Đã tạo yêu cầu điều xe. Hành chính điều phối duyệt xong là chuyến được giao cho tài xế.' })
     }} />}
 
     {editingTrip && <TripFormModal trip={editingTrip} onClose={() => setEditingTrip(null)} onSubmit={async (input) => {
-      await updateTrip(editingTrip.id, input)
+      // existing_plan_path chỉ dùng khi tạo mới, không phải cột của bảng trips.
+      const { existing_plan_path: _existingPlanPath, ...changes } = input
+      await updateTrip(editingTrip.id, changes)
       setEditingTrip(null)
       setSelectedTrip(null)
       setMessage({ text: 'Đã cập nhật thông tin chuyến đi.' })
@@ -328,6 +349,37 @@ export function DispatchPage() {
   </>
 }
 
+
+export function AdhocReviewButtons({ trip, onDone }: { trip: Trip; onDone?: (text: string, error?: boolean) => void }) {
+  const { reviewAdhocTrip } = useData()
+  const [busy, setBusy] = useState(false)
+  const notFinished = !['completed', 'cancelled'].includes(trip.status)
+
+  async function review(status: 'acknowledged' | 'flagged') {
+    let note: string | undefined
+    if (status === 'flagged') {
+      note = window.prompt('Nội dung cần tài xế giải trình (ví dụ: chưa có người yêu cầu xác nhận, KM bất thường...):')?.trim()
+      if (!note) return
+    } else {
+      const warning = notFinished ? '\n\nLưu ý: chuyến chưa hoàn tất, KM và chi phí có thể còn thay đổi.' : ''
+      if (!window.confirm(`Xác nhận đã nắm thông tin chuyến đột xuất đi “${trip.destination}”?${warning}`)) return
+    }
+    setBusy(true)
+    try {
+      await reviewAdhocTrip(trip.id, status, note)
+      onDone?.(status === 'acknowledged' ? 'Đã xác nhận báo cáo chuyến đột xuất.' : 'Đã ghi nhận yêu cầu tài xế giải trình.')
+    } catch (error) {
+      onDone?.(error instanceof Error ? error.message : String(error), true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <>
+    <button type="button" className="approve-button" disabled={busy} onClick={() => void review('acknowledged')}>Xác nhận báo cáo</button>
+    <button type="button" className="reject-button" disabled={busy} onClick={() => void review('flagged')}>Cần giải trình</button>
+  </>
+}
 
 type CalendarMode = 'day' | 'week' | 'month'
 
@@ -431,9 +483,10 @@ function buildTripTimeline(trip: Trip, data: AppData) {
   const creator = name(trip.created_by) || 'Điều phối'
   const push = (time: string | null | undefined, title: string, detail: string, tone: 'normal' | 'success' | 'warning' | 'danger' = 'normal') => { if (time) events.push({ time, title, detail, tone }) }
 
-  push(trip.created_at, 'Tạo yêu cầu/chuyến', `${creator} · ${trip.pickup} → ${trip.destination}`)
+  if (trip.is_adhoc) push(trip.created_at, 'Tài xế tạo chuyến đột xuất', `${driver} · ${trip.adhoc_reason || 'Không ghi lý do'}`, 'warning')
+  else push(trip.created_at, 'Tạo yêu cầu/chuyến', `${creator} · ${trip.pickup} → ${trip.destination}`)
   push(trip.fleet_reviewed_at, 'Hành chính đã duyệt', name(trip.fleet_reviewer_id) || 'Hành chính đội xe', 'success')
-  push(trip.director_reviewed_at, 'Ban Giám đốc đã duyệt', name(trip.director_reviewer_id) || 'Ban Giám đốc', 'success')
+  push(trip.director_reviewed_at, 'Ban Giám đốc đã duyệt (quy trình cũ)', name(trip.director_reviewer_id) || 'Ban Giám đốc', 'success')
   if (trip.approval_rejection_reason) push(trip.updated_at, 'Yêu cầu không được duyệt', trip.approval_rejection_reason, 'danger')
   push(checklist?.created_at, 'Tài xế hoàn tất checklist', `${driver}${checklist?.notes ? ` · ${checklist.notes}` : ''}`, checklist && !(checklist.fuel_ok && checklist.tires_ok && checklist.lights_horn_ok && checklist.vehicle_clean && checklist.documents_ok) ? 'warning' : 'success')
   if (trip.start_odometer != null) push(trip.started_at ?? trip.updated_at, 'Ghi nhận KM đầu', `${trip.start_odometer.toLocaleString('vi-VN')} km · ${vehicle?.plate_number ?? ''}`, 'normal')
@@ -442,6 +495,7 @@ function buildTripTimeline(trip: Trip, data: AppData) {
   data.incidents.filter((item) => item.trip_id === trip.id).forEach((item) => push(item.created_at, 'Báo sự cố', `${INCIDENT_LABELS[item.type]} · ${item.description || 'Không có mô tả'}`, ['high','critical'].includes(item.severity) ? 'danger' : 'warning'))
   if (trip.end_odometer != null) push(trip.ended_at ?? trip.updated_at, 'Ghi nhận KM cuối', `${trip.end_odometer.toLocaleString('vi-VN')} km`, 'normal')
   push(trip.ended_at, 'Kết thúc chuyến', `${driver} hoàn thành chuyến`, 'success')
+  if (trip.is_adhoc && trip.adhoc_reviewed_at) push(trip.adhoc_reviewed_at, trip.adhoc_report_status === 'flagged' ? 'Yêu cầu tài xế giải trình' : 'Đã xác nhận báo cáo chuyến đột xuất', `${name(trip.adhoc_reviewer_id) || 'Hành chính/Điều phối'}${trip.adhoc_review_note ? ` · ${trip.adhoc_review_note}` : ''}`, trip.adhoc_report_status === 'flagged' ? 'danger' : 'success')
 
   return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 }
@@ -455,9 +509,13 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
   onDelete: (trip: Trip) => void
 }) {
   const { data } = useData()
+  const { user } = useAuth()
+  const [reviewMessage, setReviewMessage] = useState<{ text: string; error?: boolean } | null>(null)
+  const canAdhocReview = ['fleet', 'dispatcher', 'admin'].includes(user?.profile.role ?? '')
   const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
   const driver = data.profiles.find((item) => item.id === trip.driver_id)
   const creator = data.profiles.find((item) => item.id === trip.created_by)
+  const adhocReviewer = data.profiles.find((item) => item.id === trip.adhoc_reviewer_id)
   const checklist = data.checklists.find((item) => item.trip_id === trip.id)
   const expenses = data.expenses.filter((item) => item.trip_id === trip.id)
   const incidents = data.incidents.filter((item) => item.trip_id === trip.id)
@@ -478,7 +536,7 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
 
   return <Modal title={`Chi tiết chuyến ${vehicle?.plate_number ?? ''}`} onClose={onClose} wide>
     <div className="trip-detail-heading">
-      <div><span className="eyebrow">{PURPOSE_LABELS[trip.purpose]}</span><h2>{trip.pickup} → {trip.destination}</h2><p>{driver?.full_name ?? 'Chưa rõ tài xế'} · {vehicle?.vehicle_name ?? 'Chưa rõ xe'}</p></div>
+      <div><span className="eyebrow">{trip.is_adhoc ? 'Chuyến đột xuất · ' : ''}{PURPOSE_LABELS[trip.purpose]}</span><h2>{trip.pickup} → {trip.destination}</h2><p>{driver?.full_name ?? 'Chưa rõ tài xế'} · {vehicle?.vehicle_name ?? 'Chưa rõ xe'}</p>{driver && <PresenceLabel userId={driver.id} />}</div>
       <StatusBadge status={trip.status} />
     </div>
 
@@ -510,18 +568,29 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
       </> : <div className="active-trip-no-location">Chưa nhận được vị trí. Hãy kiểm tra GPS, HTTPS và quyền vị trí trên điện thoại tài xế.</div>}
     </section>}
 
-    <section className="trip-detail-section trip-approval-section">
+    {trip.is_adhoc ? <section className="trip-detail-section trip-approval-section adhoc-detail-section">
+      <div className="section-title-row"><h3>Chuyến đột xuất do tài xế tạo</h3><span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}>{ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span></div>
+      <div className="approval-timeline compact">
+        <span className="done">1. Tài xế tạo & nhận chuyến</span>
+        <span className={['active', 'completed'].includes(trip.status) ? 'done' : ''}>2. Checklist · KM · GPS</span>
+        <span className={trip.status === 'completed' ? 'done' : ''}>3. Hoàn tất chuyến</span>
+        <span className={trip.adhoc_report_status && trip.adhoc_report_status !== 'pending_review' ? 'done' : ''}>4. Hành chính/Điều phối xác nhận</span>
+      </div>
+      <div className="adhoc-reason-box"><strong>Lý do phát sinh:</strong> {trip.adhoc_reason || '—'}</div>
+      {trip.adhoc_reviewed_at && <p className="approval-explain">{trip.adhoc_report_status === 'flagged' ? 'Yêu cầu giải trình' : 'Xác nhận'} bởi {adhocReviewer?.full_name ?? 'Hành chính/Điều phối'} lúc {formatDateTime(trip.adhoc_reviewed_at)}{trip.adhoc_review_note ? ` · ${trip.adhoc_review_note}` : ''}</p>}
+      {reviewMessage && <div className={`inline-message ${reviewMessage.error ? 'error' : ''}`}>{reviewMessage.text}</div>}
+      {canAdhocReview && trip.adhoc_report_status === 'pending_review' && <div className="adhoc-review-actions"><AdhocReviewButtons trip={trip} onDone={(text, error) => setReviewMessage({ text, error })} /></div>}
+    </section> : <section className="trip-detail-section trip-approval-section">
       <div className="section-title-row"><h3>Quy trình phê duyệt điều xe</h3><StatusBadge status={trip.status} /></div>
       <div className="approval-timeline compact">
-        <span className={trip.fleet_reviewed_at ? 'done' : ''}>1. Điều phối yêu cầu</span>
-        <span className={trip.fleet_reviewed_at ? 'done' : ''}>2. Hành chính duyệt</span>
-        {trip.approval_mode !== 'fleet_only' && <span className={trip.director_reviewed_at ? 'done' : ''}>3. Ban Giám đốc duyệt</span>}
-        <span className={['assigned','accepted','ready','active','completed'].includes(trip.status) ? 'done' : ''}>{trip.approval_mode === 'fleet_only' ? '3' : '4'}. Tài xế nhận chuyến</span>
+        <span className="done">1. Điều phối tạo chuyến</span>
+        <span className={trip.fleet_reviewed_at ? 'done' : ''}>2. Hành chính điều phối duyệt</span>
+        <span className={['assigned','accepted','ready','active','completed'].includes(trip.status) ? 'done' : ''}>3. Tài xế nhận chuyến</span>
       </div>
       {(trip.plan_attachments?.length || trip.plan_document_url) && <PlanAttachmentsViewer attachments={trip.plan_attachments} legacyUrl={trip.plan_document_url} legacyPath={trip.plan_document_path} compact />}
-      {trip.approval_mode === 'fleet_only' && <p className="approval-explain">Chuyến có kèm văn bản/kế hoạch: Hành chính đội xe duyệt trực tiếp và bỏ qua bước BGĐ duyệt chuyến.</p>}
+      <p className="approval-explain">Hành chính điều phối duyệt là xe đi. Ban Giám đốc không duyệt từng chuyến mà xem báo cáo tổng hợp cuối tháng.</p>
       {trip.approval_rejection_reason && <div className="rejection-box"><strong>Lý do không duyệt:</strong> {trip.approval_rejection_reason}</div>}
-    </section>
+    </section>}
 
     <div className="detail-grid trip-detail-grid">
       <div><span>Giờ dự kiến xuất phát</span><strong>{formatDateTime(trip.scheduled_start)}</strong></div>
@@ -530,7 +599,6 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
       <div><span>Kết thúc thực tế</span><strong>{formatDateTime(trip.ended_at)}</strong></div>
       <div><span>KM đầu</span><strong>{trip.start_odometer != null ? `${trip.start_odometer.toLocaleString('vi-VN')} km` : '—'}</strong></div>
       <div><span>KM cuối / Quãng đường</span><strong>{trip.end_odometer != null ? `${trip.end_odometer.toLocaleString('vi-VN')} km${distance != null ? ` · ${distance.toLocaleString('vi-VN')} km` : ''}` : '—'}</strong></div>
-      <div><span>Nhiên liệu cuối chuyến</span><strong>{trip.end_fuel_level_percent != null ? `${trip.end_fuel_level_percent}%` : '—'}</strong></div>
       <div><span>Người liên hệ</span><strong>{trip.contact_name || '—'}</strong></div>
       <div><span>Số điện thoại</span><strong>{trip.contact_phone ? <a href={`tel:${trip.contact_phone}`}>{trip.contact_phone}</a> : '—'}</strong></div>
       <div><span>Số người</span><strong>{trip.passenger_count ?? '—'}</strong></div>
@@ -539,10 +607,9 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
       <div><span>Cập nhật cuối</span><strong>{formatDateTime(trip.updated_at)}</strong></div>
     </div>
 
-    {(trip.start_lat != null || trip.current_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}>📍 Điểm bắt đầu</a>}{trip.status === 'active' && (trip.current_lat ?? trip.start_lat) != null && (trip.current_lng ?? trip.start_lng) != null && <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: (trip.current_lat ?? trip.start_lat)!, lng: (trip.current_lng ?? trip.start_lng)! })}>⌖ Vị trí hiện tại</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}>🏁 Điểm kết thúc</a>}</div>{trip.location_updated_at && <small className="location-updated-label">Cập nhật GPS gần nhất: {formatDateTime(trip.location_updated_at)}</small>}</section>}
+    {(trip.start_lat != null || trip.current_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}><Icon name="pin" size={14} />Điểm bắt đầu</a>}{trip.status === 'active' && (trip.current_lat ?? trip.start_lat) != null && (trip.current_lng ?? trip.start_lng) != null && <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: (trip.current_lat ?? trip.start_lat)!, lng: (trip.current_lng ?? trip.start_lng)! })}><Icon name="navigation" size={14} />Vị trí hiện tại</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}><Icon name="flag" size={14} />Điểm kết thúc</a>}</div>{trip.location_updated_at && <small className="location-updated-label">Cập nhật GPS gần nhất: {formatDateTime(trip.location_updated_at)}</small>}</section>}
 
     {(trip.start_odometer_image_url || trip.end_odometer_image_url) && <section className="trip-detail-section"><h3>Ảnh đồng hồ kilomet</h3><div className="trip-media-grid">{trip.start_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.start_odometer_image_url}><img src={trip.start_odometer_image_url} alt="Đồng hồ KM đầu" /><span>Ảnh KM đầu</span></a>}{trip.end_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.end_odometer_image_url}><img src={trip.end_odometer_image_url} alt="Đồng hồ KM cuối" /><span>Ảnh KM cuối</span></a>}</div></section>}
-    {trip.end_vehicle_image_url && <section className="trip-detail-section"><h3>Ảnh tổng thể xe khi bàn giao</h3><div className="trip-media-grid single"><a target="_blank" rel="noreferrer" href={trip.end_vehicle_image_url}><img src={trip.end_vehicle_image_url} alt="Ảnh tổng thể xe cuối chuyến" /><span>Xe sau khi kết thúc · Nhiên liệu {trip.end_fuel_level_percent ?? '—'}%</span></a></div></section>}
 
     <section className="trip-detail-section trip-history-section"><div className="section-title-row"><h3>Dòng thời gian chuyến đi</h3><strong>{timelineEvents.length} mốc</strong></div>
       <div className="trip-history-timeline">{timelineEvents.map((event, index) => <div className={`trip-history-event ${event.tone}`} key={`${event.time}-${event.title}-${index}`}><span className="trip-history-dot" /><div><time>{formatDateTime(event.time)}</time><strong>{event.title}</strong><small>{event.detail}</small></div></div>)}</div>
@@ -565,73 +632,10 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
   </Modal>
 }
 
-function DriverLeaveWeekPanel() {
-  const { user } = useAuth()
-  const { data, setDriverDayOff } = useData()
-  const [anchor, setAnchor] = useState(todayKey())
-  const [savingKey, setSavingKey] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const drivers = data.profiles
-    .filter((profile) => profile.role === 'driver' && profile.active && !profile.deleted_at)
-    .sort((a, b) => a.full_name.localeCompare(b.full_name, 'vi'))
-  const weekStart = startOfWeek(new Date(`${anchor}T00:00:00`))
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart)
-    date.setDate(weekStart.getDate() + index)
-    return { key: dateKey(date), date }
-  })
-  const leaveKeys = new Set(data.driverLeaves.map((item) => `${item.driver_id}:${item.leave_date}`))
-
-  async function toggle(driverId: string, leaveDate: string, next: boolean) {
-    const key = `${driverId}:${leaveDate}`
-    setSavingKey(key)
-    setMessage(null)
-    try {
-      await setDriverDayOff(driverId, leaveDate, next)
-      setMessage(next ? 'Đã khóa tài xế trong ngày nghỉ.' : 'Đã mở lại lịch làm việc cho tài xế.')
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error))
-    } finally {
-      setSavingKey(null)
-    }
-  }
-
-  function moveWeek(delta: number) {
-    const next = new Date(`${anchor}T00:00:00`)
-    next.setDate(next.getDate() + delta * 7)
-    setAnchor(dateKey(next))
-  }
-
-  return <section className="panel driver-leave-panel">
-    <div className="panel-header driver-leave-header">
-      <div><span className="eyebrow">LỊCH LÀM VIỆC TÀI XẾ</span><h2>Nghỉ phép theo tuần</h2><p>Tick ngày nghỉ để hệ thống tự khóa tài xế khỏi danh sách xếp chuyến trong ngày đó.</p></div>
-      <div className="driver-leave-week-nav"><button type="button" className="secondary-button compact" onClick={() => moveWeek(-1)}>‹</button><button type="button" className="secondary-button compact" onClick={() => setAnchor(todayKey())}>Tuần này</button><button type="button" className="secondary-button compact" onClick={() => moveWeek(1)}>›</button></div>
-    </div>
-    <div className="driver-leave-scroll">
-      <div className="driver-leave-grid" style={{ ['--leave-columns' as string]: days.length }}>
-        <div className="driver-leave-name head">Tài xế</div>
-        {days.map(({ key, date }) => <div className={`driver-leave-day head ${key === todayKey() ? 'today' : ''}`} key={key}><strong>{new Intl.DateTimeFormat('vi-VN', { weekday: 'short' }).format(date)}</strong><span>{formatDate(key)}</span></div>)}
-        {drivers.map((driver) => <div className="driver-leave-row" key={driver.id}>
-          <div className="driver-leave-name"><strong>{driver.full_name}</strong><small>{driver.phone}</small></div>
-          {days.map(({ key }) => {
-            const composite = `${driver.id}:${key}`
-            const checked = leaveKeys.has(composite)
-            return <label key={key} className={`driver-leave-cell ${checked ? 'off' : ''}`} title={checked ? 'Đang nghỉ — bỏ tick để mở lịch' : 'Tick để đánh dấu nghỉ'}>
-              <input type="checkbox" checked={checked} disabled={savingKey === composite || !user} onChange={(event) => void toggle(driver.id, key, event.target.checked)} />
-              <span>{checked ? 'Nghỉ' : 'Làm'}</span>
-            </label>
-          })}
-        </div>)}
-      </div>
-    </div>
-    {!drivers.length && <EmptyState icon="👤" title="Chưa có tài xế đang hoạt động" />}
-    {message && <div className="driver-leave-message">{message}</div>}
-  </section>
-}
-
 function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: Trip; initialRequestId?: string; onClose: () => void; onSubmit: (input: CreateTripInput, planFiles?: File[]) => Promise<void> }) {
   const { data } = useData()
   const eligibleVehicles = data.vehicles.filter((vehicle) => vehicle.id === trip?.vehicle_id || !['maintenance', 'out_of_service'].includes(vehicle.status))
+  const { onlineIds } = usePresence()
   const drivers = data.profiles.filter((profile) => profile.role === 'driver' && !profile.deleted_at && (profile.active || profile.id === trip?.driver_id))
   const approvedRequests = data.vehicleRequests.filter((request) => request.status === 'fleet_approved')
   const initialRequest = !trip && initialRequestId ? approvedRequests.find((request) => request.id === initialRequestId) : undefined
@@ -656,9 +660,6 @@ function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: T
   const [planFiles, setPlanFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const tripDateKey = form.scheduled_start.slice(0, 10)
-  const offDriverIds = new Set(data.driverLeaves.filter((item) => item.leave_date === tripDateKey).map((item) => item.driver_id))
-  const selectedDriverIsOff = offDriverIds.has(form.driver_id)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -668,10 +669,6 @@ function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: T
       const newStart = new Date(form.scheduled_start).getTime()
       const newEnd = form.expected_end ? new Date(form.expected_end).getTime() : newStart + 60 * 60 * 1000
       if (!Number.isFinite(newStart) || !Number.isFinite(newEnd) || newEnd <= newStart) throw new Error('Thời gian dự kiến về phải sau giờ xuất phát.')
-      if (offDriverIds.has(form.driver_id)) {
-        const driver = drivers.find((item) => item.id === form.driver_id)
-        throw new Error(`${driver?.full_name ?? 'Tài xế'} đã được đánh dấu nghỉ ngày ${formatDate(tripDateKey)}. Vui lòng chọn tài xế khác.`)
-      }
       const conflict = data.trips.some((item) => {
         if (item.id === trip?.id || item.status === 'cancelled' || item.status === 'completed') return false
         if (item.vehicle_id !== form.vehicle_id && item.driver_id !== form.driver_id) return false
@@ -725,12 +722,11 @@ function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: T
   }
 
   const fromApprovedDepartmentRequest = Boolean(form.vehicle_request_id)
-  const canUseFleetOnlyApproval = Boolean(form.existing_plan_path || planFiles.length)
 
   return <Modal title={trip ? 'Sửa thông tin chuyến đi' : fromApprovedDepartmentRequest ? 'Tạo chuyến từ đề nghị đã duyệt' : 'Tạo yêu cầu điều xe'} onClose={onClose} wide><form className="form-grid" onSubmit={submit}>
     {!trip && <label className="span-2">Tạo từ đề nghị đã được Hành chính duyệt<select value={form.vehicle_request_id} onChange={(event) => applyApprovedRequest(event.target.value)}><option value="">Không chọn đề nghị</option>{approvedRequests.map((request) => <option key={request.id} value={request.id}>{PURPOSE_LABELS[request.purpose]} · {request.destination} · {formatDateTime(request.scheduled_start)}</option>)}</select></label>}
     <label>Chọn xe<select value={form.vehicle_id} onChange={(event) => setForm({ ...form, vehicle_id: event.target.value })} required>{eligibleVehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate_number} — {vehicle.vehicle_name}</option>)}</select></label>
-    <label>Tài xế<select value={form.driver_id} onChange={(event) => setForm({ ...form, driver_id: event.target.value })} required>{drivers.map((profile) => <option key={profile.id} value={profile.id} disabled={offDriverIds.has(profile.id)}>{profile.full_name}{offDriverIds.has(profile.id) ? ` — Nghỉ ${formatDate(tripDateKey)}` : ''}</option>)}</select>{selectedDriverIsOff && <small className="field-warning">Tài xế này nghỉ trong ngày xuất phát. Hãy chọn tài xế khác.</small>}</label>
+    <label>Tài xế<select value={form.driver_id} onChange={(event) => setForm({ ...form, driver_id: event.target.value })} required>{drivers.map((profile) => <option key={profile.id} value={profile.id}>{onlineIds.has(profile.id) ? '🟢 ' : '⚪ '}{profile.full_name}{onlineIds.has(profile.id) ? ' · đang trực tuyến' : ''}</option>)}</select>{form.driver_id && <PresenceLabel userId={form.driver_id} />}</label>
     <label>Loại chuyến<select value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as TripPurpose })}>{(Object.keys(PURPOSE_LABELS) as TripPurpose[]).map((key) => <option key={key} value={key}>{PURPOSE_LABELS[key]}</option>)}</select></label>
     <label>Số người<input type="number" min="0" value={form.passenger_count} onChange={(event) => setForm({ ...form, passenger_count: event.target.value })} /></label>
     <label>Giờ xuất phát<VietnamDateInput mode="datetime" value={form.scheduled_start} onChange={(value) => setForm({ ...form, scheduled_start: value })} required /></label>
@@ -741,7 +737,7 @@ function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: T
     <label>Số điện thoại<input inputMode="tel" value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} /></label>
     {!trip && <label className="span-2 plan-multi-upload-field">{fromApprovedDepartmentRequest ? 'Tệp bổ sung cho chuyến (không bắt buộc)' : 'Văn bản / kế hoạch / hình ảnh'}
       <div className="plan-multi-upload-box">
-        <span className="plan-multi-upload-icon" aria-hidden="true">📎</span>
+        <span className="plan-multi-upload-icon" aria-hidden="true"><Icon name="paperclip" size={18} /></span>
         <div className="plan-multi-upload-copy"><strong>Thêm nhiều tệp hoặc hình ảnh</strong><small>Chọn nhiều tệp cùng lúc hoặc bấm lại nhiều lần để bổ sung.</small></div>
         <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*" onChange={(event) => {
           const incoming = Array.from(event.currentTarget.files ?? [])
@@ -757,15 +753,15 @@ function TripFormModal({ trip, initialRequestId, onClose, onSubmit }: { trip?: T
           event.currentTarget.value = ''
         }} />
       </div>
-      <small>{fromApprovedDepartmentRequest ? 'Các tệp đã được Hành chính duyệt từ đề nghị sẽ tự đi theo chuyến. Có thể bấm thêm nhiều lần để bổ sung hình ảnh hoặc tài liệu.' : 'Hỗ trợ nhiều tệp. Nếu có ít nhất một văn bản/kế hoạch, Hành chính đội xe sẽ duyệt trực tiếp và giao chuyến cho tài xế.'}</small>
+      <small>{fromApprovedDepartmentRequest ? 'Các tệp đã được Hành chính duyệt từ đề nghị sẽ tự đi theo chuyến. Có thể bấm thêm nhiều lần để bổ sung hình ảnh hoặc tài liệu.' : 'Hỗ trợ nhiều tệp (không bắt buộc). Văn bản/kế hoạch giúp Hành chính điều phối duyệt nhanh hơn.'}</small>
       <SelectedPlanFiles files={planFiles} onRemove={(index) => { const next = planFiles.filter((_, itemIndex) => itemIndex !== index); setPlanFiles(next); setForm({ ...form, approved_plan: Boolean(next.length || form.existing_plan_path) }) }} />
     </label>}
-    {!trip && fromApprovedDepartmentRequest && <div className="approved-request-confirmation span-2"><strong>✓ Đề nghị đã được Hành chính duyệt</strong><span>Kế hoạch và nội dung đề nghị đã được duyệt trước. Điều phối chỉ cần chọn xe, tài xế và tạo chuyến; hệ thống sẽ giao chuyến trực tiếp cho tài xế, không yêu cầu Hành chính duyệt lại.</span></div>}
-    {!trip && <div className={`approval-route-preview span-2 ${(fromApprovedDepartmentRequest || canUseFleetOnlyApproval) ? 'bypass' : ''}`}><strong>Luồng xử lý:</strong> {fromApprovedDepartmentRequest ? 'Trưởng khoa → Hành chính đã duyệt → Điều phối/Hành chính tạo chuyến → Tài xế' : canUseFleetOnlyApproval ? 'Điều phối/Hành chính → Hành chính duyệt → Tài xế' : 'Điều phối/Hành chính → Hành chính duyệt → Ban Giám đốc → Tài xế'}</div>}
+    {!trip && fromApprovedDepartmentRequest && <div className="approved-request-confirmation span-2"><strong><Icon name="check-circle" size={15} />Đề nghị đã được Hành chính duyệt</strong><span>Kế hoạch và nội dung đề nghị đã được duyệt trước. Điều phối chỉ cần chọn xe, tài xế và tạo chuyến; hệ thống sẽ giao chuyến trực tiếp cho tài xế, không yêu cầu Hành chính duyệt lại.</span></div>}
+    {!trip && <div className="approval-route-preview span-2 bypass"><strong>Luồng xử lý:</strong> {fromApprovedDepartmentRequest ? 'Trưởng khoa → Hành chính đã duyệt → Điều phối tạo chuyến → Tài xế' : 'Điều phối → Hành chính điều phối duyệt → Tài xế (BGĐ xem báo cáo cuối tháng)'}</div>}
     <label className="span-2">Ghi chú<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Vật tư cần mang, yêu cầu đón bệnh nhân..." /></label>
     {!eligibleVehicles.length && <div className="form-error span-2">Không có xe đủ điều kiện để xếp lịch.</div>}
     {!drivers.length && <div className="form-error span-2">Chưa có tài khoản tài xế đang hoạt động.</div>}
     {error && <div className="form-error span-2">{error}</div>}
-    <div className="form-actions span-2"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving || !eligibleVehicles.length || !drivers.length || selectedDriverIsOff}>{saving ? 'Đang lưu...' : trip ? 'LƯU THAY ĐỔI' : fromApprovedDepartmentRequest ? 'TẠO CHUYẾN & GIAO TÀI XẾ' : 'GỬI HÀNH CHÍNH DUYỆT'}</button></div>
+    <div className="form-actions span-2"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving || !eligibleVehicles.length || !drivers.length}>{saving ? 'Đang lưu...' : trip ? 'Lưu thay đổi' : fromApprovedDepartmentRequest ? 'Tạo chuyến & giao tài xế' : 'Gửi Hành chính duyệt'}</button></div>
   </form></Modal>
 }

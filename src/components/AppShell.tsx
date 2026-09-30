@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { ROLE_LABELS } from '../lib/constants'
 import { NetworkBanner } from './NetworkBanner'
 import { useData } from '../context/DataContext'
-import { BrandLogo } from './BrandLogo'
 import { NotificationCenter } from './NotificationCenter'
 import { useNotifications, type NotificationTarget } from '../context/NotificationContext'
 import { queueNavigationFocus } from '../lib/focusNavigation'
 import { GlobalSearch } from './GlobalSearch'
+import { OnlineUsersButton } from './Presence'
+import { Icon, type IconName } from './Icon'
 
 export type PageKey = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users'
 
@@ -32,110 +33,53 @@ export function pageFromPath(pathname: string): PageKey {
 }
 
 type RoleKey = 'department_head' | 'dispatcher' | 'accountant' | 'fleet' | 'director' | 'admin'
-type NavIconName = 'dashboard' | 'requests' | 'dispatch' | 'vehicles' | 'expenses' | 'incidents' | 'maintenance' | 'reports' | 'account' | 'users' | 'menu' | 'logout'
+type NavGroup = 'operate' | 'assets' | 'analyze' | 'system'
 
-const navigation: Array<{ key: PageKey; label: string; mobileLabel: string; icon: NavIconName; hint: string; roles: string[] }> = [
-  { key: 'dashboard', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: 'dashboard', hint: 'Điều hành theo vai trò', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'requests', label: 'Đề nghị từ khoa/phòng', mobileLabel: 'Đề nghị', icon: 'requests', hint: 'Gửi & Hành chính duyệt', roles: ['department_head', 'fleet', 'admin'] },
-  { key: 'dispatch', label: 'Điều xe', mobileLabel: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'vehicles', label: 'Hồ sơ xe', mobileLabel: 'Hồ sơ xe', icon: 'vehicles', hint: 'Danh mục & trạng thái xe', roles: ['dispatcher', 'fleet', 'admin'] },
-  { key: 'expenses', label: 'Chi phí', mobileLabel: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'incidents', label: 'Sự cố', mobileLabel: 'Sự cố', icon: 'incidents', hint: 'Xử lý cảnh báo', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'maintenance', label: 'Bảo dưỡng', mobileLabel: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
-  { key: 'reports', label: 'Báo cáo', mobileLabel: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'account', label: 'Hồ sơ', mobileLabel: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', roles: ['department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
-  { key: 'users', label: 'Tài khoản', mobileLabel: 'Tài khoản', icon: 'users', hint: 'Phân quyền hệ thống', roles: ['admin'] },
+const navigation: Array<{ key: PageKey; label: string; mobileLabel: string; icon: IconName; hint: string; group: NavGroup; roles: string[] }> = [
+  { key: 'dashboard', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: 'dashboard', hint: 'Điều hành theo vai trò', group: 'operate', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'requests', label: 'Đề nghị từ khoa/phòng', mobileLabel: 'Đề nghị', icon: 'requests', hint: 'Gửi & Hành chính duyệt', group: 'operate', roles: ['department_head', 'fleet', 'admin'] },
+  { key: 'dispatch', label: 'Điều xe', mobileLabel: 'Điều xe', icon: 'dispatch', hint: 'Theo dõi chuyến đi', group: 'operate', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'vehicles', label: 'Hồ sơ xe', mobileLabel: 'Hồ sơ xe', icon: 'vehicle', hint: 'Danh mục & trạng thái xe', group: 'assets', roles: ['dispatcher', 'fleet', 'admin'] },
+  { key: 'expenses', label: 'Chi phí', mobileLabel: 'Chi phí', icon: 'expenses', hint: 'Xăng dầu & chứng từ', group: 'assets', roles: ['dispatcher', 'accountant', 'director', 'admin'] },
+  { key: 'incidents', label: 'Sự cố', mobileLabel: 'Sự cố', icon: 'incident', hint: 'Xử lý cảnh báo', group: 'assets', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
+  { key: 'maintenance', label: 'Bảo dưỡng', mobileLabel: 'Bảo dưỡng', icon: 'maintenance', hint: 'Lịch sửa chữa', group: 'assets', roles: ['dispatcher', 'fleet', 'director', 'admin'] },
+  { key: 'reports', label: 'Báo cáo', mobileLabel: 'Báo cáo', icon: 'reports', hint: 'Thống kê tức thời', group: 'analyze', roles: ['dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
+  { key: 'users', label: 'Tài khoản', mobileLabel: 'Tài khoản', icon: 'users', hint: 'Phân quyền hệ thống', group: 'system', roles: ['admin'] },
+  { key: 'account', label: 'Hồ sơ cá nhân', mobileLabel: 'Hồ sơ', icon: 'account', hint: 'Thông tin tài khoản', group: 'system', roles: ['department_head', 'dispatcher', 'accountant', 'fleet', 'director', 'admin'] },
 ]
 
+const GROUP_LABELS: Record<NavGroup, string> = {
+  operate: 'Điều hành',
+  assets: 'Đội xe & chi phí',
+  analyze: 'Phân tích',
+  system: 'Hệ thống',
+}
+
 const pageDescriptions: Record<PageKey, string> = {
-  dashboard: 'Màn hình điều hành trung tâm, hiển thị các chỉ số và cảnh báo quan trọng.',
+  dashboard: 'Chỉ số điều hành, việc cần xử lý và cảnh báo quan trọng trong ngày.',
   requests: 'Trưởng khoa/đơn vị gửi đề nghị xe; Hành chính đội xe duyệt trước khi Điều phối tạo chuyến.',
-  dispatch: 'Tạo chuyến, theo dõi lịch điều xe, lịch nghỉ tài xế và vị trí xe hoạt động theo thời gian thực.',
-  vehicles: 'Quản lý hồ sơ xe, tình trạng xe, đăng kiểm, bảo hiểm và phân công tài xế.',
-  expenses: 'Quản lý chi phí theo luồng Hành chính → Kế toán → Ban Giám đốc → Kế toán → Chi trả.',
-  incidents: 'Sự cố được Hành chính tiếp nhận, trình Ban Giám đốc quyết định và thông báo lại cho tài xế.',
-  maintenance: 'Lên kế hoạch bảo dưỡng, sửa chữa và kiểm soát các mốc kỹ thuật.',
-  reports: 'Tổng hợp số liệu nhanh giúp ban lãnh đạo nắm bắt hiệu quả vận hành.',
-  account: 'Xem và cập nhật hồ sơ cá nhân trong hệ thống.',
-  users: 'Tạo, chỉnh sửa và phân quyền tài khoản sử dụng hệ thống.',
-}
-
-const roleMeta: Record<RoleKey, { title: string; subtitle: string; security: string }> = {
-  department_head: {
-    title: 'Đề nghị điều hành xe',
-    subtitle: 'Gửi kế hoạch sử dụng xe và theo dõi trạng thái duyệt của Hành chính đội xe.',
-    security: 'Trưởng khoa chỉ xem các đề nghị do khoa/đơn vị mình gửi và hồ sơ cá nhân.',
-  },
-  dispatcher: {
-    title: 'Trung tâm điều phối xe',
-    subtitle: 'Tập trung điều chuyến, theo dõi tiến độ và xử lý yêu cầu phát sinh theo thời gian thực.',
-    security: 'Điều phối được xem, điều chỉnh chuyến và giám sát trạng thái xe đang hoạt động.',
-  },
-  accountant: {
-    title: 'Trung tâm kiểm soát chi phí',
-    subtitle: 'Theo dõi nhiên liệu, cầu đường, chi phí sửa chữa và hồ sơ quyết toán rõ ràng.',
-    security: 'Kế toán chỉ thao tác trên chi phí, báo cáo và vị trí chuyến đang phát sinh chứng từ.',
-  },
-  fleet: {
-    title: 'Trung tâm vận hành đội xe',
-    subtitle: 'Tạo chuyến, xếp lịch nghỉ tài xế, duyệt chi phí bước đầu, quản lý bảo dưỡng và sự cố.',
-    security: 'Hành chính đội xe được tạo/điều chỉnh chuyến trước duyệt, quản lý lịch nghỉ và tiếp nhận hồ sơ vận hành.',
-  },
-  director: {
-    title: 'Trung tâm điều hành Ban lãnh đạo',
-    subtitle: 'Tập trung chỉ số điều hành, vị trí xe đang chạy và cảnh báo quan trọng cho lãnh đạo.',
-    security: 'Ban lãnh đạo chỉ xem dữ liệu tổng hợp, cảnh báo nhanh và vị trí xe đang vận hành.',
-  },
-  admin: {
-    title: 'Trung tâm quản trị hệ thống',
-    subtitle: 'Kiểm soát người dùng, phân quyền, đồng bộ dữ liệu và toàn bộ các module hệ thống.',
-    security: 'Quản trị viên có đầy đủ quyền cấu hình, nhưng mọi module đều nhấn mạnh kiểm soát bảo mật.',
-  },
-}
-
-function AppIcon({ name, className = '' }: { name: NavIconName; className?: string }) {
-  const common = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, className }
-  switch (name) {
-    case 'dashboard':
-      return <svg {...common}><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="8" rx="1.5" /><rect x="3" y="14" width="7" height="6" rx="1.5" /></svg>
-    case 'requests':
-      return <svg {...common}><path d="M6 3h9l3 3v15H6z" /><path d="M9 11h6" /><path d="M9 15h6" /><path d="M15 3v4h4" /></svg>
-    case 'dispatch':
-      return <svg {...common}><path d="M5 19 19 5" /><path d="M9 5h10v10" /></svg>
-    case 'vehicles':
-      return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M9 5v14" /></svg>
-    case 'expenses':
-      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 6.5v11" /><path d="M15.5 9.25c0-1.38-1.57-2.5-3.5-2.5s-3.5 1.12-3.5 2.5 1.57 2.5 3.5 2.5 3.5 1.12 3.5 2.5-1.57 2.5-3.5 2.5-3.5-1.12-3.5-2.5" /></svg>
-    case 'incidents':
-      return <svg {...common}><path d="M12 5v8" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /></svg>
-    case 'maintenance':
-      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82L4.21 7.2a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-    case 'reports':
-      return <svg {...common}><path d="M4 19V5" /><path d="M10 19V9" /><path d="M16 19V13" /><path d="M22 19H2" /></svg>
-    case 'account':
-      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>
-    case 'users':
-      return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><path d="M20 8v6" /><path d="M23 11h-6" /></svg>
-    case 'logout':
-      return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
-    case 'menu':
-    default:
-      return <svg {...common}><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>
-  }
+  dispatch: 'Tạo chuyến, duyệt chuyến, theo dõi vị trí và lịch sử từng chuyến xe.',
+  vehicles: 'Hồ sơ xe, tình trạng, đăng kiểm, bảo hiểm và phân công tài xế.',
+  expenses: 'Chi phí phát sinh, hóa đơn, duyệt chi và theo dõi nhiên liệu.',
+  incidents: 'Sự cố, mức độ nghiêm trọng và tiến độ xử lý của từng xe.',
+  maintenance: 'Kế hoạch bảo dưỡng, sửa chữa và các mốc kỹ thuật.',
+  reports: 'Báo cáo vận hành, chi phí và chuyến đột xuất theo kỳ.',
+  account: 'Thông tin tài khoản và đổi mật khẩu.',
+  users: 'Tạo, chỉnh sửa, phân quyền và theo dõi trạng thái trực tuyến.',
 }
 
 export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (page: PageKey) => void; children: ReactNode }) {
-  const { user, logout, mode } = useAuth()
+  const { user, logout } = useAuth()
   const { error, data, refresh, online } = useData()
   const { unreadByTarget, markTargetRead } = useNotifications()
   const [loggingOut, setLoggingOut] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem('bvms-sidebar-collapsed') === '1' } catch { return false } })
   const [hoverTooltip, setHoverTooltip] = useState<{ label: string; top: number; left: number } | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
   const currentProfile = data.profiles.find((profile) => profile.id === user?.id) ?? user?.profile
   const visible = navigation.filter((item) => item.roles.includes(currentProfile?.role ?? ''))
   const currentRole = (currentProfile?.role ?? 'dispatcher') as RoleKey
-  const activeTrips = useMemo(() => data.trips.filter((trip) => trip.status === 'active').length, [data.trips])
 
   const notificationCountFor = (key: PageKey) => unreadByTarget[key as NotificationTarget] ?? 0
 
@@ -144,6 +88,7 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
     if (recordId && ['requests', 'dispatch', 'expenses', 'incidents', 'maintenance'].includes(key)) {
       queueNavigationFocus(key as 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance', recordId)
     }
+    setMoreOpen(false)
     onPage(key)
   }
 
@@ -185,122 +130,139 @@ export function AppShell({ page, onPage, children }: { page: PageKey; onPage: (p
     }
   }
 
+  const groups = (Object.keys(GROUP_LABELS) as NavGroup[])
+    .map((group) => ({ group, items: visible.filter((item) => item.group === group) }))
+    .filter((entry) => entry.items.length)
+  const mobilePrimary = visible.filter((item) => item.key !== 'account').slice(0, 4)
+  const mobileMore = visible.filter((item) => !mobilePrimary.includes(item))
+  const moreBadge = mobileMore.reduce((sum, item) => sum + notificationCountFor(item.key), 0)
+  const currentNav = navigation.find((item) => item.key === page)
+  const homePage: PageKey = currentRole === 'department_head' ? 'requests' : 'dashboard'
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      try { localStorage.setItem('bvms-sidebar-collapsed', value ? '0' : '1') } catch { /* bỏ qua */ }
+      return !value
+    })
+  }
+
+  function showTooltip(event: { currentTarget: HTMLElement }, label: string) {
+    if (!sidebarCollapsed) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    setHoverTooltip({ label, top: rect.top + rect.height / 2, left: rect.right + 10 })
+  }
+
+  const badge = (count: number, className: string) => count > 0 ? <b className={className}>{count > 99 ? '99+' : count}</b> : null
+
   return (
     <div className={`app-shell role-${currentRole} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <aside className="sidebar sidebar-modern">
-        <div className="brand">
-          <button type="button" className="brand-home-button" onClick={() => onPage(currentRole === 'department_head' ? 'requests' : 'dashboard')} aria-label="Về trang chủ">
-            <BrandLogo compact />
-          </button>
-        </div>
+      <aside className="sidebar" aria-label="Điều hướng chính">
+        <button type="button" className="sidebar-brand" onClick={() => onPage(homePage)} aria-label="Về trang chủ">
+          <span className="sidebar-brand-logo"><img src="/logo-bvmsgtv-v201.png" alt="" /></span>
+          <span className="sidebar-brand-copy"><strong>Điều phối xe</strong><small>BV Mắt Sài Gòn Trà Vinh</small></span>
+        </button>
 
-        <div className="sidebar-controls desktop-only">
-          <span className="sidebar-role-pill">{ROLE_LABELS[currentRole]}</span>
-          <button
-            type="button"
-            className="sidebar-collapse-control"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            aria-label={sidebarCollapsed ? 'Hiện thanh menu' : 'Thu gọn thanh menu'}
-            title={sidebarCollapsed ? 'Hiện menu' : 'Thu gọn menu'}
-          >
-            <AppIcon name="menu" />
-            <strong>{sidebarCollapsed ? '' : 'Thu gọn menu'}</strong>
-          </button>
-        </div>
-
-        <nav className="side-nav side-nav-modern">
-          {visible.map((item) => (
-            <button
-              type="button"
-              key={item.key}
-              title={item.label}
-              className={page === item.key ? 'active' : ''}
-              onMouseEnter={(event) => {
-                if (!sidebarCollapsed) return
-                const rect = event.currentTarget.getBoundingClientRect()
-                setHoverTooltip({ label: item.label, top: rect.top + rect.height / 2, left: rect.right + 12 })
-              }}
-              onMouseLeave={() => setHoverTooltip(null)}
-              onFocus={(event) => {
-                if (!sidebarCollapsed) return
-                const rect = event.currentTarget.getBoundingClientRect()
-                setHoverTooltip({ label: item.label, top: rect.top + rect.height / 2, left: rect.right + 12 })
-              }}
-              onBlur={() => setHoverTooltip(null)}
-              onClick={() => handlePageNavigation(item.key)}
-            >
-              <span className="nav-icon-badge" aria-hidden="true"><AppIcon name={item.icon} />{notificationCountFor(item.key) > 0 && <b className="nav-feature-badge">{notificationCountFor(item.key) > 99 ? '99+' : notificationCountFor(item.key)}</b>}</span>
-              <span className="nav-copy"><strong>{item.label}</strong><small>{item.hint}</small></span>
-            </button>
-          ))}
+        <nav className="side-nav">
+          {groups.map(({ group, items }) => <div className="side-nav-group" key={group}>
+            <span className="side-nav-label">{GROUP_LABELS[group]}</span>
+            {items.map((item) => (
+              <button
+                type="button"
+                key={item.key}
+                className={page === item.key ? 'active' : ''}
+                aria-current={page === item.key ? 'page' : undefined}
+                onMouseEnter={(event) => showTooltip(event, item.label)}
+                onMouseLeave={() => setHoverTooltip(null)}
+                onFocus={(event) => showTooltip(event, item.label)}
+                onBlur={() => setHoverTooltip(null)}
+                onClick={() => handlePageNavigation(item.key)}
+              >
+                <span className="side-nav-icon"><Icon name={item.icon} size={18} />{sidebarCollapsed && badge(notificationCountFor(item.key), 'side-nav-dot')}</span>
+                <span className="side-nav-text">{item.label}</span>
+                {!sidebarCollapsed && badge(notificationCountFor(item.key), 'side-nav-badge')}
+              </button>
+            ))}
+          </div>)}
         </nav>
 
-        <div className="sidebar-account">
-          <button className="sidebar-user sidebar-user-button" onClick={() => onPage('account')} aria-label="Mở hồ sơ cá nhân">
-            <div className="avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="Ảnh đại diện" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</div>
-            <div className="user-copy"><strong>{currentProfile?.full_name}</strong><span>{currentProfile ? ROLE_LABELS[currentProfile.role] : ''}</span></div>
-            <span className="sidebar-user-arrow">›</span>
+        <div className="sidebar-footer">
+          <button type="button" className="sidebar-user" onClick={() => onPage('account')} aria-label="Mở hồ sơ cá nhân">
+            <span className="sidebar-avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</span>
+            <span className="sidebar-user-copy"><strong>{currentProfile?.full_name}</strong><small>{currentProfile ? ROLE_LABELS[currentProfile.role] : ''}</small></span>
           </button>
-          <button className="sidebar-logout" onClick={() => void handleLogout()} disabled={loggingOut}>
-            <span aria-hidden="true"><AppIcon name="logout" /></span>
-            <strong>{loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}</strong>
-          </button>
+          <div className="sidebar-footer-actions">
+            <button type="button" className="sidebar-icon-button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'} title={sidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}>
+              <Icon name={sidebarCollapsed ? 'chevron-right' : 'chevron-left'} size={17} />
+            </button>
+            <button type="button" className="sidebar-icon-button logout" onClick={() => void handleLogout()} disabled={loggingOut} aria-label="Đăng xuất" title="Đăng xuất">
+              <Icon name="logout" size={17} />
+            </button>
+          </div>
         </div>
       </aside>
-      {hoverTooltip && (
-        <div className="sidebar-floating-tooltip" style={{ top: hoverTooltip.top, left: hoverTooltip.left }} role="tooltip">
-          {hoverTooltip.label}
-        </div>
-      )}
+      {hoverTooltip && <div className="sidebar-floating-tooltip" style={{ top: hoverTooltip.top, left: hoverTooltip.left }} role="tooltip">{hoverTooltip.label}</div>}
+
       <main className="main-area">
         <NetworkBanner />
-        {error && <div className="data-error-banner">Không tải được dữ liệu mới: {error}</div>}
-        <header className="topbar topbar-modern">
-          <div className="topbar-heading-block">
-            <div className="mobile-topbar-brand">
-              <button type="button" className="brand-home-button" onClick={() => onPage(currentRole === 'department_head' ? 'requests' : 'dashboard')} aria-label="Về trang chủ">
-                <BrandLogo compact />
-              </button>
-              <span className={`sidebar-online-pill ${online ? 'is-online' : 'is-offline'}`}>{online ? 'Trực tuyến' : 'Ngoại tuyến'}</span>
-            </div>
-            <div>
-              <nav className="page-breadcrumb" aria-label="Đường dẫn trang">
-                <button type="button" onClick={() => onPage('dashboard')}>Trang chủ</button>
-                <span aria-hidden="true">/</span>
-                <strong>{navigation.find((item) => item.key === page)?.label}</strong>
-              </nav>
-              <h1>{navigation.find((item) => item.key === page)?.label}</h1>
-              <p>{pageDescriptions[page]}</p>
-            </div>
+        <header className="topbar">
+          <div className="topbar-mobile-brand">
+            <button type="button" onClick={() => onPage(homePage)} aria-label="Về trang chủ"><img src="/logo-bvmsgtv-v201.png" alt="" /></button>
+          </div>
+          <div className="topbar-heading">
+            <nav className="page-breadcrumb" aria-label="Đường dẫn trang">
+              <span>{ROLE_LABELS[currentRole]}</span>
+              <Icon name="chevron-right" size={12} />
+              <span>{currentNav ? GROUP_LABELS[currentNav.group] : ''}</span>
+            </nav>
+            <h1>{currentNav?.label}</h1>
           </div>
           <div className="topbar-actions">
             <GlobalSearch onNavigate={(target, recordId) => handlePageNavigation(target, recordId)} />
-            <button className="refresh-data-button" onClick={() => void handleRefresh()} disabled={refreshing} aria-label="Làm mới dữ liệu">
-              <span aria-hidden="true">↻</span>
-              <strong className="refresh-label-full">{refreshing ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</strong>
-              <strong className="refresh-label-short">{refreshing ? 'Đang tải' : 'Làm mới'}</strong>
+            {currentRole !== 'department_head' && <OnlineUsersButton />}
+            <button type="button" className="topbar-icon-button refresh" onClick={() => void handleRefresh()} disabled={refreshing} aria-label="Làm mới dữ liệu" title="Làm mới dữ liệu">
+              <Icon name="refresh" size={18} className={refreshing ? 'spinning' : ''} />
             </button>
             <NotificationCenter onNavigate={(target, recordId) => handlePageNavigation(target as PageKey, recordId)} />
-            <button className="topbar-profile-button" onClick={() => onPage('account')} aria-label="Mở hồ sơ cá nhân">
-              <span className="topbar-profile-avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="Ảnh đại diện" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</span>
-              <span>Hồ sơ</span>
-            </button>
-            <span className={`mode-pill ${mode}`}>Trực tuyến</span>
-            <button className="mobile-logout" onClick={() => void handleLogout()} disabled={loggingOut} aria-label="Đăng xuất">
-              <span aria-hidden="true">⎋</span>
-              <strong>{loggingOut ? 'Đang thoát...' : 'Đăng xuất'}</strong>
+            <span className={`connection-dot ${online ? 'online' : 'offline'}`} title={online ? 'Đang kết nối máy chủ' : 'Mất kết nối, dữ liệu lưu tạm'} aria-label={online ? 'Trực tuyến' : 'Ngoại tuyến'} />
+            <button type="button" className="topbar-avatar" onClick={() => onPage('account')} aria-label="Hồ sơ cá nhân">
+              {currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}
             </button>
           </div>
         </header>
+        {error && <div className="data-error-banner">Không tải được dữ liệu mới: {error}</div>}
+        <p className="page-description">{pageDescriptions[page]}</p>
         <div className="page-content">{children}</div>
       </main>
-      <nav className="mobile-nav mobile-nav-modern">
-        {visible.map((item) => (
+
+      <nav className="mobile-nav" aria-label="Điều hướng">
+        {mobilePrimary.map((item) => (
           <button type="button" key={item.key} className={page === item.key ? 'active' : ''} onClick={() => handlePageNavigation(item.key)} aria-label={item.label}>
-            <span className="mobile-nav-icon"><AppIcon name={item.icon} />{notificationCountFor(item.key) > 0 && <b className="mobile-feature-badge">{notificationCountFor(item.key) > 99 ? '99+' : notificationCountFor(item.key)}</b>}</span><small>{item.mobileLabel}</small>
+            <span className="mobile-nav-icon"><Icon name={item.icon} size={20} />{badge(notificationCountFor(item.key), 'mobile-nav-badge')}</span>
+            <small>{item.mobileLabel}</small>
           </button>
         ))}
+        {mobileMore.length > 0 && <button type="button" className={mobileMore.some((item) => item.key === page) || moreOpen ? 'active' : ''} onClick={() => setMoreOpen((value) => !value)} aria-expanded={moreOpen} aria-label="Thêm chức năng">
+          <span className="mobile-nav-icon"><Icon name="menu" size={20} />{badge(moreBadge, 'mobile-nav-badge')}</span>
+          <small>Thêm</small>
+        </button>}
       </nav>
+
+      {moreOpen && <>
+        <button type="button" className="mobile-more-overlay" onClick={() => setMoreOpen(false)} aria-label="Đóng" />
+        <section className="mobile-more-sheet" aria-label="Chức năng khác">
+          <div className="mobile-more-user">
+            <span className="sidebar-avatar">{currentProfile?.avatar_url ? <img src={currentProfile.avatar_url} alt="" /> : currentProfile?.full_name.slice(0, 1).toUpperCase()}</span>
+            <div><strong>{currentProfile?.full_name}</strong><small>{ROLE_LABELS[currentRole]}</small></div>
+          </div>
+          <div className="mobile-more-grid">
+            {mobileMore.map((item) => <button type="button" key={item.key} className={page === item.key ? 'active' : ''} onClick={() => handlePageNavigation(item.key)}>
+              <span><Icon name={item.icon} size={20} />{badge(notificationCountFor(item.key), 'mobile-nav-badge')}</span>
+              <strong>{item.mobileLabel}</strong>
+            </button>)}
+          </div>
+          <button type="button" className="mobile-more-logout" onClick={() => void handleLogout()} disabled={loggingOut}><Icon name="logout" size={18} />{loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}</button>
+        </section>
+      </>}
     </div>
   )
 }

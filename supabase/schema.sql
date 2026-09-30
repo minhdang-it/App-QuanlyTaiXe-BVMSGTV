@@ -1269,315 +1269,165 @@ end $$;
 commit;
 
 
--- ============================================================
--- v2.9.0 workflow / driver leave / handover
--- ============================================================
+-- =====================================================================
+-- NÂNG CẤP QUY TRÌNH v2.9.0
+-- Giữ đồng bộ với migrate-v2.9.0-adhoc-trips-presence.sql để cài mới một lần là đủ.
+-- =====================================================================
+
 -- BVMSGTV Điều phối xe v2.9.0
--- Nghiệp vụ mới:
--- 1) Hành chính được tạo/điều chỉnh chuyến như Điều phối.
--- 2) Lịch nghỉ tài xế theo ngày, khóa xếp chuyến khi nghỉ.
--- 3) Sự cố: Tài xế -> Hành chính -> BGĐ -> thông báo tài xế -> Hành chính xử lý.
--- 4) Chi phí: Tài xế -> Hành chính -> Kế toán -> BGĐ -> Kế toán -> Chi trả.
--- 5) Kết thúc chuyến bắt buộc ảnh tổng thể xe + KM cuối + mức nhiên liệu.
+-- 1) Quy trình điều xe mới: Điều phối tạo chuyến -> Hành chính điều phối duyệt -> Tài xế.
+--    Ban Giám đốc KHÔNG còn duyệt chuyến; BGĐ chỉ xem báo cáo cuối tháng và duyệt chi phí.
+-- 2) Tài xế được tạo CHUYẾN ĐỘT XUẤT, chạy ngay theo quy trình checklist/KM/GPS,
+--    sau đó Hành chính/Điều phối xác nhận báo cáo.
+-- 3) Trạng thái trực tuyến (online) và thời điểm hoạt động gần nhất của tài khoản.
+--
+-- Chạy file này trong Supabase SQL Editor SAU các migration v2.7.x, TRƯỚC khi deploy frontend v2.9.0.
+-- File có thể chạy lại nhiều lần (idempotent).
 
--- ============================================================
--- CỘT / BẢNG MỚI
--- ============================================================
+begin;
 
+-- =====================================================================
+-- A. Cột dữ liệu cho chuyến đột xuất
+-- =====================================================================
 alter table public.trips
-  add column if not exists end_vehicle_image_url text,
-  add column if not exists end_fuel_level_percent integer;
+  add column if not exists is_adhoc boolean not null default false,
+  add column if not exists adhoc_reason text,
+  add column if not exists adhoc_report_status text,
+  add column if not exists adhoc_reviewer_id uuid references public.profiles(id) on delete set null,
+  add column if not exists adhoc_reviewed_at timestamptz,
+  add column if not exists adhoc_review_note text;
 
-alter table public.trips drop constraint if exists trips_end_fuel_level_check;
-alter table public.trips add constraint trips_end_fuel_level_check
-  check (end_fuel_level_percent is null or end_fuel_level_percent between 0 and 100);
+alter table public.trips drop constraint if exists trips_adhoc_report_status_check;
+alter table public.trips add constraint trips_adhoc_report_status_check
+  check (
+    (is_adhoc = false and adhoc_report_status is null)
+    or (is_adhoc = true and adhoc_report_status in ('pending_review','acknowledged','flagged'))
+  );
 
-alter table public.expenses
-  add column if not exists fleet_reviewer_id uuid references public.profiles(id) on delete set null,
-  add column if not exists fleet_reviewed_at timestamptz,
-  add column if not exists precheck_accountant_reviewer_id uuid references public.profiles(id) on delete set null,
-  add column if not exists precheck_accountant_reviewed_at timestamptz;
+alter table public.trips drop constraint if exists trips_approval_mode_check;
+alter table public.trips add constraint trips_approval_mode_check
+  check (approval_mode in ('director_required','fleet_only','driver_adhoc'));
 
--- Nới constraint trước khi chuyển dữ liệu cũ.
-alter table public.expenses drop constraint if exists expenses_status_check;
-update public.expenses set status = 'pending_fleet' where status = 'pending_director';
-update public.expenses set status = 'pending_accountant_final' where status = 'pending_accountant';
-alter table public.expenses add constraint expenses_status_check
-  check (status in ('pending_fleet','pending_accountant','pending_director','pending_accountant_final','approved','rejected','paid'));
-alter table public.expenses alter column status set default 'pending_fleet';
+-- Chuyến mới mặc định chỉ cần Hành chính duyệt.
+alter table public.trips alter column approval_mode set default 'fleet_only';
 
-alter table public.incidents drop constraint if exists incidents_status_check;
-alter table public.incidents add constraint incidents_status_check
-  check (status in ('pending_fleet','pending_director','reported','handling','resolved','rejected'));
-alter table public.incidents alter column status set default 'pending_fleet';
+create index if not exists trips_adhoc_review_idx
+  on public.trips(adhoc_report_status, scheduled_start desc)
+  where is_adhoc = true;
 
-create table if not exists public.driver_leaves (
-  id uuid primary key default gen_random_uuid(),
-  driver_id uuid not null references public.profiles(id) on delete cascade,
-  leave_date date not null,
-  note text,
-  created_by uuid references public.profiles(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (driver_id, leave_date)
-);
+-- =====================================================================
+-- B. Chuyển dữ liệu đang chờ sang quy trình mới
+-- =====================================================================
+-- Trigger nghiệp vụ không nhận vai trò ứng dụng khi chạy trong SQL Editor,
+-- nên tạm tắt USER TRIGGER chỉ trong transaction này.
+alter table public.trips disable trigger user;
 
-create index if not exists driver_leaves_date_idx on public.driver_leaves(leave_date);
-create index if not exists driver_leaves_driver_date_idx on public.driver_leaves(driver_id, leave_date);
+-- Chuyến đã được Hành chính duyệt và đang chờ BGĐ: giao thẳng cho tài xế.
+update public.trips
+set status = 'assigned',
+    approval_mode = 'fleet_only',
+    updated_at = now()
+where status = 'pending_director';
 
--- ============================================================
--- QUYỀN
--- ============================================================
+-- Chuyến đang chờ Hành chính: chỉ cần Hành chính duyệt là xe đi.
+update public.trips
+set approval_mode = 'fleet_only',
+    updated_at = now()
+where status = 'pending_fleet'
+  and approval_mode is distinct from 'fleet_only';
 
-create or replace function public.can_dispatch()
-returns boolean
-language sql
-stable
-security definer set search_path = public
-as $$
-  select coalesce(public.current_role() in ('dispatcher','fleet','admin'), false);
-$$;
+alter table public.trips enable trigger user;
 
-create or replace function public.can_review_expense()
-returns boolean
-language sql
-stable
-security definer set search_path = public
-as $$
-  select coalesce(public.current_role() in ('fleet','director','accountant','admin'), false);
-$$;
-
--- ============================================================
--- LỊCH NGHỈ TÀI XẾ
--- ============================================================
-
-create or replace function public.validate_driver_leave()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-begin
-  if not exists (
-    select 1 from public.profiles p
-    where p.id = new.driver_id and p.role = 'driver' and p.active = true and p.deleted_at is null
-  ) then
-    raise exception 'Tài khoản được chọn không phải tài xế đang hoạt động';
-  end if;
-
-  if exists (
-    select 1 from public.trips t
-    where t.driver_id = new.driver_id
-      and t.status not in ('completed','cancelled')
-      and (timezone('Asia/Ho_Chi_Minh', t.scheduled_start))::date = new.leave_date
-  ) then
-    raise exception 'Tài xế đã có chuyến trong ngày này. Hãy đổi/hủy chuyến trước khi đánh dấu nghỉ';
-  end if;
-
-  new.updated_at := now();
-  return new;
-end;
-$$;
-
-drop trigger if exists validate_driver_leave_trigger on public.driver_leaves;
-create trigger validate_driver_leave_trigger
-before insert or update on public.driver_leaves
-for each row execute function public.validate_driver_leave();
-
-create or replace function public.prevent_trip_on_driver_leave()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-declare
-  local_trip_date date;
-begin
-  local_trip_date := (timezone('Asia/Ho_Chi_Minh', new.scheduled_start))::date;
-  if exists (
-    select 1 from public.driver_leaves dl
-    where dl.driver_id = new.driver_id and dl.leave_date = local_trip_date
-  ) then
-    raise exception 'Tài xế được chọn đang nghỉ ngày %. Vui lòng chọn tài xế khác', to_char(local_trip_date, 'DD/MM/YYYY');
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists prevent_trip_on_driver_leave_trigger on public.trips;
-create trigger prevent_trip_on_driver_leave_trigger
-before insert or update of driver_id, scheduled_start on public.trips
-for each row execute function public.prevent_trip_on_driver_leave();
-
-alter table public.driver_leaves enable row level security;
-
-drop policy if exists "driver leaves own or dispatcher read" on public.driver_leaves;
-create policy "driver leaves own or dispatcher read" on public.driver_leaves
-for select to authenticated using (
-  driver_id = auth.uid() or public.current_role() in ('dispatcher','fleet','admin')
-);
-
-drop policy if exists "driver leaves management insert" on public.driver_leaves;
-create policy "driver leaves management insert" on public.driver_leaves
-for insert to authenticated with check (
-  public.current_role() in ('dispatcher','fleet','admin') and created_by = auth.uid()
-);
-
-drop policy if exists "driver leaves management update" on public.driver_leaves;
-create policy "driver leaves management update" on public.driver_leaves
-for update to authenticated using (public.current_role() in ('dispatcher','fleet','admin'))
-with check (public.current_role() in ('dispatcher','fleet','admin'));
-
-drop policy if exists "driver leaves management delete" on public.driver_leaves;
-create policy "driver leaves management delete" on public.driver_leaves
-for delete to authenticated using (public.current_role() in ('dispatcher','fleet','admin'));
-
--- ============================================================
--- QUY TRÌNH CHI PHÍ MỚI
--- ============================================================
-
-create or replace function public.protect_expense_workflow()
+-- =====================================================================
+-- C. Kiểm soát khi TÀI XẾ tạo chuyến đột xuất
+-- =====================================================================
+create or replace function public.validate_adhoc_trip_insert()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 declare
   role_name text := public.current_role();
+  vehicle_state text;
 begin
-  if old.status = new.status then return new; end if;
-
-  if old.status = 'pending_fleet' and new.status = 'pending_accountant' and role_name in ('fleet','admin') then
-    new.fleet_reviewer_id := auth.uid();
-    new.fleet_reviewed_at := coalesce(new.fleet_reviewed_at, now());
-    new.reviewer_id := auth.uid(); new.reviewed_at := now(); new.rejection_reason := null;
+  if coalesce(new.is_adhoc, false) = false then
+    if role_name = 'driver' then
+      raise exception 'Tài xế chỉ được tạo chuyến đột xuất';
+    end if;
+    new.adhoc_reason := null;
+    new.adhoc_report_status := null;
+    new.adhoc_reviewer_id := null;
+    new.adhoc_reviewed_at := null;
+    new.adhoc_review_note := null;
     return new;
   end if;
 
-  if old.status = 'pending_accountant' and new.status = 'pending_director' and role_name in ('accountant','admin') then
-    new.precheck_accountant_reviewer_id := auth.uid();
-    new.precheck_accountant_reviewed_at := coalesce(new.precheck_accountant_reviewed_at, now());
-    new.reviewer_id := auth.uid(); new.reviewed_at := now(); new.rejection_reason := null;
-    return new;
+  if role_name is distinct from 'driver' then
+    raise exception 'Chỉ tài khoản Tài xế được tạo chuyến đột xuất';
+  end if;
+  if new.driver_id is distinct from auth.uid() or new.created_by is distinct from auth.uid() then
+    raise exception 'Chuyến đột xuất phải do chính tài xế tạo và thực hiện';
+  end if;
+  if coalesce(trim(new.adhoc_reason), '') = '' then
+    raise exception 'Cần nhập lý do phát sinh chuyến đột xuất';
+  end if;
+  if new.scheduled_start < now() - interval '2 hours' or new.scheduled_start > now() + interval '12 hours' then
+    raise exception 'Giờ xuất phát chuyến đột xuất phải trong khoảng 2 giờ trước đến 12 giờ tới';
   end if;
 
-  if old.status = 'pending_director' and new.status = 'pending_accountant_final' and role_name in ('director','admin') then
-    new.director_reviewer_id := auth.uid();
-    new.director_reviewed_at := coalesce(new.director_reviewed_at, now());
-    new.reviewer_id := auth.uid(); new.reviewed_at := now(); new.rejection_reason := null;
-    return new;
+  select status into vehicle_state from public.vehicles where id = new.vehicle_id;
+  if not found then raise exception 'Không tìm thấy xe'; end if;
+  if vehicle_state in ('maintenance','out_of_service') then
+    raise exception 'Xe đang sửa chữa hoặc ngừng sử dụng, không thể tạo chuyến đột xuất';
   end if;
 
-  if old.status = 'pending_accountant_final' and new.status = 'approved' and role_name in ('accountant','admin') then
-    new.accountant_reviewer_id := auth.uid();
-    new.accountant_reviewed_at := coalesce(new.accountant_reviewed_at, now());
-    new.reviewer_id := auth.uid(); new.reviewed_at := now(); new.rejection_reason := null;
-    return new;
-  end if;
-
-  if old.status = 'approved' and new.status = 'paid' and role_name in ('accountant','admin') then
-    new.paid_by := auth.uid(); new.paid_at := coalesce(new.paid_at, now());
-    new.reviewer_id := auth.uid(); new.reviewed_at := now();
-    return new;
-  end if;
-
-  if new.status = 'rejected' and (
-    (old.status = 'pending_fleet' and role_name in ('fleet','admin')) or
-    (old.status in ('pending_accountant','pending_accountant_final') and role_name in ('accountant','admin')) or
-    (old.status = 'pending_director' and role_name in ('director','admin'))
+  if exists (
+    select 1 from public.trips t
+    where t.driver_id = auth.uid() and t.status in ('ready','active')
   ) then
-    if coalesce(trim(new.rejection_reason), '') = '' then raise exception 'Cần nhập lý do từ chối chi phí'; end if;
-    new.reviewer_id := auth.uid(); new.reviewed_at := now();
-    return new;
+    raise exception 'Bạn đang có chuyến sẵn sàng hoặc đang chạy. Hãy hoàn tất chuyến đó trước khi tạo chuyến đột xuất';
   end if;
 
-  raise exception 'Chuyển trạng thái chi phí không hợp lệ hoặc không đúng thẩm quyền';
+  -- Chuyến đột xuất đi thẳng tới bước tài xế đã nhận, bỏ qua duyệt trước.
+  new.status := 'accepted';
+  new.approval_mode := 'driver_adhoc';
+  new.approved_plan := false;
+  new.vehicle_request_id := null;
+  new.fleet_reviewer_id := null;
+  new.fleet_reviewed_at := null;
+  new.director_reviewer_id := null;
+  new.director_reviewed_at := null;
+  new.approval_rejection_reason := null;
+  new.checklist_completed := false;
+  new.start_odometer := null;
+  new.end_odometer := null;
+  new.start_odometer_image_url := null;
+  new.end_odometer_image_url := null;
+  new.started_at := null;
+  new.ended_at := null;
+  new.adhoc_reason := trim(new.adhoc_reason);
+  new.adhoc_report_status := 'pending_review';
+  new.adhoc_reviewer_id := null;
+  new.adhoc_reviewed_at := null;
+  new.adhoc_review_note := null;
+  return new;
 end;
 $$;
 
-drop trigger if exists protect_expense_workflow on public.expenses;
-create trigger protect_expense_workflow before update on public.expenses
-for each row execute function public.protect_expense_workflow();
+drop trigger if exists validate_adhoc_trip_insert_trigger on public.trips;
+create trigger validate_adhoc_trip_insert_trigger before insert on public.trips
+for each row execute function public.validate_adhoc_trip_insert();
 
-drop policy if exists "expenses driver insert" on public.expenses;
-create policy "expenses driver insert" on public.expenses for insert to authenticated with check (
-  driver_id = auth.uid()
-  and status = 'pending_fleet'
-  and (
-    (expenses.trip_id is not null and exists (
-      select 1 from public.trips t where t.id = expenses.trip_id and t.driver_id = auth.uid() and t.vehicle_id = expenses.vehicle_id
-    ))
-    or (expenses.trip_id is null and exists (
-      select 1 from public.vehicles v where v.id = expenses.vehicle_id and v.regular_driver_id = auth.uid()
-    ))
-  )
-);
-
-drop policy if exists "expenses approval update" on public.expenses;
-create policy "expenses approval update" on public.expenses for update to authenticated
-using (public.can_review_expense()) with check (public.can_review_expense());
-
--- ============================================================
--- QUY TRÌNH SỰ CỐ MỚI
--- ============================================================
-
-create or replace function public.protect_incident_workflow()
-returns trigger language plpgsql security definer set search_path = public as $$
-declare role_name text := public.current_role();
-begin
-  if old.status = new.status then return new; end if;
-
-  if role_name in ('fleet','admin') and old.status = 'pending_fleet' and new.status = 'pending_director' then
-    new.handler_id := auth.uid();
-    return new;
-  end if;
-
-  if role_name in ('director','admin') and old.status = 'pending_director' and new.status in ('reported','rejected') then
-    if new.status = 'rejected' and coalesce(trim(new.rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt sửa/xử lý sự cố'; end if;
-    new.director_reviewer_id := auth.uid();
-    new.director_reviewed_at := now();
-    return new;
-  end if;
-
-  if role_name in ('fleet','admin') and old.status = 'reported' and new.status = 'handling' then
-    new.handler_id := auth.uid();
-    return new;
-  end if;
-
-  if role_name in ('fleet','admin') and old.status = 'handling' and new.status = 'resolved' then
-    if coalesce(trim(new.resolution), '') = '' then raise exception 'Cần nhập nội dung xử lý sự cố'; end if;
-    new.resolved_at := coalesce(new.resolved_at, now());
-    return new;
-  end if;
-
-  raise exception 'Chuyển trạng thái sự cố không hợp lệ hoặc không đúng thẩm quyền';
-end;
-$$;
-
-drop trigger if exists protect_incident_workflow_trigger on public.incidents;
-create trigger protect_incident_workflow_trigger before update on public.incidents
-for each row execute function public.protect_incident_workflow();
-
-drop policy if exists "incidents driver insert" on public.incidents;
-create policy "incidents driver insert" on public.incidents for insert to authenticated with check (
-  driver_id = auth.uid()
-  and status = 'pending_fleet'
-  and (
-    (incidents.trip_id is not null and exists (
-      select 1 from public.trips t where t.id = incidents.trip_id and t.driver_id = auth.uid() and t.vehicle_id = incidents.vehicle_id
-    ))
-    or (incidents.trip_id is null and exists (
-      select 1 from public.vehicles v where v.id = incidents.vehicle_id and v.regular_driver_id = auth.uid()
-    ))
-  )
-);
-
--- ============================================================
--- HÀNH CHÍNH ĐƯỢC TẠO CHUYẾN + BÀN GIAO CUỐI CHUYẾN
--- ============================================================
-
+-- =====================================================================
+-- D. Bảo vệ luồng cập nhật chuyến (thay thế bản v2.7.1)
+-- =====================================================================
 create or replace function public.protect_trip_update()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
   role_name text := public.current_role();
   core_changed boolean;
+  review_changed boolean;
+  approval_fields_changed boolean;
 begin
   core_changed :=
     new.vehicle_id is distinct from old.vehicle_id
@@ -1595,18 +1445,63 @@ begin
     or new.approval_mode is distinct from old.approval_mode
     or new.approved_plan is distinct from old.approved_plan
     or new.plan_document_url is distinct from old.plan_document_url
-    or new.vehicle_request_id is distinct from old.vehicle_request_id;
+    or new.vehicle_request_id is distinct from old.vehicle_request_id
+    or new.is_adhoc is distinct from old.is_adhoc
+    or new.adhoc_reason is distinct from old.adhoc_reason;
+
+  review_changed :=
+    new.adhoc_report_status is distinct from old.adhoc_report_status
+    or new.adhoc_reviewer_id is distinct from old.adhoc_reviewer_id
+    or new.adhoc_reviewed_at is distinct from old.adhoc_reviewed_at
+    or new.adhoc_review_note is distinct from old.adhoc_review_note;
+
+  approval_fields_changed :=
+    new.fleet_reviewer_id is distinct from old.fleet_reviewer_id
+    or new.fleet_reviewed_at is distinct from old.fleet_reviewed_at
+    or new.director_reviewer_id is distinct from old.director_reviewer_id
+    or new.director_reviewed_at is distinct from old.director_reviewed_at;
+
+  -- Xác nhận báo cáo chuyến đột xuất: Hành chính / Điều phối / Quản trị.
+  if review_changed then
+    if role_name not in ('fleet','dispatcher','admin') then
+      raise exception 'Chỉ Hành chính hoặc Điều phối được xác nhận báo cáo chuyến đột xuất';
+    end if;
+    if not old.is_adhoc then raise exception 'Chuyến này không phải chuyến đột xuất'; end if;
+    if core_changed or new.status is distinct from old.status then
+      raise exception 'Xác nhận báo cáo không được thay đổi thông tin hoặc trạng thái chuyến';
+    end if;
+    if old.adhoc_report_status <> 'pending_review' then
+      raise exception 'Báo cáo chuyến đột xuất đã được xác nhận trước đó';
+    end if;
+    if new.adhoc_report_status not in ('acknowledged','flagged') then
+      raise exception 'Trạng thái xác nhận báo cáo không hợp lệ';
+    end if;
+    if new.adhoc_report_status = 'flagged' and coalesce(trim(new.adhoc_review_note), '') = '' then
+      raise exception 'Cần ghi rõ nội dung cần tài xế giải trình';
+    end if;
+    new.adhoc_reviewer_id := auth.uid();
+    new.adhoc_reviewed_at := now();
+    return new;
+  end if;
 
   if role_name = 'driver' then
     if old.driver_id <> auth.uid() then raise exception 'Không có quyền cập nhật chuyến này'; end if;
     if old.status in ('pending_fleet','pending_director') then raise exception 'Chuyến chưa được phê duyệt để giao cho tài xế'; end if;
-    if core_changed then raise exception 'Tài xế không được sửa thông tin điều xe'; end if;
+    if core_changed or approval_fields_changed then raise exception 'Tài xế không được sửa thông tin điều xe'; end if;
+
+    -- Tài xế được tự hủy chuyến đột xuất do mình tạo khi chưa xuất phát.
+    if old.is_adhoc and new.status = 'cancelled' and old.status in ('accepted','ready') then
+      if old.start_odometer is not null or old.started_at is not null then
+        raise exception 'Chuyến đã ghi nhận kilomet/xuất phát, không thể tự hủy';
+      end if;
+      return new;
+    end if;
 
     if new.status = 'ready' and exists (
       select 1 from public.checklists
       where trip_id = new.id and driver_id = auth.uid()
         and not (fuel_ok and tires_ok and lights_horn_ok and vehicle_clean and documents_ok)
-    ) then raise exception 'Checklist có mục Không, cần Điều phối/Hành chính duyệt ngoại lệ'; end if;
+    ) then raise exception 'Checklist có mục Không, cần điều phối duyệt ngoại lệ'; end if;
 
     if new.status is distinct from old.status and not (
       (old.status = 'assigned' and new.status = 'accepted') or
@@ -1626,57 +1521,34 @@ begin
     if (new.end_odometer is distinct from old.end_odometer or new.end_odometer_image_url is distinct from old.end_odometer_image_url) and old.status <> 'active' then
       raise exception 'Chỉ được ghi kilomet cuối khi chuyến đang chạy';
     end if;
-    if (new.end_vehicle_image_url is distinct from old.end_vehicle_image_url or new.end_fuel_level_percent is distinct from old.end_fuel_level_percent) and old.status <> 'active' then
-      raise exception 'Chỉ được ghi dữ liệu bàn giao xe khi chuyến đang chạy';
-    end if;
     if new.status = 'active' and (new.checklist_completed = false or new.start_odometer is null or new.start_odometer_image_url is null or new.started_at is null) then
       raise exception 'Cần checklist, ảnh kilomet đầu và thời gian xuất phát trước khi bắt đầu';
     end if;
-    if new.status = 'completed' and (
-      new.end_odometer is null or new.end_odometer_image_url is null or new.ended_at is null
-      or new.end_vehicle_image_url is null or new.end_fuel_level_percent is null
-    ) then
-      raise exception 'Cần ảnh KM cuối, ảnh tổng thể xe, mức nhiên liệu và thời gian kết thúc trước khi hoàn thành chuyến';
+    if new.status = 'completed' and (new.end_odometer is null or new.end_odometer_image_url is null or new.ended_at is null) then
+      raise exception 'Cần ảnh kilomet cuối và thời gian kết thúc trước khi hoàn thành chuyến';
     end if;
     return new;
   end if;
 
   if role_name = 'fleet' then
-    -- Hành chính có quyền tạo/sửa xếp chuyến tương đương Điều phối khi chuyến còn chờ Hành chính.
-    if core_changed and old.status <> 'pending_fleet' then
-      raise exception 'Sau khi chuyến đã qua bước Hành chính, không được sửa nội dung xếp chuyến';
+    if core_changed then raise exception 'Hành chính chỉ được duyệt, không được sửa nội dung yêu cầu điều xe'; end if;
+    -- pending_director chỉ còn ở dữ liệu cũ; Hành chính xử lý thay BGĐ.
+    if old.status not in ('pending_fleet','pending_director') then raise exception 'Chuyến không ở bước chờ Hành chính duyệt'; end if;
+    if new.status not in ('assigned','cancelled') then
+      raise exception 'Hành chính chỉ được duyệt (giao tài xế) hoặc không duyệt chuyến';
     end if;
-
-    if old.status = 'pending_fleet' and new.status is distinct from old.status then
-      if new.status = 'assigned' then
-        if old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null then
-          raise exception 'Chỉ được bỏ qua BGĐ khi chuyến có kèm văn bản/kế hoạch';
-        end if;
-      elsif new.status not in ('pending_director','cancelled') then
-        raise exception 'Chuyển trạng thái Hành chính duyệt không hợp lệ';
-      end if;
-      if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;
-      new.fleet_reviewer_id := auth.uid(); new.fleet_reviewed_at := now();
-      return new;
-    end if;
-
-    if new.status is distinct from old.status and not (
-      (old.status = 'assigned' and new.status = 'cancelled') or
-      (old.status = 'accepted' and new.status in ('ready','cancelled')) or
-      (old.status = 'ready' and new.status = 'cancelled')
-    ) then raise exception 'Hành chính không được chuyển trạng thái chuyến theo cách này'; end if;
+    if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;
+    new.approval_mode := 'fleet_only';
+    new.fleet_reviewer_id := auth.uid(); new.fleet_reviewed_at := now();
     return new;
   end if;
 
   if role_name = 'director' then
-    if core_changed then raise exception 'Ban Giám đốc chỉ được phê duyệt, không sửa nội dung điều xe'; end if;
-    if old.status <> 'pending_director' or new.status not in ('assigned','cancelled') then raise exception 'Chuyến không ở bước chờ Ban Giám đốc duyệt'; end if;
-    if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;
-    new.director_reviewer_id := auth.uid(); new.director_reviewed_at := now();
-    return new;
+    raise exception 'Ban Giám đốc không còn phê duyệt chuyến xe. BGĐ xem báo cáo tổng hợp cuối tháng và duyệt chi phí';
   end if;
 
   if role_name = 'dispatcher' then
+    if approval_fields_changed then raise exception 'Điều phối không được tự ghi nhận bước phê duyệt'; end if;
     if core_changed and old.status <> 'pending_fleet' then raise exception 'Sau khi Hành chính đã duyệt, thay đổi thông tin chuyến phải tạo yêu cầu mới'; end if;
     if new.status is distinct from old.status and not (
       (old.status = 'pending_fleet' and new.status = 'cancelled') or
@@ -1688,14 +1560,11 @@ begin
   end if;
 
   if role_name = 'admin' then
-    if old.status = 'pending_fleet' and new.status in ('pending_director','assigned','cancelled') then
-      if new.status = 'assigned' and (old.approval_mode <> 'fleet_only' or not old.approved_plan or old.plan_document_url is null) then raise exception 'Không đủ điều kiện bỏ qua BGĐ'; end if;
+    -- Quản trị hỗ trợ vận hành, vẫn ghi nhận người duyệt theo bước Hành chính.
+    if old.status in ('pending_fleet','pending_director') and new.status in ('assigned','cancelled') then
       if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;
+      new.approval_mode := 'fleet_only';
       new.fleet_reviewer_id := auth.uid(); new.fleet_reviewed_at := now(); return new;
-    end if;
-    if old.status = 'pending_director' and new.status in ('assigned','cancelled') then
-      if new.status = 'cancelled' and coalesce(trim(new.approval_rejection_reason), '') = '' then raise exception 'Cần nhập lý do không duyệt'; end if;
-      new.director_reviewer_id := auth.uid(); new.director_reviewed_at := now(); return new;
     end if;
     return new;
   end if;
@@ -1705,56 +1574,90 @@ end;
 $$;
 
 drop trigger if exists protect_trip_update_trigger on public.trips;
-create trigger protect_trip_update_trigger before update on public.trips
-for each row execute function public.protect_trip_update();
+create trigger protect_trip_update_trigger before update on public.trips for each row execute function public.protect_trip_update();
 
--- Chính sách insert chuyến dùng can_dispatch() mới nên Hành chính được tạo chuyến.
+-- =====================================================================
+-- E. Phân quyền (RLS) chuyến xe
+-- =====================================================================
+-- Tài xế tạo chuyến đột xuất của chính mình.
+drop policy if exists "trips driver adhoc insert" on public.trips;
+create policy "trips driver adhoc insert" on public.trips for insert to authenticated with check (
+  public.current_role() = 'driver'
+  and is_adhoc = true
+  and driver_id = auth.uid()
+  and created_by = auth.uid()
+  and status = 'accepted'
+  and vehicle_request_id is null
+);
+
+-- Điều phối: chuyến mới luôn chờ Hành chính, trừ chuyến tạo từ đề nghị đã được Hành chính duyệt.
 drop policy if exists "trips dispatcher insert" on public.trips;
 create policy "trips dispatcher insert" on public.trips for insert to authenticated with check (
   public.can_dispatch()
   and created_by = auth.uid()
-  and (status = 'pending_fleet' or (status = 'assigned' and vehicle_request_id is not null))
+  and coalesce(is_adhoc, false) = false
+  and (
+    status = 'pending_fleet'
+    or (status = 'assigned' and vehicle_request_id is not null)
+  )
 );
 
--- ============================================================
--- REALTIME (an toàn khi publication đã có bảng)
--- ============================================================
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
-     and not exists (
-       select 1 from pg_publication_tables
-       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'driver_leaves'
-     ) then
-    alter publication supabase_realtime add table public.driver_leaves;
-  end if;
-end $$;
+-- BGĐ không còn quyền cập nhật chuyến (chỉ xem).
+drop policy if exists "trips driver or dispatcher update" on public.trips;
+drop policy if exists "trips workflow update" on public.trips;
+create policy "trips workflow update" on public.trips for update to authenticated using (
+  driver_id = auth.uid() or public.current_role() in ('dispatcher','fleet','admin')
+) with check (
+  driver_id = auth.uid() or public.current_role() in ('dispatcher','fleet','admin')
+);
 
--- v2.9.0: Hành chính được chuyển đề nghị đã duyệt thành chuyến.
-create or replace function public.protect_vehicle_request_update()
-returns trigger
+-- =====================================================================
+-- F. Trạng thái trực tuyến của tài khoản
+-- =====================================================================
+create table if not exists public.user_presence (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  last_seen_at timestamptz not null default now(),
+  last_platform text,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists user_presence_last_seen_idx on public.user_presence(last_seen_at desc);
+
+alter table public.user_presence enable row level security;
+
+drop policy if exists "presence own or management read" on public.user_presence;
+create policy "presence own or management read" on public.user_presence
+for select to authenticated using (user_id = auth.uid() or public.is_management());
+
+-- Không mở insert/update/delete trực tiếp; chỉ ghi qua RPC touch_presence().
+revoke insert, update, delete on public.user_presence from anon, authenticated;
+
+create or replace function public.touch_presence(p_platform text default null)
+returns timestamptz
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  role_name text := public.current_role();
+  stamp timestamptz := now();
 begin
-  if role_name in ('fleet','admin') and old.status = 'pending_fleet' and new.status in ('fleet_approved','rejected') then
-    new.fleet_reviewer_id := auth.uid();
-    new.fleet_reviewed_at := now();
-    if new.status = 'rejected' and coalesce(trim(new.rejection_reason), '') = '' then
-      raise exception 'Cần nhập lý do từ chối đề nghị điều xe';
-    end if;
-    return new;
+  if auth.uid() is null or public.current_role() is null then
+    return null;
   end if;
-  if role_name in ('dispatcher','fleet','admin') and old.status = 'fleet_approved' and new.status = 'converted' then
-    if new.created_trip_id is null then raise exception 'Thiếu chuyến được tạo từ đề nghị'; end if;
-    return new;
-  end if;
-  if old.status = new.status and role_name = 'admin' then return new; end if;
-  raise exception 'Không đúng thẩm quyền hoặc trạng thái xử lý đề nghị điều xe';
+  insert into public.user_presence (user_id, last_seen_at, last_platform, updated_at)
+  values (auth.uid(), stamp, left(nullif(trim(coalesce(p_platform, '')), ''), 40), stamp)
+  on conflict (user_id) do update
+    set last_seen_at = excluded.last_seen_at,
+        last_platform = coalesce(excluded.last_platform, public.user_presence.last_platform),
+        updated_at = excluded.updated_at;
+  return stamp;
 end;
 $$;
-drop trigger if exists protect_vehicle_request_update_trigger on public.vehicle_requests;
-create trigger protect_vehicle_request_update_trigger before update on public.vehicle_requests
-for each row execute function public.protect_vehicle_request_update();
+
+revoke all on function public.touch_presence(text) from public;
+revoke all on function public.touch_presence(text) from anon;
+grant execute on function public.touch_presence(text) to authenticated;
+
+-- Không thêm user_presence vào supabase_realtime: trạng thái tức thời dùng Realtime Presence,
+-- bảng này chỉ lưu "hoạt động gần nhất" để tránh làm tải lại toàn bộ dữ liệu mỗi phút.
+
+commit;

@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v285-report-permissions-readable-ui'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2100-enterprise-ui'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope

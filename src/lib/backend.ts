@@ -1,13 +1,14 @@
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from '@supabase/supabase-js'
 
 import type {
+  AdhocReportStatus,
   AppData,
   AuthUser,
   Checklist,
+  CreateAdhocTripInput,
   CreateTripInput,
   CreateVehicleRequestInput,
   DriverVehicleTrackingUpdate,
-  DriverLeave,
   CreateUserInput,
   Expense,
   ExpenseReviewAction,
@@ -17,6 +18,7 @@ import type {
   Profile,
   Trip,
   UpdateUserInput,
+  UserPresence,
   UserRole,
   Vehicle,
   VehicleRequest,
@@ -48,13 +50,13 @@ export interface BackendApi {
   createVehicleRequest(input: CreateVehicleRequestInput, requesterId: string, planFiles?: File[]): Promise<VehicleRequest>
   updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
   createTrip(input: CreateTripInput, creatorId: string, planFiles?: File[]): Promise<Trip>
+  createAdhocTrip(input: CreateAdhocTripInput, driverId: string): Promise<Trip>
+  reviewAdhocTrip(id: string, status: Exclude<AdhocReportStatus, 'pending_review'>, note?: string): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
-  completeTrip(trip: Trip, vehicleImage: File, fuelLevelPercent: number): Promise<Trip>
-  setDriverDayOff(driverId: string, leaveDate: string, dayOff: boolean, createdBy: string, note?: string): Promise<void>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
   reviewExpense(id: string, action: ExpenseReviewAction, reviewerId: string, reviewerRole: UserRole, reason?: string): Promise<Expense>
   createIncident(input: Omit<Incident, 'id' | 'created_at' | 'image_url' | 'audio_url'>, media?: MediaPayload): Promise<Incident>
@@ -66,26 +68,15 @@ export interface BackendApi {
   updateMaintenance(id: string, changes: Partial<Maintenance>): Promise<Maintenance>
   syncPending(): Promise<number>
   getPendingCount(): Promise<number>
+  touchPresence(platform?: string): Promise<void>
+  loadPresence(): Promise<UserPresence[]>
 }
 
 
 function readLiveCache(): AppData | null {
   const raw = localStorage.getItem(LIVE_CACHE_KEY)
   if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as Partial<AppData>
-    return {
-      profiles: parsed.profiles ?? [],
-      vehicles: parsed.vehicles ?? [],
-      vehicleRequests: parsed.vehicleRequests ?? [],
-      trips: parsed.trips ?? [],
-      checklists: parsed.checklists ?? [],
-      expenses: parsed.expenses ?? [],
-      incidents: parsed.incidents ?? [],
-      maintenances: parsed.maintenances ?? [],
-      driverLeaves: parsed.driverLeaves ?? [],
-    }
-  } catch { return null }
+  try { return JSON.parse(raw) as AppData } catch { return null }
 }
 
 function writeLiveCache(data: AppData) {
@@ -99,47 +90,13 @@ function expenseReviewTransition(expense: Expense, action: ExpenseReviewAction, 
   const now = new Date().toISOString()
   const isAdmin = reviewerRole === 'admin'
 
-  if (action === 'fleet_approve') {
-    if (!isAdmin && reviewerRole !== 'fleet') throw new Error('Chỉ Hành chính được duyệt bước đầu.')
-    if (expense.status !== 'pending_fleet') throw new Error('Chi phí không còn ở bước chờ Hành chính duyệt.')
-    return {
-      expectedStatus: 'pending_fleet' as const,
-      changes: {
-        status: 'pending_accountant' as const,
-        fleet_reviewer_id: reviewerId,
-        fleet_reviewed_at: now,
-        reviewer_id: reviewerId,
-        reviewed_at: now,
-        rejection_reason: null,
-        updated_at: now,
-      },
-    }
-  }
-
-  if (action === 'accountant_precheck') {
-    if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được kiểm tra chứng từ ở bước này.')
-    if (expense.status !== 'pending_accountant') throw new Error('Chi phí chưa được Hành chính duyệt hoặc đã được xử lý.')
-    return {
-      expectedStatus: 'pending_accountant' as const,
-      changes: {
-        status: 'pending_director' as const,
-        precheck_accountant_reviewer_id: reviewerId,
-        precheck_accountant_reviewed_at: now,
-        reviewer_id: reviewerId,
-        reviewed_at: now,
-        rejection_reason: null,
-        updated_at: now,
-      },
-    }
-  }
-
   if (action === 'director_approve') {
-    if (!isAdmin && reviewerRole !== 'director') throw new Error('Chỉ Ban Giám đốc được duyệt bước này.')
-    if (expense.status !== 'pending_director') throw new Error('Chi phí chưa được Kế toán kiểm tra hoặc đã được xử lý.')
+    if (!isAdmin && reviewerRole !== 'director') throw new Error('Chỉ Ban Giám đốc được duyệt bước đầu.')
+    if (expense.status !== 'pending_director') throw new Error('Chi phí không còn ở bước chờ Ban Giám đốc duyệt.')
     return {
       expectedStatus: 'pending_director' as const,
       changes: {
-        status: 'pending_accountant_final' as const,
+        status: 'pending_accountant' as const,
         director_reviewer_id: reviewerId,
         director_reviewed_at: now,
         reviewer_id: reviewerId,
@@ -150,11 +107,11 @@ function expenseReviewTransition(expense: Expense, action: ExpenseReviewAction, 
     }
   }
 
-  if (action === 'accountant_final_approve') {
-    if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được xác nhận khoản chi sau khi Ban Giám đốc duyệt.')
-    if (expense.status !== 'pending_accountant_final') throw new Error('Chi phí chưa được Ban Giám đốc duyệt hoặc đã được xử lý.')
+  if (action === 'accountant_approve') {
+    if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được duyệt bước thanh toán.')
+    if (expense.status !== 'pending_accountant') throw new Error('Chi phí chưa được Ban Giám đốc duyệt hoặc đã được xử lý.')
     return {
-      expectedStatus: 'pending_accountant_final' as const,
+      expectedStatus: 'pending_accountant' as const,
       changes: {
         status: 'approved' as const,
         accountant_reviewer_id: reviewerId,
@@ -169,7 +126,7 @@ function expenseReviewTransition(expense: Expense, action: ExpenseReviewAction, 
 
   if (action === 'mark_paid') {
     if (!isAdmin && reviewerRole !== 'accountant') throw new Error('Chỉ Kế toán được xác nhận chi trả.')
-    if (expense.status !== 'approved') throw new Error('Chi phí chưa hoàn tất quy trình duyệt.')
+    if (expense.status !== 'approved') throw new Error('Chi phí chưa hoàn tất hai bước duyệt.')
     return {
       expectedStatus: 'approved' as const,
       changes: {
@@ -185,9 +142,8 @@ function expenseReviewTransition(expense: Expense, action: ExpenseReviewAction, 
 
   if (!reason?.trim()) throw new Error('Cần nhập lý do từ chối.')
   const canReject = isAdmin
-    || (reviewerRole === 'fleet' && expense.status === 'pending_fleet')
-    || (reviewerRole === 'accountant' && ['pending_accountant', 'pending_accountant_final'].includes(expense.status))
     || (reviewerRole === 'director' && expense.status === 'pending_director')
+    || (reviewerRole === 'accountant' && expense.status === 'pending_accountant')
   if (!canReject) throw new Error('Bạn không có quyền từ chối chi phí ở bước hiện tại.')
 
   return {
@@ -209,7 +165,6 @@ function applyOptimisticToLiveCache(operation: string, optimistic: unknown) {
     'expense.create': 'expenses',
     'incident.create': 'incidents',
     'odometer.update': 'trips',
-    'trip.complete': 'trips',
   }
   const tableName = operation.split('.')[0]
   const key = tableMap[operation] ?? (tableName in cache ? tableName as keyof AppData : null)
@@ -257,6 +212,14 @@ async function friendlyFunctionError(error: unknown) {
     return `Supabase Edge Relay gặp lỗi: ${error.message}`
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+function friendlyTripError(error: unknown, fallback: string) {
+  const message = getErrorMessage(error, fallback)
+  if (/trips_vehicle_time_no_overlap/i.test(message)) return 'Xe đã có chuyến khác trùng khoảng thời gian này. Vui lòng chọn xe khác hoặc đổi giờ.'
+  if (/trips_driver_time_no_overlap/i.test(message)) return 'Tài xế đã có chuyến khác trùng khoảng thời gian này.'
+  if (/trip_time_order/i.test(message)) return 'Thời gian dự kiến về phải sau giờ xuất phát.'
+  return message
 }
 
 async function requireSupabase() {
@@ -362,7 +325,6 @@ async function hydrateData(data: AppData): Promise<AppData> {
       plan_attachments: await hydratePlanAttachments(trip.plan_attachments, planPath),
       start_odometer_image_url: await signMedia(trip.start_odometer_image_url),
       end_odometer_image_url: await signMedia(trip.end_odometer_image_url),
-      end_vehicle_image_url: await signMedia(trip.end_vehicle_image_url),
     }
   }))
   const expenses = await Promise.all(data.expenses.map(async (expense) => ({ ...expense, receipt_url: await signMedia(expense.receipt_url) })))
@@ -382,9 +344,6 @@ async function supabaseLoadData(): Promise<AppData> {
     const tables = ['profiles', 'vehicles', 'vehicle_requests', 'trips', 'checklists', 'expenses', 'incidents', 'maintenances'] as const
     const results = await Promise.all(tables.map((table) => client.from(table).select('*').order('created_at', { ascending: false })))
     results.forEach((result) => { if (result.error) throw result.error })
-    const leaveResult = await client.from('driver_leaves').select('*').order('leave_date', { ascending: false })
-    const leaveMissing = leaveResult.error && ['42P01', 'PGRST205'].includes(String(leaveResult.error.code ?? ''))
-    if (leaveResult.error && !leaveMissing) throw leaveResult.error
     const hydrated = await hydrateData({
       profiles: (results[0].data ?? []) as Profile[],
       vehicles: (results[1].data ?? []) as Vehicle[],
@@ -394,7 +353,6 @@ async function supabaseLoadData(): Promise<AppData> {
       expenses: (results[5].data ?? []) as Expense[],
       incidents: (results[6].data ?? []) as Incident[],
       maintenances: (results[7].data ?? []) as Maintenance[],
-      driverLeaves: (leaveResult.data ?? []) as DriverLeave[],
     })
     writeLiveCache(hydrated)
     return hydrated
@@ -424,16 +382,6 @@ async function executeAction(action: PendingAction) {
     if (action.file) payload.image_url = await uploadMedia(action.file, `${payload.driver_id}/incidents`, `incident-${recordId}`)
     if (action.secondFile) payload.audio_url = await uploadMedia(action.secondFile, `${payload.driver_id}/incident-audio`, `incident-audio-${recordId}`)
     const { error } = await client.from('incidents').upsert(payload, { onConflict: 'id', ignoreDuplicates: true })
-    if (error) throw error
-    return
-  }
-  if (action.operation === 'trip.complete') {
-    const tripId = String(payload.trip_id)
-    const driverId = String(payload.driver_id)
-    if (action.file) payload.end_vehicle_image_url = await uploadMedia(action.file, `${driverId}/handover`, `${tripId}-vehicle-end`)
-    delete payload.trip_id
-    delete payload.driver_id
-    const { error } = await client.from('trips').update(payload).eq('id', tripId).eq('status', 'active')
     if (error) throw error
     return
   }
@@ -597,7 +545,7 @@ const supabaseBackend: BackendApi = {
     if (!client) return () => undefined
 
     const channel = client.channel('msg-car-changes')
-    for (const table of ['profiles', 'vehicle_requests', 'trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists', 'driver_leaves']) {
+    for (const table of ['profiles', 'vehicle_requests', 'trips', 'vehicles', 'expenses', 'incidents', 'maintenances', 'checklists']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange)
     }
     channel.subscribe()
@@ -693,7 +641,8 @@ const supabaseBackend: BackendApi = {
       id,
       created_by: creatorId,
       status: fromApprovedDepartmentRequest ? 'assigned' : 'pending_fleet',
-      approval_mode: fromApprovedDepartmentRequest || approvedPlan ? 'fleet_only' : 'director_required',
+      // v2.9.0: mọi chuyến chỉ cần Hành chính điều phối duyệt; BGĐ không duyệt chuyến.
+      approval_mode: 'fleet_only',
       approved_plan: approvedPlan,
       plan_document_url: planPath,
       plan_attachments: attachments.map(({ url: _url, ...item }) => item),
@@ -704,7 +653,7 @@ const supabaseBackend: BackendApi = {
     const optimistic: Trip = { ...payload, plan_document_path: planPath, created_at: now, updated_at: now } as Trip
     try {
       const { data, error } = await client.from('trips').insert(payload).select().single()
-      if (error) throw error
+      if (error) throw new Error(friendlyTripError(error, 'Không thể tạo chuyến đi.'))
       const record = data as Trip
       return {
         ...record,
@@ -716,6 +665,45 @@ const supabaseBackend: BackendApi = {
       await Promise.all(uploadedAttachments.map((item) => removeStoredMedia(item.path)))
       throw error
     }
+  },
+  async createAdhocTrip(input, driverId) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để tạo chuyến đột xuất (hệ thống phải kiểm tra trùng lịch xe).')
+    const client = await requireSupabase()
+    const reason = input.adhoc_reason.trim()
+    if (!reason) throw new Error('Cần nhập lý do phát sinh chuyến đột xuất.')
+    const payload = {
+      ...input,
+      adhoc_reason: reason,
+      id: uid('trip'),
+      driver_id: driverId,
+      created_by: driverId,
+      is_adhoc: true,
+      status: 'accepted',
+      approval_mode: 'driver_adhoc',
+      approved_plan: false,
+      plan_attachments: [],
+      checklist_completed: false,
+      adhoc_report_status: 'pending_review',
+    }
+    const { data, error } = await client.from('trips').insert(payload).select().single()
+    if (error) throw new Error(friendlyTripError(error, 'Không thể tạo chuyến đột xuất.'))
+    return data as Trip
+  },
+  async reviewAdhocTrip(id, status, note) {
+    if (!navigator.onLine) throw new Error('Cần kết nối mạng để xác nhận báo cáo chuyến đột xuất.')
+    const client = await requireSupabase()
+    const trimmed = note?.trim() ?? ''
+    if (status === 'flagged' && !trimmed) throw new Error('Cần ghi rõ nội dung cần tài xế giải trình.')
+    const { data, error } = await client
+      .from('trips')
+      .update({ adhoc_report_status: status, adhoc_review_note: trimmed || null })
+      .eq('id', id)
+      .eq('is_adhoc', true)
+      .eq('adhoc_report_status', 'pending_review')
+      .select()
+      .single()
+    if (error) throw new Error(getErrorMessage(error, 'Không thể xác nhận báo cáo chuyến đột xuất.'))
+    return data as Trip
   },
   async updateTrip(id, changes) {
     const client = await requireSupabase()
@@ -780,60 +768,12 @@ const supabaseBackend: BackendApi = {
       return data as Trip
     }, optimistic, file)
   },
-  async completeTrip(trip, vehicleImage, fuelLevelPercent) {
-    if (!vehicleImage) throw new Error('Cần chụp hình tổng thể xe trước khi kết thúc chuyến.')
-    if (trip.end_odometer == null || !trip.end_odometer_image_url) throw new Error('Cần chụp và lưu đồng hồ KM cuối trước khi kết thúc chuyến.')
-    const fuel = Math.max(0, Math.min(100, Math.round(Number(fuelLevelPercent))))
-    if (!Number.isFinite(fuel)) throw new Error('Mức nhiên liệu không hợp lệ.')
-    const client = await requireSupabase()
-    const location = await getCurrentLocation()
-    const now = new Date().toISOString()
-    const baseChanges: Record<string, unknown> = {
-      end_fuel_level_percent: fuel,
-      status: 'completed',
-      ended_at: now,
-      end_lat: trip.end_lat ?? location?.lat ?? null,
-      end_lng: trip.end_lng ?? location?.lng ?? null,
-      current_lat: location?.lat ?? trip.current_lat ?? null,
-      current_lng: location?.lng ?? trip.current_lng ?? null,
-      location_updated_at: now,
-      updated_at: now,
-    }
-    const queuePayload = { trip_id: trip.id, driver_id: trip.driver_id, ...baseChanges }
-    const optimistic = { ...trip, ...baseChanges, end_vehicle_image_url: null } as Trip
-    return await performOrQueue('trip.complete', queuePayload, async () => {
-      const changes = { ...baseChanges }
-      changes.end_vehicle_image_url = await uploadMedia(vehicleImage, `${trip.driver_id}/handover`, `${trip.id}-vehicle-end`)
-      const { data, error } = await client.from('trips').update(changes).eq('id', trip.id).eq('status', 'active').select().single()
-      if (error) throw error
-      return data as Trip
-    }, optimistic, vehicleImage)
-  },
-  async setDriverDayOff(driverId, leaveDate, dayOff, createdBy, note) {
-    if (!navigator.onLine) throw new Error('Cần kết nối mạng để cập nhật lịch nghỉ của tài xế.')
-    const client = await requireSupabase()
-    if (dayOff) {
-      const payload = {
-        driver_id: driverId,
-        leave_date: leaveDate,
-        note: note?.trim() || null,
-        created_by: createdBy,
-        updated_at: new Date().toISOString(),
-      }
-      const { error } = await client.from('driver_leaves').upsert(payload, { onConflict: 'driver_id,leave_date' })
-      if (error) throw error
-      return
-    }
-    const { error } = await client.from('driver_leaves').delete().eq('driver_id', driverId).eq('leave_date', leaveDate)
-    if (error) throw error
-  },
   async createExpense(input, file) {
     const client = await requireSupabase()
     const now = new Date().toISOString()
     const id = uid('local-expense')
-    const normalizedInput = { ...input, status: 'pending_fleet' as const }
-    const optimistic: Expense = { ...normalizedInput, id, receipt_url: null, created_at: now, updated_at: now }
-    const payload: Record<string, unknown> = { ...normalizedInput, id }
+    const optimistic: Expense = { ...input, id, receipt_url: null, created_at: now, updated_at: now }
+    const payload: Record<string, unknown> = { ...input, id }
     return await performOrQueue('expense.create', payload, async () => {
       if (file) payload.receipt_url = await uploadMedia(file, `${input.driver_id}/receipts`, `expense-${id}`)
       const { data, error } = await client.from('expenses').insert(payload).select().single()
@@ -869,11 +809,11 @@ const supabaseBackend: BackendApi = {
     const client = await requireSupabase()
     const location = await getCurrentLocation()
     const id = uid('incident')
-    const payload: Record<string, unknown> = { ...input, id, status: 'pending_fleet', lat: input.lat ?? location?.lat, lng: input.lng ?? location?.lng }
+    const payload: Record<string, unknown> = { ...input, id, status: 'pending_director', lat: input.lat ?? location?.lat, lng: input.lng ?? location?.lng }
     const now = new Date().toISOString()
     const optimistic: Incident = {
       ...input,
-      status: 'pending_fleet',
+      status: 'pending_director',
       id,
       image_url: null,
       audio_url: null,
@@ -973,6 +913,18 @@ const supabaseBackend: BackendApi = {
     return await pendingCount()
   },
   async getPendingCount() { return await pendingCount() },
+  async touchPresence(platform) {
+    if (!navigator.onLine || !supabase) return
+    const { error } = await supabase.rpc('touch_presence', { p_platform: platform ?? null })
+    // Máy chủ chưa chạy migration v2.9.0 thì bỏ qua, không làm gián đoạn ứng dụng.
+    if (error && !/touch_presence|function|schema cache/i.test(error.message)) throw error
+  },
+  async loadPresence() {
+    if (!navigator.onLine || !supabase) return []
+    const { data, error } = await supabase.from('user_presence').select('user_id, last_seen_at, last_platform, updated_at')
+    if (error) return []
+    return (data ?? []) as UserPresence[]
+  },
 }
 
 // Production-only mode: never fall back to sample/demo data.

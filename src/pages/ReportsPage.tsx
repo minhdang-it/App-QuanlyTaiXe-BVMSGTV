@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
+import { Icon, iconFromEmoji } from '../components/Icon'
 import { useData } from '../context/DataContext'
-import { useAuth } from '../context/AuthContext'
 import { VietnamDateInput } from '../components/VietnamDateInput'
-import { EXPENSE_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDate, todayKey } from '../lib/utils'
+import { ADHOC_REPORT_LABELS, EXPENSE_LABELS, PURPOSE_LABELS } from '../lib/constants'
+import { formatCurrency, formatDate, formatDateTime, todayKey } from '../lib/utils'
 import type { AppData, Expense, ExpenseType, Trip, TripPurpose, Vehicle } from '../types/models'
 
 type PeriodMode = 'day' | 'week' | 'month' | 'year' | 'custom'
@@ -42,7 +42,18 @@ type ExecutiveReport = {
   narratives: Array<{ title: string; detail: string; tone: 'good' | 'warning' | 'danger' | 'info' }>
 }
 
+type AdhocReport = {
+  trips: Trip[]
+  completed: number
+  pending: number
+  acknowledged: number
+  flagged: number
+  distance: number
+  cost: number
+}
+
 type ReportData = {
+  adhoc: AdhocReport
   trips: Trip[]
   expenses: Expense[]
   incidents: AppData['incidents']
@@ -156,8 +167,6 @@ function deltaLabel(current: number, previous: number, lowerIsBetter = false) {
 
 export function ReportsPage() {
   const { data } = useData()
-  const { user } = useAuth()
-  const canViewExecutiveReport = user?.profile.role === 'director' || user?.profile.role === 'admin'
   const [mode, setMode] = useState<PeriodMode>('month')
   const [anchor, setAnchor] = useState(todayKey())
   const [customFrom, setCustomFrom] = useState(todayKey())
@@ -227,33 +236,42 @@ export function ReportsPage() {
       ['Chi phí bảo dưỡng', report.maintenanceCost],
       ['Tỷ lệ đủ KM đầu/cuối', `${report.odometerCoverage.toFixed(1)}%`],
       [],
+      ['BÁO CÁO BAN GIÁM ĐỐC'],
+      ['Chi phí trực tiếp', executive.directCost],
+      ['Chi phí bảo dưỡng bổ sung', executive.maintenanceCost],
+      ['Tổng chi phí vận hành', executive.tcoTotal],
+      ['Chi phí vận hành/km', Math.round(executive.tcoPerKm)],
+      ['Dự báo tháng kế tiếp', Math.round(executive.forecastNextMonth)],
+      ['Độ tin cậy dự báo', executive.forecastConfidence],
+      ['Ngân sách tham chiếu kỳ', Math.round(executive.periodBudget)],
+      ['Chênh lệch so ngân sách', Math.round(executive.budgetVariance)],
+      [],
+      ['CHI PHÍ VẬN HÀNH TỪNG XE'],
+      ['Xe', 'Chi phí trực tiếp', 'Bảo dưỡng', 'Tổng chi phí vận hành', 'Km', 'Chi phí vận hành/km', 'Tỷ trọng chi phí'],
+      ...executive.vehicleTco.map((item) => [item.vehicle.plate_number, item.directCost, item.maintenanceCost, item.tco, item.distance, Math.round(item.tcoPerKm), `${item.share.toFixed(1)}%`]),
+      [],
       ['THEO LOẠI CHUYẾN'],
       ['Loại chuyến', 'Số chuyến', 'Km', 'Chi phí', 'Chi phí/chuyến'],
     ]
-    if (canViewExecutiveReport) {
-      rows.push(
-        [],
-        ['BÁO CÁO BAN GIÁM ĐỐC'],
-        ['Chi phí trực tiếp', executive.directCost],
-        ['Chi phí bảo dưỡng bổ sung', executive.maintenanceCost],
-        ['Tổng chi phí vận hành', executive.tcoTotal],
-        ['Chi phí vận hành/km', Math.round(executive.tcoPerKm)],
-        ['Dự báo tháng kế tiếp', Math.round(executive.forecastNextMonth)],
-        ['Độ tin cậy dự báo', executive.forecastConfidence],
-        ['Ngân sách tham chiếu kỳ', Math.round(executive.periodBudget)],
-        ['Chênh lệch so ngân sách', Math.round(executive.budgetVariance)],
-        [],
-        ['CHI PHÍ VẬN HÀNH TỪNG XE'],
-        ['Xe', 'Chi phí trực tiếp', 'Bảo dưỡng', 'Tổng chi phí vận hành', 'Km', 'Chi phí vận hành/km', 'Tỷ trọng chi phí'],
-        ...executive.vehicleTco.map((item) => [item.vehicle.plate_number, item.directCost, item.maintenanceCost, item.tco, item.distance, Math.round(item.tcoPerKm), `${item.share.toFixed(1)}%`]),
-      )
-    }
-
     report.purpose.forEach((item) => rows.push([item.label, item.trips, item.distance, item.cost, item.trips ? Math.round(item.cost / item.trips) : 0]))
     rows.push([], ['HIỆU QUẢ TỪNG XE'], ['Xe', 'Số chuyến', 'Km', 'Chi phí', 'Chi phí/km', 'Lít xăng', 'L/100km'])
     report.vehicles.forEach((item) => rows.push([item.vehicle.plate_number, item.trips, item.distance, item.cost, Math.round(item.costPerKm), item.fuelLiters.toFixed(1), item.actualFuelRate.toFixed(1)]))
     rows.push([], ['HIỆU QUẢ TÀI XẾ'], ['Tài xế', 'Số chuyến', 'Km', 'Chi phí', 'Sự cố'])
     report.drivers.forEach((item) => rows.push([item.name, item.trips, item.distance, item.cost, item.incidents]))
+    rows.push([], ['CHUYẾN ĐỘT XUẤT DO TÀI XẾ TẠO'], ['Tổng chuyến', report.adhoc.trips.length, 'Đã xác nhận', report.adhoc.acknowledged, 'Chờ xác nhận', report.adhoc.pending, 'Cần giải trình', report.adhoc.flagged])
+    rows.push(['Thời gian', 'Xe', 'Tài xế', 'Điểm đón', 'Điểm đến', 'Lý do', 'Km', 'Trạng thái chuyến', 'Xác nhận báo cáo', 'Ghi chú xác nhận'])
+    report.adhoc.trips.forEach((trip) => rows.push([
+      formatDateTime(trip.started_at ?? trip.scheduled_start),
+      data.vehicles.find((item) => item.id === trip.vehicle_id)?.plate_number ?? '',
+      data.profiles.find((item) => item.id === trip.driver_id)?.full_name ?? '',
+      trip.pickup,
+      trip.destination,
+      trip.adhoc_reason ?? '',
+      trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : '',
+      trip.status,
+      ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review'],
+      trip.adhoc_review_note ?? '',
+    ]))
     rows.push([], ['ĐIỂM ĐẾN NHIỀU NHẤT'], ['Điểm đến', 'Số chuyến'])
     report.destinations.forEach((item) => rows.push([item.name, item.count]))
 
@@ -274,12 +292,11 @@ export function ReportsPage() {
       `Chuyến hoàn thành: ${report.trips.length}`,
       `Tổng km: ${report.totalDistance.toLocaleString('vi-VN')} km`,
       `Tổng chi phí trực tiếp: ${formatCurrency(report.totalCost)}`,
-      ...(canViewExecutiveReport ? [
-        `Tổng chi phí vận hành: ${formatCurrency(executive.tcoTotal)}`,
-        `Chi phí vận hành/km: ${executive.tcoPerKm ? formatCurrency(executive.tcoPerKm) : '—'}`,
-        `Dự báo ${executive.forecastLabel}: ${executive.forecastNextMonth ? formatCurrency(executive.forecastNextMonth) : 'Chưa đủ dữ liệu'}`,
-      ] : []),
+      `Tổng chi phí vận hành: ${formatCurrency(executive.tcoTotal)}`,
+      `Chi phí vận hành/km: ${executive.tcoPerKm ? formatCurrency(executive.tcoPerKm) : '—'}`,
+      `Dự báo ${executive.forecastLabel}: ${executive.forecastNextMonth ? formatCurrency(executive.forecastNextMonth) : 'Chưa đủ dữ liệu'}`,
       `Sự cố: ${report.incidents.length} (${report.seriousIncidents} nghiêm trọng)`,
+      `Chuyến đột xuất: ${report.adhoc.trips.length} (${report.adhoc.acknowledged} đã xác nhận, ${report.adhoc.pending} chờ xác nhận, ${report.adhoc.flagged} cần giải trình)`,
       topVehicle ? `Xe vận hành nhiều nhất: ${topVehicle.vehicle.plate_number} – ${topVehicle.trips} chuyến` : '',
     ].filter(Boolean).join('\n')
     navigator.clipboard?.writeText(text).catch(() => undefined)
@@ -290,8 +307,8 @@ export function ReportsPage() {
   return <>
     <section className="report-filter-card">
       <div className="report-filter-heading">
-        <div><span>BÁO CÁO VẬN HÀNH</span><h2>Phân tích vận hành đội xe</h2><p>Chọn kỳ báo cáo để xem hiệu quả vận hành, chi phí và các điểm cần chú ý.</p></div>
-        <div className="report-export-actions"><button className="secondary-button compact" onClick={copySummary}>⧉ Sao chép</button><button className="secondary-button compact" onClick={() => window.print()}>⎙ In / PDF</button><button className="primary-button compact" onClick={exportCsv}>⇩ CSV</button></div>
+        <div><span>BÁO CÁO QUẢN TRỊ</span><h2>Phân tích vận hành đội xe</h2><p>Chọn kỳ báo cáo để xem hiệu quả vận hành, chi phí và các điểm cần chú ý.</p></div>
+        <div className="report-export-actions"><button className="secondary-button compact" onClick={copySummary}><Icon name="copy" size={15} />Sao chép</button><button className="secondary-button compact" onClick={() => window.print()}><Icon name="print" size={15} />In / PDF</button><button className="primary-button compact" onClick={exportCsv}><Icon name="download" size={15} />Xuất CSV</button></div>
       </div>
       <div className="report-period-tabs">{(Object.keys(PERIOD_LABELS) as PeriodMode[]).map((item) => <button type="button" className={mode === item ? 'active' : ''} key={item} onClick={() => selectMode(item)}>{PERIOD_LABELS[item]}</button>)}</div>
       {mode === 'custom' ? <div className="report-date-controls custom"><label>Từ ngày<VietnamDateInput value={customFrom} onChange={setCustomFrom} /></label><label>Đến ngày<VietnamDateInput value={customTo} onChange={setCustomTo} /></label></div> : <div className="report-date-controls"><button type="button" className="report-period-arrow" onClick={() => movePeriod(-1)} aria-label="Kỳ trước">‹</button><label>Mốc thời gian<VietnamDateInput value={anchor} onChange={setAnchor} /></label><button type="button" className="report-period-arrow" onClick={() => movePeriod(1)} aria-label="Kỳ sau">›</button><button type="button" className="report-today-button" onClick={() => setAnchor(todayKey())}>Hôm nay</button></div>}
@@ -310,7 +327,6 @@ export function ReportsPage() {
       <div className="report-comparison-grid">{comparisons.map((item) => <article key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small className={item.delta.tone}>{item.delta.text}</small></article>)}</div>
     </section>
 
-    {canViewExecutiveReport && <>
     <section className="executive-report-shell">
       <div className="executive-report-header">
         <div><span>BÁO CÁO BAN GIÁM ĐỐC</span><h2>Chi phí vận hành, dự báo & khuyến nghị điều hành</h2><p>Tóm tắt quản trị từ dữ liệu thực tế. Dự báo sử dụng trung bình có trọng số 3 tháng gần nhất, không gọi API AI.</p></div>
@@ -334,10 +350,32 @@ export function ReportsPage() {
 
       <section className="executive-tco-card"><div className="panel-header"><div><h2>Chi phí vận hành theo từng xe</h2><p>Tổng hợp chi phí trực tiếp và bảo dưỡng sau khi loại các trường hợp có khả năng nhập trùng chứng từ sửa chữa.</p></div><span className="count-pill">{executive.vehicleTco.length} xe</span></div><div className="table-wrap report-desktop-table"><table><thead><tr><th>Xe</th><th>Chi phí trực tiếp</th><th>Bảo dưỡng</th><th>Tổng chi phí vận hành</th><th>Km</th><th>Chi phí/km</th><th>Tỷ trọng</th></tr></thead><tbody>{executive.vehicleTco.map((item) => <tr key={item.vehicle.id}><td><strong>{item.vehicle.plate_number}</strong><small>{item.vehicle.vehicle_name}</small></td><td>{formatCurrency(item.directCost)}</td><td>{formatCurrency(item.maintenanceCost)}</td><td><strong>{formatCurrency(item.tco)}</strong></td><td>{item.distance.toLocaleString('vi-VN')}</td><td>{item.tcoPerKm ? formatCurrency(item.tcoPerKm) : '—'}</td><td>{item.share.toFixed(1)}%</td></tr>)}</tbody></table></div><div className="report-mobile-cards executive-mobile-tco">{executive.vehicleTco.map((item) => <article key={item.vehicle.id}><div className="report-card-title"><strong>{item.vehicle.plate_number}</strong><span>{item.share.toFixed(0)}% chi phí</span></div><small>{item.vehicle.vehicle_name}</small><div className="report-card-metrics"><span><b>{formatCurrency(item.tco)}</b>tổng chi phí</span><span><b>{item.distance.toLocaleString('vi-VN')} km</b>quãng đường</span><span><b>{item.tcoPerKm ? formatCurrency(item.tcoPerKm) : '—'}</b>/km</span><span><b>{formatCurrency(item.maintenanceCost)}</b>bảo dưỡng</span></div></article>)}</div></section>
     </section>
-    </>}
+
+    <section className="panel adhoc-report-panel">
+      <div className="panel-header"><div><h2>Chuyến đột xuất do tài xế tạo</h2><p>Tài xế tự tạo khi phát sinh việc gấp, Hành chính/Điều phối xác nhận sau. Dùng cho báo cáo cuối tháng gửi Ban Giám đốc.</p></div><span className={`count-pill ${report.adhoc.pending || report.adhoc.flagged ? 'danger' : ''}`}>{report.adhoc.trips.length} chuyến</span></div>
+      <div className="adhoc-report-kpis">
+        <article><span>Tổng chuyến đột xuất</span><strong>{report.adhoc.trips.length}</strong><small>{report.adhoc.completed} đã hoàn thành</small></article>
+        <article className="good"><span>Đã xác nhận</span><strong>{report.adhoc.acknowledged}</strong><small>Hành chính/Điều phối đã kiểm tra</small></article>
+        <article className={report.adhoc.pending ? 'warning' : ''}><span>Chờ xác nhận</span><strong>{report.adhoc.pending}</strong><small>Cần xác nhận trước khi chốt báo cáo</small></article>
+        <article className={report.adhoc.flagged ? 'danger' : ''}><span>Cần giải trình</span><strong>{report.adhoc.flagged}</strong><small>{report.adhoc.distance.toLocaleString('vi-VN')} km · {formatCurrency(report.adhoc.cost)} đã chi</small></article>
+      </div>
+      {report.adhoc.trips.length ? <>
+        <div className="table-wrap report-desktop-table"><table><thead><tr><th>Thời gian</th><th>Xe / Tài xế</th><th>Hành trình</th><th>Lý do phát sinh</th><th>Km</th><th>Xác nhận</th></tr></thead><tbody>{report.adhoc.trips.map((trip) => {
+          const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
+          const driver = data.profiles.find((item) => item.id === trip.driver_id)
+          const km = trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : null
+          return <tr key={trip.id}><td>{formatDateTime(trip.started_at ?? trip.scheduled_start)}</td><td><strong>{vehicle?.plate_number ?? '—'}</strong><small>{driver?.full_name ?? '—'}</small></td><td><strong>{trip.destination}</strong><small>{trip.pickup}</small></td><td>{trip.adhoc_reason || '—'}</td><td>{km != null ? km.toLocaleString('vi-VN') : '—'}</td><td><span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}>{ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span>{trip.adhoc_review_note && <small>{trip.adhoc_review_note}</small>}</td></tr>
+        })}</tbody></table></div>
+        <div className="report-mobile-cards">{report.adhoc.trips.map((trip) => {
+          const vehicle = data.vehicles.find((item) => item.id === trip.vehicle_id)
+          const driver = data.profiles.find((item) => item.id === trip.driver_id)
+          return <article key={trip.id}><div className="report-card-title"><strong>{trip.destination}</strong><span>{formatDate(trip.scheduled_start)}</span></div><small>{vehicle?.plate_number ?? '—'} · {driver?.full_name ?? '—'}</small><small>Lý do: {trip.adhoc_reason || '—'}</small><span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}>{ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span></article>
+        })}</div>
+      </> : <p className="muted">Không có chuyến đột xuất trong kỳ.</p>}
+    </section>
 
     <div className="reports-layout advanced-reports-layout">
-      <section className="panel report-insight-panel"><div className="panel-header"><div><h2>Điểm cần chú ý</h2><p>Tự động rút ra từ dữ liệu trong kỳ.</p></div><span className="count-pill">{report.insights.length}</span></div><div className="report-insight-list">{report.insights.map((item) => <div className={`report-insight ${item.tone}`} key={item.title}><span>{item.icon}</span><div><strong>{item.title}</strong><small>{item.detail}</small></div></div>)}</div></section>
+      <section className="panel report-insight-panel"><div className="panel-header"><div><h2>Điểm cần chú ý</h2><p>Tự động rút ra từ dữ liệu trong kỳ.</p></div><span className="count-pill">{report.insights.length}</span></div><div className="report-insight-list">{report.insights.map((item) => <div className={`report-insight ${item.tone}`} key={item.title}><span><Icon name={iconFromEmoji(item.icon, 'alert')} size={16} /></span><div><strong>{item.title}</strong><small>{item.detail}</small></div></div>)}</div></section>
 
       <section className="panel"><div className="panel-header"><div><h2>Xu hướng vận hành</h2><p>Chi phí và số chuyến theo thời gian trong kỳ.</p></div></div><div className="report-trend-list">{report.trend.length ? report.trend.map((item) => <div className="report-trend-row" key={item.key}><div className="report-trend-label"><strong>{item.label}</strong><span>{item.trips} chuyến · {item.distance.toLocaleString('vi-VN')} km</span></div><div className="report-trend-track"><div style={{ width: `${Math.max(item.cost ? 6 : 0, item.cost / maxTrendCost * 100)}%` }} /></div><strong>{formatCurrency(item.cost)}</strong></div>) : <p className="muted">Chưa có dữ liệu trong kỳ.</p>}</div></section>
 
@@ -417,7 +455,21 @@ function buildReport(data: AppData, range: DateRange): ReportData {
   const trend = buildTrend(trips, expenses, range)
   const insights = buildInsights({ trips, vehicles, destinations, expenseTypes, incidents, seriousIncidents, totalCost, totalDistance, costPerKm, odometerCoverage, maintenanceCost })
 
-  return { trips, expenses, incidents, maintenances, purpose, vehicles, drivers, destinations, expenseTypes, trend, insights, totalCost, totalDistance, totalFuelLiters, costPerKm, seriousIncidents, maintenanceCost, odometerCoverage, completedRate, maxExpenseType, tripIds }
+  const adhocTrips = allTripsInRange
+    .filter((trip) => trip.is_adhoc && trip.status !== 'cancelled')
+    .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime())
+  const adhocIds = new Set(adhocTrips.map((trip) => trip.id))
+  const adhoc: AdhocReport = {
+    trips: adhocTrips,
+    completed: adhocTrips.filter((trip) => trip.status === 'completed').length,
+    pending: adhocTrips.filter((trip) => trip.adhoc_report_status === 'pending_review').length,
+    acknowledged: adhocTrips.filter((trip) => trip.adhoc_report_status === 'acknowledged').length,
+    flagged: adhocTrips.filter((trip) => trip.adhoc_report_status === 'flagged').length,
+    distance: adhocTrips.reduce((sum, trip) => sum + (trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : 0), 0),
+    cost: expenses.filter((expense) => expense.trip_id && adhocIds.has(expense.trip_id)).reduce((sum, expense) => sum + expense.amount, 0),
+  }
+
+  return { adhoc, trips, expenses, incidents, maintenances, purpose, vehicles, drivers, destinations, expenseTypes, trend, insights, totalCost, totalDistance, totalFuelLiters, costPerKm, seriousIncidents, maintenanceCost, odometerCoverage, completedRate, maxExpenseType, tripIds }
 }
 
 

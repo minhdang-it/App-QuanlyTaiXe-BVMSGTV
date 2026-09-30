@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from './Icon'
 import { optimizeCapturedImage } from '../lib/image'
 
 export function MediaInput({
@@ -53,7 +54,7 @@ export function MediaInput({
 
   return (
     <label className={`media-input ${processing ? 'processing' : ''}`}>
-      <span className="media-title">📷 {processing ? 'Đang xử lý ảnh...' : label}</span>
+      <span className="media-title"><Icon name="camera" size={16} />{processing ? 'Đang xử lý ảnh...' : label}</span>
       <input
         ref={inputRef}
         type="file"

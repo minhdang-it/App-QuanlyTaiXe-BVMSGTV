@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { ROLE_LABELS } from '../lib/constants'
+import { usePresence } from '../context/PresenceContext'
+import { OnlineDot, PresenceLabel } from '../components/Presence'
 import type { CreateUserInput, Profile, UpdateUserInput, UserRole } from '../types/models'
 
 const EMPTY_CREATE: CreateUserInput = {
@@ -24,12 +27,17 @@ export function UsersPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all')
+  const [presenceFilter, setPresenceFilter] = useState<'all' | 'online' | 'offline'>('all')
+  const { onlineIds } = usePresence()
+  const onlineAccountCount = data.profiles.filter((profile) => !profile.deleted_at && profile.active && onlineIds.has(profile.id)).length
 
   const profiles = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return data.profiles.filter((profile) => {
       if (profile.deleted_at) return false
       if (roleFilter !== 'all' && profile.role !== roleFilter) return false
+      if (presenceFilter === 'online' && !onlineIds.has(profile.id)) return false
+      if (presenceFilter === 'offline' && onlineIds.has(profile.id)) return false
       if (!needle) return true
       return [
         profile.full_name,
@@ -40,7 +48,7 @@ export function UsersPage() {
         ROLE_LABELS[profile.role],
       ].some((value) => String(value ?? '').toLowerCase().includes(needle))
     })
-  }, [data.profiles, query, roleFilter])
+  }, [data.profiles, onlineIds, presenceFilter, query, roleFilter])
 
 
   async function removeAccount(profile: Profile) {
@@ -77,14 +85,14 @@ Tài khoản sẽ bị vô hiệu hóa đăng nhập và ẩn khỏi danh sách.
 
   return (
     <>
-      {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)}>✕</button></div>}
+      {message && <div className="inline-message">{message}<button onClick={() => setMessage(null)} aria-label="Đóng"><Icon name="x" size={15} /></button></div>}
 
       <section className="toolbar account-toolbar">
         <div>
-          <strong>{data.profiles.filter((profile) => !profile.deleted_at).length} tài khoản nhân viên</strong>
+          <strong>{data.profiles.filter((profile) => !profile.deleted_at).length} tài khoản nhân viên · <span className="presence-count-inline"><span className="presence-dot online" aria-hidden="true" />{onlineAccountCount} đang trực tuyến</span></strong>
           <p className="toolbar-note">Quản trị viên có thể cập nhật hồ sơ, ảnh đại diện, quyền truy cập và đặt lại mật khẩu.</p>
         </div>
-        <button className="primary-button" onClick={() => setCreating(true)}>＋ THÊM TÀI KHOẢN</button>
+        <button className="primary-button" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Thêm tài khoản</button>
       </section>
 
       <section className="account-filters">
@@ -92,6 +100,11 @@ Tài khoản sẽ bị vô hiệu hóa đăng nhập và ẩn khỏi danh sách.
         <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'all' | UserRole)}>
           <option value="all">Tất cả vai trò</option>
           {(Object.keys(ROLE_LABELS) as UserRole[]).map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
+        </select>
+        <select value={presenceFilter} onChange={(event) => setPresenceFilter(event.target.value as 'all' | 'online' | 'offline')} aria-label="Lọc theo trạng thái trực tuyến">
+          <option value="all">Tất cả trạng thái trực tuyến</option>
+          <option value="online">Đang trực tuyến</option>
+          <option value="offline">Ngoại tuyến</option>
         </select>
       </section>
 
@@ -127,7 +140,12 @@ Tài khoản sẽ bị vô hiệu hóa đăng nhập và ẩn khỏi danh sách.
                     </div>
                   </td>
                   <td><span className="role-badge">{ROLE_LABELS[profile.role]}</span></td>
-                  <td><span className={`account-state ${profile.active ? 'active' : 'locked'}`}>{profile.active ? 'Đang hoạt động' : 'Đã khóa'}</span></td>
+                  <td>
+                    <div className="account-state-stack">
+                      <span className={`account-state ${profile.active ? 'active' : 'locked'}`}>{profile.active ? 'Đang hoạt động' : 'Đã khóa'}</span>
+                      <PresenceLabel userId={profile.id} showPlatform />
+                    </div>
+                  </td>
                   <td>
                     <div className="account-row-actions">
                       <button className="secondary-button compact" onClick={() => setEditing(profile)}>Chỉnh sửa</button>
@@ -190,6 +208,7 @@ function ProfileAvatar({ profile, large = false }: { profile: Profile; large?: b
   return (
     <span className={`profile-avatar ${large ? 'large' : ''}`}>
       {profile.avatar_url ? <img src={profile.avatar_url} alt={`Ảnh đại diện ${profile.full_name}`} /> : initials}
+      {!large && <OnlineDot userId={profile.id} overlay />}
     </span>
   )
 }
@@ -272,7 +291,7 @@ function CreateUserModal({
           <label className="span-2">Ghi chú<textarea value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Thông tin liên hệ, tuyến xe phụ trách hoặc ghi chú nội bộ..." /></label>
         </div>
         {error && <div className="form-error">{error}</div>}
-        <button className="primary-button full" disabled={saving}>{saving ? 'Đang tạo...' : 'TẠO TÀI KHOẢN'}</button>
+        <button className="primary-button full" disabled={saving}>{saving ? 'Đang tạo...' : 'Tạo tài khoản'}</button>
       </form>
     </Modal>
   )
@@ -346,7 +365,7 @@ function EditUserModal({
         </div>
         {isSelf && <div className="demo-notice">Để tránh mất quyền quản trị, anh không thể tự khóa tài khoản hoặc tự đổi vai trò của chính mình.</div>}
         {error && <div className="form-error">{error}</div>}
-        <button className="primary-button full" disabled={saving}>{saving ? 'Đang lưu...' : 'LƯU THAY ĐỔI'}</button>
+        <button className="primary-button full" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu thay đổi'}</button>
       </form>
     </Modal>
   )

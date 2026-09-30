@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Icon } from './Icon'
 import { createPortal } from 'react-dom'
 
 interface ImagePreviewProps {
@@ -38,7 +39,7 @@ export function ImagePreview({ src, alt, compact = false, label = 'Bấm vào �
 
     {open && createPortal(
       <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={alt} onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
-        <button type="button" className="image-lightbox-close" onClick={() => setOpen(false)} aria-label="Đóng ảnh">✕</button>
+        <button type="button" className="image-lightbox-close" onClick={() => setOpen(false)} aria-label="Đóng ảnh"><Icon name="x" size={20} /></button>
         <div className="image-lightbox-content">
           <img src={src} alt={alt} />
           <p>{alt}</p>

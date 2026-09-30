@@ -37,7 +37,7 @@ interface NotificationContextValue {
 
 interface EventSnapshot {
   requests: Record<string, Pick<VehicleRequest, 'id' | 'requester_id' | 'status' | 'purpose' | 'pickup' | 'destination' | 'updated_at'>>
-  trips: Record<string, Pick<Trip, 'id' | 'driver_id' | 'vehicle_id' | 'status' | 'pickup' | 'destination' | 'scheduled_start' | 'updated_at' | 'created_by' | 'purpose'>>
+  trips: Record<string, Pick<Trip, 'id' | 'driver_id' | 'vehicle_id' | 'status' | 'pickup' | 'destination' | 'scheduled_start' | 'updated_at' | 'created_by' | 'purpose' | 'is_adhoc' | 'adhoc_report_status' | 'adhoc_review_note'>>
   incidents: Record<string, Pick<Incident, 'id' | 'driver_id' | 'vehicle_id' | 'type' | 'severity' | 'status' | 'created_at' | 'resolved_at'>>
   expenses: Record<string, Pick<Expense, 'id' | 'driver_id' | 'vehicle_id' | 'type' | 'amount' | 'status' | 'created_at' | 'updated_at'>>
   maintenances: Record<string, Pick<Maintenance, 'id' | 'vehicle_id' | 'type' | 'status' | 'scheduled_date' | 'updated_at'>>
@@ -82,6 +82,9 @@ function snapshotOf(data: AppData): EventSnapshot {
       updated_at: item.updated_at,
       created_by: item.created_by,
       purpose: item.purpose,
+      is_adhoc: item.is_adhoc ?? false,
+      adhoc_report_status: item.adhoc_report_status ?? null,
+      adhoc_review_note: item.adhoc_review_note ?? null,
     }])),
     incidents: Object.fromEntries(data.incidents.map((item) => [item.id, {
       id: item.id,
@@ -114,8 +117,9 @@ function snapshotOf(data: AppData): EventSnapshot {
   }
 }
 
+// v2.9.0: Ban Giám đốc không duyệt chuyến nên không nhận thông báo từng chuyến (xem báo cáo cuối tháng).
 function roleCanSeeTripEvents(role: UserRole) {
-  return ['dispatcher', 'fleet', 'director', 'admin'].includes(role)
+  return ['dispatcher', 'fleet', 'admin'].includes(role)
 }
 
 function roleCanSeeIncidentEvents(role: UserRole) {
@@ -123,7 +127,7 @@ function roleCanSeeIncidentEvents(role: UserRole) {
 }
 
 function roleCanSeeExpenseEvents(role: UserRole) {
-  return ['fleet', 'director', 'accountant', 'admin'].includes(role)
+  return ['director', 'accountant', 'admin'].includes(role)
 }
 
 function roleCanSeeMaintenanceEvents(role: UserRole) {
@@ -158,6 +162,21 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
     const before = previous.trips[trip.id]
 
     if (!before) {
+      if (trip.is_adhoc && roleCanSeeTripEvents(role) && trip.created_by !== userId) {
+        results.push({
+          id: `trip-adhoc-new-${trip.id}`,
+          kind: 'trip',
+          priority: 'important',
+          title: 'Tài xế tạo chuyến đột xuất',
+          message: `${PURPOSE_LABELS[trip.purpose]} · ${trip.pickup} → ${trip.destination} · Cần xác nhận báo cáo`,
+          createdAt: now,
+          read: false,
+          target: 'dispatch',
+          recordId: trip.id,
+        })
+        continue
+      }
+      if (role === 'driver' && trip.driver_id === userId && trip.created_by === userId) continue
       if (role === 'driver' && trip.driver_id === userId) {
         results.push({
           id: `trip-new-driver-${trip.id}`,
@@ -202,6 +221,21 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
         })
       }
 
+      if (trip.driver_id === userId && trip.is_adhoc && before.adhoc_report_status !== trip.adhoc_report_status && trip.adhoc_report_status && trip.adhoc_report_status !== 'pending_review') {
+        const flagged = trip.adhoc_report_status === 'flagged'
+        results.push({
+          id: `trip-adhoc-review-${trip.id}-${trip.adhoc_report_status}`,
+          kind: 'trip',
+          priority: flagged ? 'important' : 'normal',
+          title: flagged ? 'Chuyến đột xuất cần giải trình' : 'Chuyến đột xuất đã được xác nhận',
+          message: `${trip.pickup} → ${trip.destination}${trip.adhoc_review_note ? ` · ${trip.adhoc_review_note}` : ''}`,
+          createdAt: now,
+          read: false,
+          target: 'dispatch',
+          recordId: trip.id,
+        })
+      }
+
       if (trip.driver_id === userId) {
         const routeChanged = before.pickup !== trip.pickup || before.destination !== trip.destination || before.scheduled_start !== trip.scheduled_start || before.vehicle_id !== trip.vehicle_id
         if (routeChanged) {
@@ -217,7 +251,7 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
             recordId: trip.id,
           })
         }
-        if (before.status !== trip.status && trip.status === 'cancelled') {
+        if (before.status !== trip.status && trip.status === 'cancelled' && !(trip.is_adhoc && trip.created_by === userId)) {
           results.push({
             id: `trip-cancelled-${trip.id}-${trip.updated_at}`,
             kind: 'trip',
@@ -248,47 +282,33 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
 
   for (const incident of Object.values(current.incidents)) {
     const before = previous.incidents[incident.id]
-    if (!before) {
-      if (incident.status === 'pending_fleet' && ['fleet', 'admin'].includes(role)) {
-        results.push({
-          id: `incident-new-fleet-${incident.id}`,
-          kind: 'incident',
-          priority: ['high', 'critical'].includes(incident.severity) ? 'urgent' : 'important',
-          title: incident.severity === 'critical' ? 'Sự cố khẩn cấp chờ Hành chính' : 'Có sự cố mới chờ Hành chính',
-          message: `${INCIDENT_LABELS[incident.type]} · Mức độ ${incident.severity}`,
-          createdAt: now,
-          read: false,
-          target: 'incidents',
-          recordId: incident.id,
-        })
-      }
+    if (!before && roleCanSeeIncidentEvents(role)) {
+      results.push({
+        id: `incident-new-${incident.id}`,
+        kind: 'incident',
+        priority: ['high', 'critical'].includes(incident.severity) ? 'urgent' : 'important',
+        title: incident.severity === 'critical' ? 'Sự cố khẩn cấp' : 'Có sự cố xe mới',
+        message: `${INCIDENT_LABELS[incident.type]} · Mức độ ${incident.severity}`,
+        createdAt: now,
+        read: false,
+        target: 'incidents',
+        recordId: incident.id,
+      })
       continue
     }
 
-    if (before.status !== incident.status) {
-      if (incident.status === 'pending_director' && ['director', 'admin'].includes(role)) {
-        results.push({ id: `incident-director-${incident.id}`, kind: 'incident', priority: 'important', title: 'Hành chính trình sự cố chờ BGĐ duyệt', message: `${INCIDENT_LABELS[incident.type]} · Cần quyết định có được phép sửa/xử lý`, createdAt: now, read: false, target: 'incidents', recordId: incident.id })
-      }
-      if (incident.status === 'reported' && ['fleet', 'admin'].includes(role)) {
-        results.push({ id: `incident-approved-fleet-${incident.id}`, kind: 'incident', priority: 'important', title: 'BGĐ đã duyệt sửa xe', message: `${INCIDENT_LABELS[incident.type]} · Hành chính có thể tiếp nhận sửa/xử lý`, createdAt: now, read: false, target: 'incidents', recordId: incident.id })
-      }
-      if (role === 'driver' && incident.driver_id === userId) {
-        const approved = incident.status === 'reported'
-        const rejected = incident.status === 'rejected'
-        const title = approved ? '✓ BGĐ: ĐƯỢC PHÉP SỬA XE' : rejected ? '✕ BGĐ: CHƯA ĐƯỢC PHÉP SỬA' : incident.status === 'resolved' ? 'Sự cố đã xử lý xong' : 'Sự cố đã được cập nhật'
-        const message = approved ? 'Hành chính có thể tiếp nhận xe để sửa/xử lý.' : rejected ? 'Yêu cầu sửa/xử lý chưa được Ban Giám đốc duyệt. Xem chi tiết trong ứng dụng.' : incident.status === 'handling' ? 'Hành chính đang sửa/xử lý xe.' : 'Trạng thái sự cố của bạn vừa thay đổi.'
-        results.push({
-          id: `incident-status-${incident.id}-${incident.status}`,
-          kind: 'incident',
-          priority: approved || rejected ? 'urgent' : 'normal',
-          title,
-          message,
-          createdAt: now,
-          read: false,
-          target: 'incidents',
-          recordId: incident.id,
-        })
-      }
+    if (before && role === 'driver' && incident.driver_id === userId && before.status !== incident.status) {
+      results.push({
+        id: `incident-status-${incident.id}-${incident.status}`,
+        kind: 'incident',
+        priority: 'normal',
+        title: 'Sự cố đã được cập nhật',
+        message: incident.status === 'resolved' ? 'Sự cố của bạn đã được xử lý.' : 'Người phụ trách đang tiếp nhận sự cố của bạn.',
+        createdAt: now,
+        read: false,
+        target: 'incidents',
+        recordId: incident.id,
+      })
     }
   }
 
@@ -296,37 +316,49 @@ function buildNotifications(previous: EventSnapshot, current: EventSnapshot, rol
     const before = previous.expenses[expense.id]
     const amountText = `${EXPENSE_LABELS[expense.type]} · ${expense.amount.toLocaleString('vi-VN')}đ`
 
-    if (!before) {
-      if (expense.status === 'pending_fleet' && ['fleet', 'admin'].includes(role) && expense.driver_id !== userId) {
-        results.push({ id: `expense-fleet-new-${expense.id}`, kind: 'expense', priority: 'important', title: 'Chi phí mới chờ Hành chính duyệt', message: amountText, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
-      }
+    if (!before && expense.status === 'pending_director' && ['director', 'admin'].includes(role) && expense.driver_id !== userId) {
+      results.push({
+        id: `expense-new-${expense.id}`,
+        kind: 'expense',
+        priority: 'important',
+        title: 'Chi phí chờ Ban Giám đốc duyệt',
+        message: amountText,
+        createdAt: now,
+        read: false,
+        target: 'expenses',
+        recordId: expense.id,
+      })
       continue
     }
 
-    if (before.status !== expense.status) {
+    if (before && before.status !== expense.status) {
       if (expense.status === 'pending_accountant' && ['accountant', 'admin'].includes(role)) {
-        results.push({ id: `expense-accountant-pre-${expense.id}`, kind: 'expense', priority: 'important', title: 'Hành chính đã duyệt chi phí', message: `${amountText} · Chờ Kế toán kiểm tra chứng từ`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
+        results.push({
+          id: `expense-accountant-${expense.id}`,
+          kind: 'expense',
+          priority: 'important',
+          title: 'Chi phí đã được Ban Giám đốc duyệt',
+          message: `${amountText} · Chờ Kế toán kiểm tra`,
+          createdAt: now,
+          read: false,
+          target: 'expenses',
+          recordId: expense.id,
+        })
       }
-      if (expense.status === 'pending_director' && ['director', 'admin'].includes(role)) {
-        results.push({ id: `expense-director-${expense.id}`, kind: 'expense', priority: 'important', title: 'Kế toán đã kiểm tra chi phí', message: `${amountText} · Chờ Ban Giám đốc duyệt`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
-      }
-      if (expense.status === 'pending_accountant_final' && ['accountant', 'admin'].includes(role)) {
-        results.push({ id: `expense-accountant-final-${expense.id}`, kind: 'expense', priority: 'important', title: 'Ban Giám đốc đã duyệt chi phí', message: `${amountText} · Chờ Kế toán xác nhận lần cuối`, createdAt: now, read: false, target: 'expenses', recordId: expense.id })
-      }
+
       if (role === 'driver' && expense.driver_id === userId) {
-        const titles: Partial<Record<Expense['status'], string>> = {
-          pending_accountant: 'Hành chính đã duyệt chi phí',
-          pending_director: 'Kế toán đã kiểm tra chi phí',
-          pending_accountant_final: 'Ban Giám đốc đã duyệt chi phí',
-          approved: 'Kế toán đã xác nhận khoản chi',
-          paid: 'Chi phí đã được chi trả',
-          rejected: 'Chi phí bị từ chối',
-        }
+        const title = expense.status === 'pending_accountant'
+          ? 'Ban Giám đốc đã duyệt chi phí'
+          : expense.status === 'approved'
+            ? 'Kế toán đã duyệt chi phí'
+            : expense.status === 'paid'
+              ? 'Chi phí đã được chi trả'
+              : 'Chi phí bị từ chối'
         results.push({
           id: `expense-status-${expense.id}-${expense.status}`,
           kind: 'expense',
-          priority: expense.status === 'rejected' || expense.status === 'paid' ? 'important' : 'normal',
-          title: titles[expense.status] ?? 'Chi phí đã được cập nhật',
+          priority: expense.status === 'rejected' ? 'important' : 'normal',
+          title,
           message: amountText,
           createdAt: now,
           read: false,

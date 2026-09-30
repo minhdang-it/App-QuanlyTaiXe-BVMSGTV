@@ -19,6 +19,21 @@ export function formatDateTime(value: string | null | undefined) {
   return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
+/** Hiển thị thời điểm hoạt động gần nhất: "Vừa xong", "5 phút trước", "2 giờ trước"... */
+export function formatLastSeen(value: string | null | undefined, now = Date.now()) {
+  if (!value) return 'Chưa từng trực tuyến'
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return '—'
+  const minutes = Math.floor(Math.max(0, now - time) / 60_000)
+  if (minutes < 1) return 'Vừa xong'
+  if (minutes < 60) return `${minutes} phút trước`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} giờ trước`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} ngày trước`
+  return formatDateTime(value)
+}
+
 export function formatDate(value: string | null | undefined) {
   if (!value) return '—'
   const date = new Date(value)

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from './Icon'
 
 export function AudioRecorder({ onChange }: { onChange: (file: File | null) => void }) {
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -62,5 +63,5 @@ export function AudioRecorder({ onChange }: { onChange: (file: File | null) => v
     onChange(null)
   }
 
-  return <div className="audio-recorder"><div><strong>🎙 Ghi âm mô tả</strong><small>Không bắt buộc</small></div>{recording ? <button type="button" className="record-stop" onClick={stop}>■ DỪNG · {seconds}s</button> : <button type="button" className="record-start" onClick={() => void start()}>{audioUrl ? 'GHI LẠI' : 'BẮT ĐẦU GHI'}</button>}{audioUrl && !recording && <div className="audio-result"><audio controls src={audioUrl} /><button type="button" onClick={clear}>Xóa</button></div>}{error && <p>{error}</p>}</div>
+  return <div className="audio-recorder"><div><strong><Icon name="mic" size={16} />Ghi âm mô tả</strong><small>Không bắt buộc</small></div>{recording ? <button type="button" className="record-stop" onClick={stop}>■ DỪNG · {seconds}s</button> : <button type="button" className="record-start" onClick={() => void start()}>{audioUrl ? 'Ghi lại' : 'Bắt đầu ghi'}</button>}{audioUrl && !recording && <div className="audio-result"><audio controls src={audioUrl} /><button type="button" onClick={clear}>Xóa</button></div>}{error && <p>{error}</p>}</div>
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Icon } from '../components/Icon'
 import { useData } from '../context/DataContext'
 import { useAuth } from '../context/AuthContext'
 import { VEHICLE_STATUS_LABELS } from '../lib/constants'
@@ -23,7 +24,7 @@ export function VehiclesPage() {
         <strong>{data.vehicles.length} xe trong hệ thống</strong>
         <p className="toolbar-note">Theo dõi kilomet, giấy tờ, hình ảnh xe và tình trạng sử dụng trên giao diện tối ưu cho điện thoại.</p>
       </div>
-      {canManage && <button className="primary-button" onClick={() => setCreating(true)}>＋ THÊM XE</button>}
+      {canManage && <button className="primary-button" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Thêm xe</button>}
     </section>
 
     {data.vehicles.length ? <section className="vehicle-grid">{data.vehicles.map((vehicle) => {
@@ -38,14 +39,14 @@ export function VehiclesPage() {
         <div className="vehicle-photo">
           {vehicle.image_url
             ? <img src={vehicle.image_url} alt={vehicle.plate_number} />
-            : <div className="vehicle-photo-placeholder"><span>🚘</span><small>Chưa có ảnh xe</small></div>}
+            : <div className="vehicle-photo-placeholder"><Icon name="vehicle" size={40} strokeWidth={1.4} /><small>Chưa có ảnh xe</small></div>}
           <div className="vehicle-photo-overlay" />
           <div className="vehicle-photo-top">
             <span className="vehicle-chip">{vehicle.seats} chỗ</span>
             <StatusBadge status={vehicle.status} />
           </div>
           <div className="vehicle-photo-bottom">
-            <h2>{vehicle.plate_number}</h2>
+            <h2 className="plate">{vehicle.plate_number}</h2>
             <p>{vehicle.vehicle_name}</p>
           </div>
         </div>
@@ -85,7 +86,7 @@ export function VehiclesPage() {
 
           <div className="vehicle-driver-row">
             <div className="vehicle-driver">
-              <span>👤</span>
+              <span><Icon name="user" size={16} /></span>
               <div>
                 <small>Tài xế thường xuyên</small>
                 <strong>{driver?.full_name ?? 'Chưa gán tài xế'}</strong>
@@ -102,12 +103,12 @@ export function VehiclesPage() {
               >
                 {driver ? 'Đổi tài xế' : 'Gán tài xế'}
               </button>}
-              <span className="vehicle-open-link">Xem hồ sơ →</span>
+              <span className="vehicle-open-link">Xem hồ sơ<Icon name="chevron-right" size={14} /></span>
             </div>
           </div>
         </div>
       </article>
-    })}</section> : <EmptyState icon="🚘" title="Chưa có hồ sơ xe" />}
+    })}</section> : <EmptyState icon="vehicle" title="Chưa có hồ sơ xe" />}
 
     {selected && <VehicleDetail vehicle={selected} canManage={canManage} onClose={() => setSelected(null)} />}
     {creating && <VehicleForm onClose={() => setCreating(false)} />}
@@ -135,8 +136,8 @@ function AssignDriverModal({ vehicle, onClose }: { vehicle: Vehicle; onClose: ()
       }
     }}>
       <div className="assign-driver-vehicle">
-        <span>🚘</span>
-        <div><strong>{vehicle.plate_number}</strong><small>{vehicle.vehicle_name} · {vehicle.vehicle_type}</small></div>
+        <span><Icon name="vehicle" size={20} /></span>
+        <div><strong className="plate">{vehicle.plate_number}</strong><small>{vehicle.vehicle_name} · {vehicle.vehicle_type}</small></div>
       </div>
       <label>Tài xế thường xuyên
         <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
@@ -150,7 +151,7 @@ function AssignDriverModal({ vehicle, onClose }: { vehicle: Vehicle; onClose: ()
       <p className="assign-driver-note">Tài xế thường xuyên là người phụ trách mặc định của xe. Khi tạo chuyến, Điều phối vẫn có thể chọn một tài xế khác.</p>
       <div className="form-actions">
         <button type="button" className="secondary-button" onClick={onClose}>Hủy</button>
-        <button className="primary-button" disabled={saving}>{saving ? 'Đang lưu...' : 'LƯU TÀI XẾ'}</button>
+        <button className="primary-button" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu tài xế'}</button>
       </div>
     </form>
   </Modal>
@@ -168,7 +169,7 @@ function VehicleDetail({ vehicle, canManage, onClose }: { vehicle: Vehicle; canM
       {editing
         ? <VehicleFields
             initial={vehicle}
-            submitLabel="LƯU THAY ĐỔI"
+            submitLabel="Lưu thay đổi"
             onCancel={() => setEditing(false)}
             onSubmit={async (values) => {
               await updateVehicle(vehicle.id, values)
@@ -181,7 +182,7 @@ function VehicleDetail({ vehicle, canManage, onClose }: { vehicle: Vehicle; canM
               <div className="vehicle-detail-media">
                 {vehicle.image_url
                   ? <img src={vehicle.image_url} alt={vehicle.plate_number} />
-                  : <div className="large-vehicle-icon">🚘</div>}
+                  : <div className="large-vehicle-icon"><Icon name="vehicle" size={44} strokeWidth={1.4} /></div>}
               </div>
               <div>
                 <h2>{vehicle.vehicle_name}</h2>

@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
+  AdhocReportStatus,
   AppData,
+  CreateAdhocTripInput,
   Checklist,
   CreateTripInput,
   CreateVehicleRequestInput,
   DriverVehicleTrackingUpdate,
   CreateUserInput,
-  DriverLeave,
   Expense,
   ExpenseReviewAction,
   Incident,
@@ -35,13 +36,13 @@ interface DataContextValue {
   createVehicleRequest(input: CreateVehicleRequestInput, planFiles?: File[]): Promise<VehicleRequest>
   updateVehicleRequest(id: string, changes: Partial<VehicleRequest>): Promise<VehicleRequest>
   createTrip(input: CreateTripInput, planFiles?: File[]): Promise<Trip>
+  createAdhocTrip(input: CreateAdhocTripInput): Promise<Trip>
+  reviewAdhocTrip(id: string, status: Exclude<AdhocReportStatus, 'pending_review'>, note?: string): Promise<Trip>
   updateTrip(id: string, changes: Partial<Trip>): Promise<Trip>
   updateTripLocation(id: string, lat: number, lng: number): Promise<Trip>
   deleteTrip(id: string): Promise<void>
   createChecklist(input: Omit<Checklist, 'id' | 'created_at'>): Promise<Checklist>
   submitOdometer(trip: Trip, phase: 'start' | 'end', odometer: number, file?: File | null): Promise<Trip>
-  completeTrip(trip: Trip, vehicleFile: File, fuelLevelPercent: number): Promise<Trip>
-  setDriverDayOff(driverId: string, leaveDate: string, isOff: boolean, note?: string): Promise<void>
   createExpense(input: Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'receipt_url'>, file?: File | null): Promise<Expense>
   reviewExpense(id: string, action: ExpenseReviewAction, reason?: string): Promise<Expense>
   createIncident(input: Omit<Incident, 'id' | 'created_at' | 'image_url' | 'audio_url'>, media?: MediaPayload): Promise<Incident>
@@ -54,7 +55,7 @@ interface DataContextValue {
 }
 
 const emptyData: AppData = {
-  profiles: [], vehicles: [], vehicleRequests: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [], driverLeaves: [],
+  profiles: [], vehicles: [], vehicleRequests: [], trips: [], checklists: [], expenses: [], incidents: [], maintenances: [],
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -161,13 +162,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     createVehicleRequest: (input, planFiles) => run(() => backend.createVehicleRequest(input, user!.id, planFiles)),
     updateVehicleRequest: (id, changes) => run(() => backend.updateVehicleRequest(id, changes)),
     createTrip: (input, planFiles) => run(() => backend.createTrip(input, user!.id, planFiles)),
+    createAdhocTrip: (input) => run(() => backend.createAdhocTrip(input, user!.id)),
+    reviewAdhocTrip: (id, status, note) => run(() => backend.reviewAdhocTrip(id, status, note)),
     updateTrip: (id, changes) => run(() => backend.updateTrip(id, changes)),
     updateTripLocation,
     deleteTrip: (id) => run(() => backend.deleteTrip(id)),
     createChecklist: (input) => run(() => backend.createChecklist(input)),
     submitOdometer: (trip, phase, odometer, file) => run(() => backend.submitOdometer(trip, phase, odometer, file)),
-    completeTrip: (trip, vehicleFile, fuelLevelPercent) => run(() => backend.completeTrip(trip, vehicleFile, fuelLevelPercent)),
-    setDriverDayOff: (driverId, leaveDate, isOff, note) => run(() => backend.setDriverDayOff(driverId, leaveDate, isOff, user!.id, note)),
     createExpense: (input, file) => run(() => backend.createExpense(input, file)),
     reviewExpense: (id, action, reason) => run(() => backend.reviewExpense(id, action, user!.id, user!.profile.role, reason)),
     createIncident: (input, media) => run(() => backend.createIncident(input, media)),

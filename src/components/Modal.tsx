@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { Icon } from './Icon'
 
 export function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   useEffect(() => {
@@ -23,7 +24,7 @@ export function Modal({ title, children, onClose, wide = false }: { title: strin
       <section className={`modal-card ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="modal-header">
           <h2>{title}</h2>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Đóng">✕</button>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Đóng"><Icon name="x" /></button>
         </header>
         <div className="modal-body">{children}</div>
       </section>

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNotifications, type AppNotification, type NotificationTarget } from '../context/NotificationContext'
+import { Icon, type IconName } from './Icon'
 
-const kindIcons: Record<AppNotification['kind'], string> = {
-  request: '📄',
-  trip: '🚐',
-  incident: '⚠️',
-  expense: '🧾',
-  maintenance: '🔧',
-  system: '🔔',
+const kindIcons: Record<AppNotification['kind'], IconName> = {
+  request: 'requests',
+  trip: 'bus',
+  incident: 'incident',
+  expense: 'receipt',
+  maintenance: 'wrench',
+  system: 'bell',
 }
 
 function relativeTime(value: string) {
@@ -60,7 +61,7 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
   return <>
     <div className={`notification-center ${compact ? 'compact' : ''}`} ref={rootRef}>
       <button className="notification-bell" onClick={() => setOpen((value) => !value)} aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`}>
-        <span aria-hidden="true">🔔</span>
+        <Icon name="bell" size={18} />
         {unreadCount > 0 && <strong>{unreadCount > 99 ? '99+' : unreadCount}</strong>}
       </button>
 
@@ -69,7 +70,7 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
 <section className={`notification-popover notification-popover-portal ${compact ? 'compact' : ''}`} aria-label="Trung tâm thông báo">
         <header className="notification-popover-header">
           <div><span>TRUNG TÂM THÔNG BÁO</span><h2>Thông báo</h2></div>
-          <button className="icon-button" onClick={() => setOpen(false)} aria-label="Đóng">✕</button>
+          <button className="icon-button" onClick={() => setOpen(false)} aria-label="Đóng"><Icon name="x" /></button>
         </header>
 
         <div className="notification-tools">
@@ -78,17 +79,17 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
         </div>
 
         {browserPermission !== 'unsupported' && browserPermission !== 'granted' && <button className="notification-permission-card" onClick={() => void requestBrowserPermission()}>
-          <span>📲</span>
+          <span><Icon name="smartphone" size={18} /></span>
           <div><strong>Bật thông báo trên thiết bị</strong><small>Nhận cảnh báo khi tab đang ở nền.</small></div>
           <b> Bật →</b>
         </button>}
 
         <div className="notification-list">
           {notifications.length ? notifications.map((item) => <button key={item.id} className={`notification-item ${item.read ? '' : 'unread'} priority-${item.priority}`} onClick={() => openItem(item)}>
-            <span className="notification-item-icon">{kindIcons[item.kind]}</span>
+            <span className="notification-item-icon"><Icon name={kindIcons[item.kind]} size={16} /></span>
             <span className="notification-item-copy"><strong>{item.title}</strong><small>{item.message}</small><time>{relativeTime(item.createdAt)}</time></span>
             {!item.read && <i />}
-          </button>) : <div className="notification-empty"><span>🔕</span><strong>Chưa có thông báo</strong><p>Các chuyến mới, sự cố và thay đổi quan trọng sẽ xuất hiện tại đây.</p></div>}
+          </button>) : <div className="notification-empty"><span><Icon name="bell-off" size={22} /></span><strong>Chưa có thông báo</strong><p>Các chuyến mới, sự cố và thay đổi quan trọng sẽ xuất hiện tại đây.</p></div>}
         </div>
       </section>
       </>, document.body)}
@@ -96,9 +97,9 @@ export function NotificationCenter({ onNavigate, compact = false }: { onNavigate
 
     <div className="notification-toast-stack" aria-live="polite">
       {toastNotifications.map((item) => <button key={item.id} className={`notification-toast priority-${item.priority}`} onClick={() => { openItem(item); dismissToast(item.id) }}>
-        <span>{kindIcons[item.kind]}</span>
+        <span><Icon name={kindIcons[item.kind]} size={16} /></span>
         <div><strong>{item.title}</strong><small>{item.message}</small></div>
-        <i onClick={(event) => { event.stopPropagation(); dismissToast(item.id) }}>✕</i>
+        <i onClick={(event) => { event.stopPropagation(); dismissToast(item.id) }}><Icon name="x" size={14} /></i>
       </button>)}
     </div>
   </>
