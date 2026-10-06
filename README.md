@@ -1,97 +1,41 @@
 # Điều phối xe – Bệnh viện Mắt Sài Gòn Trà Vinh
 
-## Cập nhật v2.10.0 — Giao diện mới
+Phiên bản **v2.10.1 Local Ready**, dựa trên giao diện doanh nghiệp v2.10.0.
 
-- Thiết kế lại toàn bộ giao diện theo phong cách dashboard doanh nghiệp: sidebar tối, nội dung sáng, bảng số liệu gọn.
-- Bộ biểu tượng nét thống nhất thay cho emoji; biển số và KM hiển thị bằng font số đơn cách.
-- CSS viết lại thành các module trong `src/styles/` (thay file 10.500 dòng cũ). Chỉ thay giao diện, không đổi nghiệp vụ và dữ liệu, không cần chạy SQL.
-- Xem `CHANGELOG-v2.10.0.md`.
+## Flow nghiệp vụ hiện tại
 
-## Cập nhật v2.9.0
+1. **Điều phối tạo chuyến → Hành chính điều phối duyệt → Tài xế nhận chuyến.** Ban Giám đốc không duyệt từng chuyến.
+2. **Trưởng khoa gửi đề nghị → Hành chính duyệt đề nghị → Điều phối tạo chuyến → Tài xế.** Không duyệt Hành chính lần hai.
+3. **Tài xế tạo chuyến đột xuất → đi ngay → Hành chính/Điều phối xác nhận báo cáo sau.**
+4. **Chi phí:** Tài xế gửi → Ban Giám đốc duyệt → Kế toán duyệt → Kế toán xác nhận chi trả.
+5. **Sự cố/Bảo dưỡng:** Tài xế hoặc bộ phận gửi → Ban Giám đốc duyệt → Hành chính tiếp nhận/xử lý.
+6. **GPS realtime:** Điều phối, Hành chính, Ban Giám đốc và Quản trị được xem; Kế toán không xem vị trí realtime.
+7. **BGĐ:** xem báo cáo tổng hợp cuối tháng, duyệt chi phí và xử lý phê duyệt sự cố/bảo dưỡng; không duyệt xe đi.
 
-- Tài xế tạo **chuyến đột xuất**, chạy ngay và báo cáo lại; Hành chính/Điều phối xác nhận sau.
-- Quy trình: **Điều phối → Hành chính điều phối duyệt → Tài xế**. BGĐ không duyệt chuyến, chỉ xem báo cáo cuối tháng và duyệt chi.
-- Trạng thái **trực tuyến** của các tài khoản.
-- Bắt buộc chạy `supabase/migrate-v2.9.0-adhoc-trips-presence.sql`. Xem `CHANGELOG-v2.9.0.md`.
+## Chạy local
 
-## Cập nhật v2.7.1
+Đọc `HUONG-DAN-CHAY-LOCAL-v2.10.1.md`. Cách nhanh nhất trên Windows:
 
-- Thêm vai trò **Trưởng khoa / Trưởng đơn vị** và trang **Đề nghị xe** kèm văn bản kế hoạch.
-- Quy trình chuyến: Điều phối → Hành chính → BGĐ → Tài xế. Nếu chuyến có kèm kế hoạch/văn bản, Hành chính duyệt trực tiếp và giao cho tài xế, không qua BGĐ.
-- Sự cố và bảo dưỡng phải qua Ban Giám đốc duyệt.
-- Quản trị hệ thống có thể xóa mềm tài khoản, giữ nguyên lịch sử nghiệp vụ.
-- Chi phí có nút **Chi tiết** cho từng khoản và xem hóa đơn trực tiếp.
+```text
+1. Chạy SETUP-LOCAL.cmd
+2. Điền .env.local
+3. Chạy lại SETUP-LOCAL.cmd
+4. Chạy START-LOCAL.cmd
+5. Mở http://localhost:5173
+```
 
-Xem `CHANGELOG-v2.7.1.md` và `HUONG-DAN-CAP-NHAT-v2.7.1.md`.
+## Yêu cầu
 
-Phiên bản source sạch **2.6.0**, tối ưu cho triển khai Ubuntu Server + Nginx.
-
-## Yêu cầu build
-
-- Node.js `>=22.12.0`
+- Node.js >= 22.12
 - npm
-- Supabase project đã chạy schema/migrations và Edge Functions cần thiết
+- Supabase đã có schema/migration đến v2.9.0
+- Edge Function `manage-user` nếu Quản trị tạo/xóa/khóa tài khoản
+- Edge Function `analyze-odometer` nếu dùng Gemini OCR
 
-## Cài đặt phát triển
+## Build production
 
-```bash
-cp .env.example .env.local
-npm ci
-npm run dev
+```cmd
+BUILD-LOCAL.cmd
 ```
 
-## Kiểm tra và build production
-
-```bash
-cp .env.example .env.production
-# Điền VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY và URL HTTPS
-npm ci
-npm run verify
-```
-
-Thư mục phát hành là `dist/`.
-
-## Deploy Ubuntu
-
-Đọc tài liệu:
-
-```text
-HUONG-DAN-TRIEN-KHAI-UBUNTU-MULTI-WEB.md
-```
-
-Các file hỗ trợ:
-
-```text
-deploy/ubuntu/nginx-site.conf.template
-deploy/ubuntu/deploy-static.sh
-deploy/ubuntu/rollback.sh
-deploy/ubuntu/security-audit-readonly.sh
-```
-
-## Supabase
-
-- Schema cơ sở: `supabase/schema.sql`
-- Migrations bổ sung: `supabase/migrate-*.sql`
-- Quản lý người dùng: `supabase/functions/manage-user/`
-- Gemini OCR: `supabase/functions/analyze-odometer/`
-
-## Tạo/cập nhật admin
-
-Dùng script tương tác:
-
-```bash
-node scripts/bootstrap-admin.mjs
-```
-
-Script yêu cầu Supabase URL và service-role/secret key tại thời điểm chạy; không ghi key vào source.
-
-## Bảo mật
-
-Đọc `SECURITY.md` và chạy:
-
-```bash
-npm run verify:source
-```
-
-### Luồng đề nghị Trưởng khoa (v2.7.4)
-Trưởng khoa gửi đề nghị → Hành chính duyệt → Điều phối chọn xe/tài xế và tạo chuyến → Tài xế nhận chuyến. Hành chính không duyệt lại lần hai.
+Kết quả ở `dist/`.

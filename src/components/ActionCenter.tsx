@@ -41,7 +41,7 @@ function actionItemsForRole(role: UserRole, data: ReturnType<typeof useData>['da
 
   if (role === 'fleet' || role === 'admin') {
     add({ key: 'fleet-requests', icon: 'requests', title: 'Đề nghị xe cần duyệt', detail: 'Khoa/phòng đang chờ Hành chính', count: data.vehicleRequests.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'requests' })
-    add({ key: 'fleet-trips', icon: 'bus', title: 'Yêu cầu điều xe cần duyệt', detail: 'Hành chính duyệt là xe đi', count: data.trips.filter((item) => item.status === 'pending_fleet' || item.status === 'pending_director').length, tone: 'warning', page: 'dispatch' })
+    add({ key: 'fleet-trips', icon: 'bus', title: 'Yêu cầu điều xe cần duyệt', detail: 'Hành chính duyệt là xe đi', count: data.trips.filter((item) => item.status === 'pending_fleet').length, tone: 'warning', page: 'dispatch' })
     add({ key: 'fleet-incidents', icon: 'incident', title: 'Sự cố cần tiếp nhận', detail: 'Đã qua bước phê duyệt và cần xử lý', count: data.incidents.filter((item) => ['reported','handling'].includes(item.status)).length, tone: 'danger', page: 'incidents' })
     add({ key: 'fleet-maintenance', icon: 'wrench', title: 'Bảo dưỡng đang thực hiện', detail: 'Theo dõi lịch và tiến độ sửa chữa', count: data.maintenances.filter((item) => ['scheduled','in_progress'].includes(item.status)).length, tone: 'normal', page: 'maintenance' })
   }

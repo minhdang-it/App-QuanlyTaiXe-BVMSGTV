@@ -25,7 +25,7 @@ import type {
 } from '../types/models'
 import { addPending, listPending, pendingCount, removePending, updatePending, type PendingAction } from './offline'
 import { supabase } from './supabase'
-import { getCurrentLocation, getErrorMessage, normalizePhone, uid } from './utils'
+import { getErrorMessage, normalizePhone, uid } from './utils'
 import { optimizeCapturedImage } from './image'
 
 const LIVE_CACHE_KEY = 'msg-car-live-cache-v1'
@@ -755,10 +755,9 @@ const supabaseBackend: BackendApi = {
   },
   async submitOdometer(trip, phase, odometer, file) {
     const client = await requireSupabase()
-    const location = await getCurrentLocation()
     const changes: Record<string, unknown> = phase === 'start'
-      ? { start_odometer: odometer, start_lat: location?.lat, start_lng: location?.lng }
-      : { end_odometer: odometer, end_lat: location?.lat, end_lng: location?.lng }
+      ? { start_odometer: odometer }
+      : { end_odometer: odometer }
     const optimistic = { ...trip, ...changes, updated_at: new Date().toISOString() } as Trip
     const queuePayload = { trip_id: trip.id, driver_id: trip.driver_id, phase, ...changes }
     return await performOrQueue('odometer.update', queuePayload, async () => {
@@ -807,9 +806,8 @@ const supabaseBackend: BackendApi = {
   },
   async createIncident(input, media) {
     const client = await requireSupabase()
-    const location = await getCurrentLocation()
     const id = uid('incident')
-    const payload: Record<string, unknown> = { ...input, id, status: 'pending_director', lat: input.lat ?? location?.lat, lng: input.lng ?? location?.lng }
+    const payload: Record<string, unknown> = { ...input, id, status: 'pending_director', lat: input.lat ?? null, lng: input.lng ?? null }
     const now = new Date().toISOString()
     const optimistic: Incident = {
       ...input,

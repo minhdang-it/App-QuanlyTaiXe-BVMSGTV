@@ -9,6 +9,8 @@ import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { VietnamDateInput } from '../components/VietnamDateInput'
+import { NavicomMonitor } from '../components/NavicomMonitor'
+import { fetchNavicomAccountVehicles, type NavicomAccountVehicle } from '../lib/navicom'
 
 export function VehiclesPage() {
   const { data } = useData()
@@ -123,7 +125,6 @@ function AssignDriverModal({ vehicle, onClose }: { vehicle: Vehicle; onClose: ()
     .sort((a, b) => a.full_name.localeCompare(b.full_name, 'vi'))
   const [driverId, setDriverId] = useState(vehicle.regular_driver_id ?? '')
   const [saving, setSaving] = useState(false)
-
   return <Modal title={`Gán tài xế cho xe ${vehicle.plate_number}`} onClose={onClose}>
     <form className="assign-driver-form" onSubmit={async (event) => {
       event.preventDefault()
@@ -204,6 +205,11 @@ function VehicleDetail({ vehicle, canManage, onClose }: { vehicle: Vehicle; canM
               <div><span>Mốc KM bảo dưỡng</span><strong>{vehicle.next_maintenance_odometer?.toLocaleString('vi-VN') ?? '—'}</strong></div>
             </div>
 
+            <section className="vehicle-navicom-section">
+              <div className="section-title-row"><h3>Camera & GPS Navicom</h3><span className={`navicom-link-chip ${vehicle.navicom_enabled ? 'enabled' : ''}`}>{vehicle.navicom_enabled ? 'Đã liên kết' : 'Chưa liên kết'}</span></div>
+              <NavicomMonitor vehicle={vehicle} />
+            </section>
+
             <div className="mini-stats">
               <div><strong>{history.length}</strong><span>Chuyến hoàn thành</span></div>
               <div><strong>{expenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString('vi-VN')}đ</strong><span>Tổng chi phí ghi nhận</span></div>
@@ -231,9 +237,39 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     status: initial?.status ?? 'available' as VehicleStatus, odometer: String(initial?.odometer ?? 0), image_url: initial?.image_url ?? '', regular_driver_id: initial?.regular_driver_id ?? '',
     registration_expiry: initial?.registration_expiry ?? '', insurance_expiry: initial?.insurance_expiry ?? '', road_fee_expiry: initial?.road_fee_expiry ?? '',
     last_oil_change_date: initial?.last_oil_change_date ?? '', last_oil_change_odometer: String(initial?.last_oil_change_odometer ?? ''), next_oil_change_date: initial?.next_oil_change_date ?? '', next_oil_change_odometer: String(initial?.next_oil_change_odometer ?? ''), next_maintenance_date: initial?.next_maintenance_date ?? '',
-    next_maintenance_odometer: String(initial?.next_maintenance_odometer ?? ''), fuel_norm_l_per_100km: String(initial?.fuel_norm_l_per_100km ?? ''), notes: initial?.notes ?? '',
+    next_maintenance_odometer: String(initial?.next_maintenance_odometer ?? ''), fuel_norm_l_per_100km: String(initial?.fuel_norm_l_per_100km ?? ''),
+    navicom_enabled: Boolean(initial?.navicom_enabled), navicom_device_id: initial?.navicom_device_id ?? '', navicom_channel_count: '2', navicom_notes: initial?.navicom_notes ?? '',
+    notes: initial?.notes ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [navicomVehicles, setNavicomVehicles] = useState<NavicomAccountVehicle[]>([])
+  const [navicomLoading, setNavicomLoading] = useState(false)
+  const [navicomError, setNavicomError] = useState<string | null>(null)
+
+  async function loadNavicomVehicles() {
+    setNavicomLoading(true)
+    setNavicomError(null)
+    try {
+      const result = await fetchNavicomAccountVehicles()
+      setNavicomVehicles(result.vehicles ?? [])
+      if (!(result.vehicles ?? []).length) setNavicomError('Tài khoản Navicom chưa trả về danh sách xe qua API.')
+    } catch (error) {
+      setNavicomError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setNavicomLoading(false)
+    }
+  }
+
+  function selectNavicomVehicle(deviceId: string) {
+    const selected = navicomVehicles.find((item) => item.device_id === deviceId)
+    setForm((current) => ({
+      ...current,
+      navicom_enabled: Boolean(deviceId),
+      navicom_device_id: deviceId,
+      navicom_channel_count: '2',
+      navicom_notes: selected ? [selected.plate_number, selected.vehicle_name].filter(Boolean).join(' · ') : current.navicom_notes,
+    }))
+  }
 
   return <form className="form-grid" onSubmit={async (event) => {
     event.preventDefault()
@@ -255,6 +291,10 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
         next_oil_change_date: form.next_oil_change_date || null,
         next_oil_change_odometer: form.next_oil_change_odometer ? Number(form.next_oil_change_odometer) : null,
         next_maintenance_date: form.next_maintenance_date || null,
+        navicom_enabled: form.navicom_enabled,
+        navicom_device_id: form.navicom_device_id.trim() || null,
+        navicom_channel_count: form.navicom_enabled ? 2 : null,
+        navicom_notes: form.navicom_notes.trim() || null,
       })
     } finally {
       setSaving(false)
@@ -277,6 +317,16 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     <label>Ngày bảo dưỡng kế tiếp<VietnamDateInput value={form.next_maintenance_date} onChange={(value) => setForm({ ...form, next_maintenance_date: value })} /></label>
     <label>Mốc KM bảo dưỡng<input type="number" min="0" value={form.next_maintenance_odometer} onChange={(e) => setForm({ ...form, next_maintenance_odometer: e.target.value })} /></label>
     <label>Định mức L/100km<input type="number" min="0" step="0.1" value={form.fuel_norm_l_per_100km} onChange={(e) => setForm({ ...form, fuel_norm_l_per_100km: e.target.value })} /></label>
+    <div className="form-section-title span-2"><strong>Tích hợp Navicom</strong><small>Tài khoản Navicom hiện có 2 xe; mỗi xe cố định 2 kênh: Camera trước và Camera cabin.</small></div>
+    <label className="navicom-toggle-field"><span>Kích hoạt Navicom</span><input type="checkbox" checked={form.navicom_enabled} onChange={(e) => setForm({ ...form, navicom_enabled: e.target.checked, navicom_channel_count: '2' })} /></label>
+    <div className="navicom-account-picker">
+      <button type="button" className="secondary-button compact" onClick={() => void loadNavicomVehicles()} disabled={navicomLoading}>{navicomLoading ? 'Đang lấy xe...' : 'Lấy 2 xe từ tài khoản Navicom'}</button>
+      {navicomVehicles.length > 0 && <select value={form.navicom_device_id} onChange={(e) => selectNavicomVehicle(e.target.value)}><option value="">— Chọn xe Navicom —</option>{navicomVehicles.map((item) => <option key={item.key} value={item.device_id ?? ''}>{item.plate_number || item.vehicle_name || 'Xe Navicom'} · {item.device_id || 'Chưa có Device ID'}</option>)}</select>}
+      {navicomError && <small className="danger-text">{navicomError}</small>}
+    </div>
+    <label>Mã thiết bị / IMEI<input value={form.navicom_device_id} onChange={(e) => setForm({ ...form, navicom_device_id: e.target.value.trimStart(), navicom_channel_count: '2' })} placeholder="Device ID / IMEI" /></label>
+    <label>Số kênh camera<input type="number" value="2" readOnly /><small>Camera trước + Camera cabin</small></label>
+    <label>Ghi chú Navicom<input value={form.navicom_notes} onChange={(e) => setForm({ ...form, navicom_notes: e.target.value })} placeholder="Tên xe trên CMS, ghi chú thiết bị..." /></label>
     <label className="span-2">Ảnh xe (URL)<input value={form.image_url ?? ''} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://.../xe.jpg" /></label>
     {form.image_url && <div className="image-url-preview span-2"><img src={form.image_url} alt="Xem trước ảnh xe" /><span>Xem trước ảnh xe</span></div>}
     <label className="span-2">Ghi chú<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>

@@ -44,10 +44,18 @@ create table if not exists public.vehicles (
   next_maintenance_date date,
   next_maintenance_odometer integer,
   fuel_norm_l_per_100km numeric(6,2),
+  navicom_enabled boolean not null default false,
+  navicom_device_id text,
+  navicom_channel_count integer check (navicom_channel_count is null or navicom_channel_count >= 0),
+  navicom_notes text,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists vehicles_navicom_device_unique
+  on public.vehicles(navicom_device_id)
+  where navicom_device_id is not null and btrim(navicom_device_id) <> '';
 
 create table if not exists public.trips (
   id uuid primary key default gen_random_uuid(),
@@ -87,7 +95,7 @@ create table if not exists public.trips (
   constraint trip_time_order check (expected_end is null or expected_end > scheduled_start),
   constraint active_trip_requires_start check (
     status not in ('active','completed') or
-    (checklist_completed and start_odometer is not null and start_odometer_image_url is not null and started_at is not null)
+    (start_odometer is not null and start_odometer_image_url is not null and started_at is not null)
   ),
   constraint completed_trip_requires_end check (
     status <> 'completed' or

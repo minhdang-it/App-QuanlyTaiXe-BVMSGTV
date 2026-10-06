@@ -1,7 +1,7 @@
 {
   "name": "dieu-phoi-xe-bvmsgtv",
   "private": true,
-  "version": "2.10.0",
+  "version": "2.10.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,16 @@
     "check": "tsc -b --pretty false",
     "verify:source": "node scripts/verify-source.mjs",
     "verify": "npm run verify:source && npm run check && npm run build",
-    "verify:package": "node scripts/verify-source.mjs --package"
+    "verify:package": "node scripts/verify-source.mjs --package",
+    "local:check": "node scripts/check-local-env.mjs",
+    "dev:local": "vite --host 127.0.0.1 --port 5173",
+    "dev:lan": "vite --host 0.0.0.0 --port 5173",
+    "dev:https": "vite --config vite.https.config.mjs --host 0.0.0.0 --port 5173",
+    "navicom:gateway": "node --env-file=.env.navicom.local server/navicom-gateway/server.mjs",
+    "dev:navicom": "node --env-file=.env.navicom.local server/navicom-gateway/server.mjs",
+    "navicom:check": "node scripts/check-navicom-env.mjs",
+    "navicom:health": "node scripts/check-navicom-health.mjs",
+    "navicom:cmsv6-test": "node --env-file=.env.navicom.local server/navicom-gateway/test-cmsv6.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

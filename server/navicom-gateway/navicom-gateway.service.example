@@ -1,0 +1,17 @@
+[Unit]
+Description=BVMSGTV Navicom Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=danglee
+WorkingDirectory=/var/www/navicom-gateway
+EnvironmentFile=/etc/bvmsgtv/navicom-gateway.env
+ExecStart=/usr/bin/node /var/www/navicom-gateway/server.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

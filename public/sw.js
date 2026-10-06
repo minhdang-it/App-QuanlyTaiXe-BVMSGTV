@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2100-enterprise-ui'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2107-navicom-realtime-map'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope

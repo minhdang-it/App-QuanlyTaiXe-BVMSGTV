@@ -12,6 +12,7 @@ import { ActionCenter } from '../components/ActionCenter'
 import { detectOperationalInsights } from '../lib/operationalInsights'
 import { OnlineUsersPanel } from '../components/Presence'
 import { Icon, type IconName } from '../components/Icon'
+import { NavicomMonitor } from '../components/NavicomMonitor'
 import type { PageKey } from '../components/AppShell'
 import type { AppData, Expense, Incident, Trip, UserRole } from '../types/models'
 
@@ -97,7 +98,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 6), [data.expenses, data.incidents])
 
   const operationalInsights = useMemo(() => detectOperationalInsights(data).slice(0, 8), [data])
-  const todayPending = todayTrips.filter((trip) => ['pending_fleet','pending_director','assigned','accepted','ready'].includes(trip.status)).length
+  const todayPending = todayTrips.filter((trip) => ['pending_fleet','assigned','accepted','ready'].includes(trip.status)).length
 
   const todayLabel = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
 
@@ -114,7 +115,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
       <section className="metric-grid">
         <Metric icon="vehicle" label="Tổng số xe" value={metrics.totalVehicles} hint={`${metrics.available} xe đang trống`} />
-        <Metric icon="navigation" label="Xe đang chạy" value={metrics.running} tone="success" hint={`${activeTrips.length} chuyến có GPS`} />
+        <Metric icon="navigation" label="Xe đang chạy" value={metrics.running} tone="success" hint={`${activeTrips.length} chuyến đang theo dõi Navicom`} />
         <Metric icon="wrench" label="Xe đang sửa" value={metrics.maintenance} tone={metrics.maintenance ? 'warning' : undefined} hint="Không điều được" />
         <Metric icon="check-circle" label="Hoàn thành hôm nay" value={metrics.completed} tone="success" hint={`${metrics.delayed} chuyến trễ giờ`} />
         <Metric icon="money" label="Chi phí đã duyệt hôm nay" value={formatCurrency(metrics.expense)} hint="Đã duyệt hoặc đã chi" />
@@ -136,7 +137,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
             })}</tbody></table></div> : <EmptyState icon="calendar" title="Hôm nay chưa có lịch xe" />}
           </section>
 
-          <LiveTrackingPanel data={data} trips={activeTrips} />
+          {role !== 'accountant' && <LiveTrackingPanel data={data} trips={activeTrips} />}
         </div>
 
         <aside className="dashboard-side">
@@ -166,7 +167,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
         </aside>
       </div>
 
-      {selectedTrip && <TripDetailModal trip={data.trips.find((item) => item.id === selectedTrip.id) ?? selectedTrip} canManage={false} onClose={() => setSelectedTrip(null)} onEdit={() => undefined} onCancel={() => undefined} onDelete={() => undefined} />}
+      {selectedTrip && <TripDetailModal trip={data.trips.find((item) => item.id === selectedTrip.id) ?? selectedTrip} canManage={false} showLocation={role !== 'accountant'} onClose={() => setSelectedTrip(null)} onEdit={() => undefined} onCancel={() => undefined} onDelete={() => undefined} />}
       {selectedActivity && <ActivityDetailModal activity={selectedActivity} data={data} onClose={() => setSelectedActivity(null)} onOpenTrip={(tripId) => { const trip = data.trips.find((item) => item.id === tripId); if (trip) { setSelectedActivity(null); setSelectedTrip(trip) } }} />}
     </div>
   )
@@ -349,35 +350,15 @@ function WorkspaceList({ title, items, empty, tone }: { title: string; items: Ar
 
 function LiveTrackingPanel({ data, trips }: { data: AppData; trips: Trip[] }) {
   return <section className="panel tracking-panel modern-panel-span-2">
-    <div className="panel-header"><div><h2>Giám sát vị trí xe đang chạy</h2><p>Các bộ phận được phân quyền có thể theo dõi ngay khi tài xế bắt đầu chuyến.</p></div><span className="count-pill">{trips.length} xe hoạt động</span></div>
-    {trips.length ? <div className="live-trip-grid">{trips.map((trip) => {
+    <div className="panel-header"><div><h2>Camera & GPS Navicom</h2><p>Vị trí và camera lấy trực tiếp từ thiết bị gắn trên xe, không phụ thuộc điện thoại tài xế.</p></div><span className="count-pill">{trips.length} xe hoạt động</span></div>
+    {trips.length ? <div className="navicom-live-grid">{trips.map((trip) => {
       const vehicle = data.vehicles.find((v) => v.id === trip.vehicle_id)
       const driver = data.profiles.find((p) => p.id === trip.driver_id)
-      const liveLat = trip.current_lat ?? trip.start_lat
-      const liveLng = trip.current_lng ?? trip.start_lng
-      const hasLocation = liveLat != null && liveLng != null
-      return <article className="live-trip-card" key={trip.id}>
-        <div className="live-trip-top"><div><strong>{vehicle?.plate_number ?? 'Chưa gán xe'}</strong><small>{vehicle?.vehicle_name || 'Phương tiện đang vận hành'}</small></div><StatusBadge status={trip.status} /></div>
-        <div className="live-trip-route"><div><span>Điểm đón</span><strong>{trip.pickup}</strong></div><div><span>Điểm đến</span><strong>{trip.destination}</strong></div></div>
-        <div className="live-trip-meta"><span>Tài xế: <strong>{driver?.full_name || 'Chưa rõ'}</strong></span><span>Loại chuyến: <strong>{PURPOSE_LABELS[trip.purpose]}</strong></span><span>Bắt đầu: <strong>{formatDateTime(trip.started_at ?? trip.updated_at)}</strong></span><span>Cập nhật GPS: <strong>{formatDateTime(trip.location_updated_at ?? trip.updated_at)}</strong></span></div>
-        {hasLocation ? <>
-          <div className="live-trip-map">
-            <iframe
-              title={`Vị trí xe ${vehicle?.plate_number ?? ''}`}
-              src={`https://maps.google.com/maps?q=${liveLat},${liveLng}&z=16&output=embed`}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
-            <div className="live-map-logo-marker" aria-label="Vị trí xe">
-              <img src="/logo-bvmsgtv-v201.png" alt="Logo Bệnh viện Mắt Sài Gòn Trà Vinh" />
-              <span>{vehicle?.plate_number ?? 'Xe BV'}</span>
-            </div>
-            <span className={`live-location-freshness ${locationFreshnessClass(trip.location_updated_at)}`}>{locationFreshnessLabel(trip.location_updated_at)}</span>
-          </div>
-          <div className="live-trip-location"><code>{liveLat!.toFixed(6)}, {liveLng!.toFixed(6)}</code><a href={googleMapsLocationUrl({ lat: liveLat!, lng: liveLng! })} target="_blank" rel="noreferrer">Mở Google Maps</a></div>
-        </> : <div className="live-trip-location empty">Tài xế chưa cấp quyền vị trí hoặc GPS chưa sẵn sàng.</div>}
+      return <article className="navicom-trip-card" key={trip.id}>
+        <div className="live-trip-top"><div><strong>{vehicle?.plate_number ?? 'Chưa gán xe'}</strong><small>{driver?.full_name || 'Chưa rõ tài xế'} · {trip.destination}</small></div><StatusBadge status={trip.status} /></div>
+        <NavicomMonitor vehicle={vehicle} />
       </article>
-    })}</div> : <EmptyState icon="pin" title="Chưa có xe đang chạy" description="Khi tài xế bắt đầu chuyến, vị trí xe sẽ xuất hiện tại đây." />}
+    })}</div> : <EmptyState icon="camera" title="Chưa có xe đang chạy" description="Khi chuyến bắt đầu, BGĐ/Hành chính/Điều phối/Quản trị có thể kiểm tra camera và GPS Navicom tại đây." />}
   </section>
 }
 

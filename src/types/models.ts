@@ -62,6 +62,10 @@ export interface Vehicle {
   next_maintenance_date?: string | null
   next_maintenance_odometer?: number | null
   fuel_norm_l_per_100km?: number | null
+  navicom_enabled?: boolean
+  navicom_device_id?: string | null
+  navicom_channel_count?: number | null
+  navicom_notes?: string | null
   notes?: string | null
   created_at: string
   updated_at: string

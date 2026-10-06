@@ -3,9 +3,12 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.local.example
 *.log
 *.tsbuildinfo
 .DS_Store
 .certs/
 .service/
 *.zip
+
+supabase/.temp/

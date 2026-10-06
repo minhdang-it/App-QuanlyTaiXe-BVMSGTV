@@ -10,7 +10,13 @@ const requiredFiles = [
   'package-lock.json',
   'index.html',
   'vite.config.ts',
+  'vite.https.config.mjs',
   '.env.example',
+  '.env.local.example',
+  'SETUP-LOCAL.cmd',
+  'START-LOCAL.cmd',
+  'CHECK-LOCAL.cmd',
+  'BUILD-LOCAL.cmd',
   '.gitignore',
   'public/manifest.webmanifest',
   'public/sw.js',
@@ -84,6 +90,7 @@ if (packageMode) {
     '.git',
     '.certs',
     '.service',
+    'supabase/.temp',
     'create-website-user.mjs',
   ]
   for (const relative of forbiddenInPackage) {
@@ -121,8 +128,13 @@ assert(manageUserSource.includes('email_confirm: true'), 'Edge Function phải x
 assert(manageUserSource.includes("login_method: 'internal_email'"), 'Edge Function thiếu metadata cơ chế đăng nhập')
 
 const driverSource = fs.readFileSync(path.join(root, 'src/pages/DriverPage.tsx'), 'utf8')
-assert(driverSource.includes('Xác nhận địa điểm xuất phát'), 'Thiếu bước xác nhận địa điểm trước chuyến')
-assert(driverSource.includes('googleMapsDirectionsUrl'), 'Thiếu tích hợp Google Maps dẫn đường')
+assert(!driverSource.includes('navigator.geolocation'), 'Tài xế không được dùng GPS điện thoại trong flow v2.10.2')
+assert(!driverSource.includes('googleMapsDirectionsUrl'), 'Tài xế không còn dùng Google Maps trong flow v2.10.2')
+assert(driverSource.includes('GPS và camera được theo dõi tự động qua hệ thống Navicom'), 'Thiếu thông báo flow Navicom cho tài xế')
+
+const navicomSource = fs.readFileSync(path.join(root, 'src/components/NavicomMonitor.tsx'), 'utf8')
+assert(navicomSource.includes('Camera & GPS Navicom') || navicomSource.includes('Navicom ·'), 'Thiếu giao diện Navicom')
+assert(fs.existsSync(path.join(root, 'server/navicom-gateway/server.mjs')), 'Thiếu Navicom gateway server')
 
 const odometerGeminiSource = fs.readFileSync(path.join(root, 'src/lib/odometerGemini.ts'), 'utf8')
 assert(odometerGeminiSource.includes("functions.invoke('analyze-odometer'"), 'Thiếu gọi Edge Function Gemini OCR')

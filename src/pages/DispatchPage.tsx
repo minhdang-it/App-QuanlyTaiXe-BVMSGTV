@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { ADHOC_REPORT_LABELS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDate, formatDateTime, googleMapsLocationUrl, toDateTimeLocal, todayKey } from '../lib/utils'
+import { formatCurrency, formatDate, formatDateTime, toDateTimeLocal, todayKey } from '../lib/utils'
 import type { AppData, CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
@@ -13,6 +13,7 @@ import { consumeNavigationFocus, NAVIGATION_FOCUS_EVENT } from '../lib/focusNavi
 import { usePresence } from '../context/PresenceContext'
 import { PresenceLabel } from '../components/Presence'
 import { Icon } from '../components/Icon'
+import { NavicomMonitor } from '../components/NavicomMonitor'
 
 
 function nextDefaultTripDateTime() {
@@ -341,6 +342,7 @@ export function DispatchPage() {
     {selectedTrip && <TripDetailModal
       trip={data.trips.find((item) => item.id === selectedTrip.id) ?? selectedTrip}
       canManage={canManage}
+      showLocation={role !== 'accountant'}
       onClose={() => setSelectedTrip(null)}
       onEdit={(trip) => { setSelectedTrip(null); setEditingTrip(trip) }}
       onCancel={(trip) => void cancelTrip(trip)}
@@ -500,9 +502,10 @@ function buildTripTimeline(trip: Trip, data: AppData) {
   return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 }
 
-export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, onDelete }: {
+export function TripDetailModal({ trip, canManage, showLocation = true, onClose, onEdit, onCancel, onDelete }: {
   trip: Trip
   canManage: boolean
+  showLocation?: boolean
   onClose: () => void
   onEdit: (trip: Trip) => void
   onCancel: (trip: Trip) => void
@@ -521,9 +524,6 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
   const incidents = data.incidents.filter((item) => item.trip_id === trip.id)
   const timelineEvents = buildTripTimeline(trip, data)
   const distance = trip.start_odometer != null && trip.end_odometer != null ? Math.max(0, trip.end_odometer - trip.start_odometer) : null
-  const liveLat = trip.current_lat ?? trip.start_lat
-  const liveLng = trip.current_lng ?? trip.start_lng
-  const hasLiveLocation = liveLat != null && liveLng != null
   const canEdit = canManage && trip.status === 'pending_fleet'
   const canDelete = canManage
     && ['pending_fleet', 'cancelled'].includes(trip.status)
@@ -540,39 +540,16 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
       <StatusBadge status={trip.status} />
     </div>
 
-    {trip.status === 'active' && <section className="active-trip-live-card">
-      <div className="active-trip-live-head">
-        <div>
-          <span className="live-pulse-dot" aria-hidden="true" />
-          <div><strong>Vị trí xe đang chạy</strong><small>{trip.location_updated_at ? `GPS cập nhật: ${formatDateTime(trip.location_updated_at)}` : 'Đang chờ dữ liệu GPS từ điện thoại tài xế'}</small></div>
-        </div>
-        <StatusBadge status={trip.status} />
-      </div>
-      {hasLiveLocation ? <>
-        <div className="trip-detail-live-map">
-          <iframe
-            title={`Vị trí hiện tại xe ${vehicle?.plate_number ?? ''}`}
-            src={`https://maps.google.com/maps?q=${liveLat},${liveLng}&z=16&output=embed`}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-          <div className="trip-detail-logo-marker" aria-label="Vị trí xe">
-            <img src="/logo-bvmsgtv-v201.png" alt="Logo Bệnh viện Mắt Sài Gòn Trà Vinh" />
-            <span>{vehicle?.plate_number ?? 'Xe BV'}</span>
-          </div>
-        </div>
-        <div className="active-trip-live-actions">
-          <code>{liveLat!.toFixed(6)}, {liveLng!.toFixed(6)}</code>
-          <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: liveLat!, lng: liveLng! })}>Mở vị trí trên Google Maps</a>
-        </div>
-      </> : <div className="active-trip-no-location">Chưa nhận được vị trí. Hãy kiểm tra GPS, HTTPS và quyền vị trí trên điện thoại tài xế.</div>}
+    {showLocation && trip.status === 'active' && <section className="active-trip-live-card navicom-active-trip-card">
+      <div className="active-trip-live-head"><div><span className="live-pulse-dot" aria-hidden="true" /><div><strong>Camera & GPS Navicom</strong><small>Dữ liệu lấy trực tiếp từ thiết bị gắn trên xe, không dùng GPS điện thoại tài xế.</small></div></div><StatusBadge status={trip.status} /></div>
+      <NavicomMonitor vehicle={vehicle} />
     </section>}
 
     {trip.is_adhoc ? <section className="trip-detail-section trip-approval-section adhoc-detail-section">
       <div className="section-title-row"><h3>Chuyến đột xuất do tài xế tạo</h3><span className={`adhoc-chip ${trip.adhoc_report_status ?? ''}`}>{ADHOC_REPORT_LABELS[trip.adhoc_report_status ?? 'pending_review']}</span></div>
       <div className="approval-timeline compact">
         <span className="done">1. Tài xế tạo & nhận chuyến</span>
-        <span className={['active', 'completed'].includes(trip.status) ? 'done' : ''}>2. Checklist · KM · GPS</span>
+        <span className={['active', 'completed'].includes(trip.status) ? 'done' : ''}>2. KM đầu · Navicom</span>
         <span className={trip.status === 'completed' ? 'done' : ''}>3. Hoàn tất chuyến</span>
         <span className={trip.adhoc_report_status && trip.adhoc_report_status !== 'pending_review' ? 'done' : ''}>4. Hành chính/Điều phối xác nhận</span>
       </div>
@@ -606,8 +583,6 @@ export function TripDetailModal({ trip, canManage, onClose, onEdit, onCancel, on
       <div><span>Ngày tạo</span><strong>{formatDateTime(trip.created_at)}</strong></div>
       <div><span>Cập nhật cuối</span><strong>{formatDateTime(trip.updated_at)}</strong></div>
     </div>
-
-    {(trip.start_lat != null || trip.current_lat != null || trip.end_lat != null) && <section className="trip-detail-section"><h3>Vị trí ghi nhận</h3><div className="location-actions">{trip.start_lat != null && trip.start_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.start_lat, lng: trip.start_lng })}><Icon name="pin" size={14} />Điểm bắt đầu</a>}{trip.status === 'active' && (trip.current_lat ?? trip.start_lat) != null && (trip.current_lng ?? trip.start_lng) != null && <a className="primary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: (trip.current_lat ?? trip.start_lat)!, lng: (trip.current_lng ?? trip.start_lng)! })}><Icon name="navigation" size={14} />Vị trí hiện tại</a>}{trip.end_lat != null && trip.end_lng != null && <a className="secondary-button compact" target="_blank" rel="noreferrer" href={googleMapsLocationUrl({ lat: trip.end_lat, lng: trip.end_lng })}><Icon name="flag" size={14} />Điểm kết thúc</a>}</div>{trip.location_updated_at && <small className="location-updated-label">Cập nhật GPS gần nhất: {formatDateTime(trip.location_updated_at)}</small>}</section>}
 
     {(trip.start_odometer_image_url || trip.end_odometer_image_url) && <section className="trip-detail-section"><h3>Ảnh đồng hồ kilomet</h3><div className="trip-media-grid">{trip.start_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.start_odometer_image_url}><img src={trip.start_odometer_image_url} alt="Đồng hồ KM đầu" /><span>Ảnh KM đầu</span></a>}{trip.end_odometer_image_url && <a target="_blank" rel="noreferrer" href={trip.end_odometer_image_url}><img src={trip.end_odometer_image_url} alt="Đồng hồ KM cuối" /><span>Ảnh KM cuối</span></a>}</div></section>}
 

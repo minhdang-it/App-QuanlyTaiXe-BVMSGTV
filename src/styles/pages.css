@@ -233,3 +233,16 @@
   .account-row-actions { flex-direction: row; justify-content: flex-start; }
   .account-table td[colspan] { grid-column: 1 / -1; }
 }
+
+.vehicle-navicom-section { display:grid; gap:10px; margin-top:16px; }
+.navicom-link-chip { padding:5px 9px; border-radius:999px; background:#eef3f2; color:var(--muted); font-size:10px; font-weight:800; }
+.navicom-link-chip.enabled { background:#e7f7f1; color:#0a765e; }
+.form-section-title { display:grid; gap:3px; padding:11px 12px; border-radius:12px; background:#f2f8f6; }
+.form-section-title strong { color:#18443b; font-size:13px; }
+.form-section-title small { color:var(--muted); font-size:10px; line-height:1.45; }
+.navicom-toggle-field { display:flex !important; align-items:center; justify-content:space-between; gap:10px; min-height:48px; padding:0 12px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+.navicom-toggle-field input { width:20px; height:20px; min-height:0; }
+
+.navicom-account-picker { display:grid; gap:7px; align-content:end; }
+.navicom-account-picker select { min-height:44px; }
+.navicom-account-picker small { font-size:10px; line-height:1.4; }
