@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Vehicle } from '../types/models'
 import { Icon } from './Icon'
 import { formatDateTime } from '../lib/utils'
@@ -10,7 +10,7 @@ export function NavicomMonitor({ vehicle, compact = false }: { vehicle: Vehicle 
   const [state, setState] = useState<NavicomVehicleState | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null)
+  const [cameraMode, setCameraMode] = useState<'both' | 'front' | 'cabin'>('both')
   const [refreshKey, setRefreshKey] = useState(0)
 
   const deviceId = vehicle?.navicom_device_id?.trim() ?? ''
@@ -35,7 +35,6 @@ export function NavicomMonitor({ vehicle, compact = false }: { vehicle: Vehicle 
         if (stopped) return
         setState(next)
         setError(null)
-        if (!selectedChannel && next.channels?.length) setSelectedChannel(next.channels[0].id)
       } catch (err) {
         if (stopped || (err instanceof DOMException && err.name === 'AbortError')) return
         setError(err instanceof Error ? err.message : String(err))
@@ -53,7 +52,6 @@ export function NavicomMonitor({ vehicle, compact = false }: { vehicle: Vehicle 
     }
   }, [deviceId, enabled, refreshKey, vehicle?.navicom_channel_count])
 
-  const channel = useMemo(() => state?.channels?.find((item) => item.id === selectedChannel) ?? state?.channels?.[0] ?? null, [selectedChannel, state])
 
   if (!vehicle) return null
   if (!navicomEnabled) return <section className={`navicom-monitor ${compact ? 'compact' : ''} unconfigured`}>
@@ -92,7 +90,7 @@ export function NavicomMonitor({ vehicle, compact = false }: { vehicle: Vehicle 
         compact={compact}
       />}
 
-      {!compact && <CameraViewer channels={state.channels ?? []} selected={channel} onSelect={setSelectedChannel} />}
+      {!compact && <CameraViewer channels={state.channels ?? []} mode={cameraMode} onMode={setCameraMode} />}
     </>}
   </section>
 }
@@ -141,18 +139,34 @@ function NavicomRealtimeMap({ lat, lng, plateNumber, speedKph, updatedAt, addres
   </section>
 }
 
-function CameraViewer({ channels, selected, onSelect }: { channels: NavicomCameraChannel[]; selected: NavicomCameraChannel | null; onSelect: (id: string) => void }) {
-  if (!channels.length) return <div className="navicom-camera-empty"><Icon name="camera" size={18} /><span>Thiết bị chưa trả về kênh camera.</span></div>
+function CameraViewer({ channels, mode, onMode }: { channels: NavicomCameraChannel[]; mode: 'both' | 'front' | 'cabin'; onMode: (mode: 'both' | 'front' | 'cabin') => void }) {
+  const twoChannels = channels.slice(0, 2)
+  if (!twoChannels.length) return <div className="navicom-camera-empty"><Icon name="camera" size={18} /><span>Thiết bị chưa trả về kênh camera.</span></div>
 
-  return <div className="navicom-camera-block">
-    <div className="navicom-camera-tabs" role="tablist">
-      {channels.map((item) => <button type="button" key={item.id} className={selected?.id === item.id ? 'active' : ''} onClick={() => onSelect(item.id)}><span className={item.online === false ? 'offline' : item.online === true ? 'online' : 'unknown'} />{item.label}</button>)}
+  const front = twoChannels[0] ?? null
+  const cabin = twoChannels[1] ?? null
+  return <div className="navicom-camera-block dual-camera-viewer">
+    <div className="navicom-camera-tabs dual" role="tablist">
+      <button type="button" className={mode === 'both' ? 'active' : ''} onClick={() => onMode('both')}>Cả 2 camera</button>
+      <button type="button" className={mode === 'front' ? 'active' : ''} onClick={() => onMode('front')}>Camera trước</button>
+      <button type="button" className={mode === 'cabin' ? 'active' : ''} onClick={() => onMode('cabin')}>Camera cabin</button>
     </div>
-    {selected && <div className="navicom-player">
-      {selected.player_url ? <><iframe title={`Camera ${selected.label}`} src={selected.player_url} allow="autoplay; fullscreen" />{(selected.external_url || selected.player_url) && <a className="navicom-open-external" href={selected.external_url || selected.player_url || '#'} target="_blank" rel="noreferrer">Mở camera Navicom trong cửa sổ mới</a>}</>
-        : selected.hls_url ? <video src={selected.hls_url} controls autoPlay muted playsInline />
-          : selected.snapshot_url ? <img src={selected.snapshot_url} alt={`Camera ${selected.label}`} />
-            : <div className="navicom-camera-empty"><Icon name="camera" size={18} /><span>Gateway chưa cung cấp URL xem trực tiếp cho kênh này.</span></div>}
-    </div>}
+    <div className={`navicom-dual-player mode-${mode}`}>
+      {(mode === 'both' || mode === 'front') && <NavicomCameraPane channel={front} fallbackLabel="Camera trước" />}
+      {(mode === 'both' || mode === 'cabin') && <NavicomCameraPane channel={cabin} fallbackLabel="Camera cabin" />}
+    </div>
   </div>
+}
+
+function NavicomCameraPane({ channel, fallbackLabel }: { channel: NavicomCameraChannel | null; fallbackLabel: string }) {
+  const label = channel?.label || fallbackLabel
+  return <article className="navicom-camera-pane">
+    <header><div><span className={channel?.online === false ? 'offline' : channel?.online === true ? 'online' : 'unknown'} /><strong>{label}</strong></div>{channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}</header>
+    <div className="navicom-player">
+      {channel?.player_url ? <iframe title={`Camera ${label}`} src={channel.player_url} allow="autoplay; fullscreen" />
+        : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
+          : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={`Camera ${label}`} />
+            : <div className="navicom-camera-empty"><Icon name="camera" size={18} /><strong>{label} chưa khả dụng</strong><span>Thiết bị có thể đang ngoại tuyến hoặc Gateway chưa cung cấp URL video.</span></div>}
+    </div>
+  </article>
 }

@@ -1,13 +1,9 @@
-BVMSGTV v2.7.12 - SQL HOTFIX
+BVMSGTV v2.10.9 - Sửa player Navicom chỉ hiển thị 1 camera/lần.
 
-Lỗi cũ:
-protect_vehicle_request_update() chặn bước backfill plan_attachments khi chạy từ Supabase SQL Editor.
+Ubuntu:
+  unzip -o BVMSGTV-v2.10.9-NAVICOM-SINGLE-CAMERA-SERVER-ONLY.zip -d BVMSGTV-v2.10.9-NAVICOM-SINGLE-CAMERA-SERVER-ONLY
+  cd BVMSGTV-v2.10.9-NAVICOM-SINGLE-CAMERA-SERVER-ONLY
+  chmod +x CAP-NHAT-GATEWAY-v2.10.9.sh
+  ./CAP-NHAT-GATEWAY-v2.10.9.sh
 
-Cách dùng:
-1. Không cần chạy lại file SQL cũ.
-2. Mở supabase/migrate-v2.7.12-multiple-plan-attachments.sql trong gói này.
-3. Copy toàn bộ vào Supabase > SQL Editor > New Query.
-4. Run.
-
-File đã tạm disable USER TRIGGER trên vehicle_requests và trips chỉ trong transaction migration,
-sau đó enable lại trước khi commit.
+Không cần SQL. Không cần build frontend chỉ để sửa lỗi lưới camera.

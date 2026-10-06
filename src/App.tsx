@@ -8,6 +8,7 @@ import { DriverPage } from './pages/DriverPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DispatchPage } from './pages/DispatchPage'
 import { VehiclesPage } from './pages/VehiclesPage'
+import { TrackingPage } from './pages/TrackingPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { IncidentsPage } from './pages/IncidentsPage'
 import { MaintenancePage } from './pages/MaintenancePage'
@@ -51,11 +52,11 @@ export default function App() {
 
 const rolePages: Record<string, PageKey[]> = {
   department_head: ['requests', 'account'],
-  dispatcher: ['dashboard', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  dispatcher: ['dashboard', 'dispatch', 'tracking', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
   accountant: ['dashboard', 'dispatch', 'expenses', 'reports', 'account'],
-  fleet: ['dashboard', 'requests', 'dispatch', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
-  director: ['dashboard', 'dispatch', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
-  admin: ['dashboard', 'requests', 'dispatch', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
+  fleet: ['dashboard', 'requests', 'dispatch', 'tracking', 'vehicles', 'incidents', 'maintenance', 'reports', 'account'],
+  director: ['dashboard', 'dispatch', 'tracking', 'expenses', 'incidents', 'maintenance', 'reports', 'account'],
+  admin: ['dashboard', 'requests', 'dispatch', 'tracking', 'vehicles', 'expenses', 'incidents', 'maintenance', 'reports', 'account', 'users'],
 }
 
 function AuthenticatedArea({ role, page, setPage }: { role: string; page: PageKey; setPage: (page: PageKey) => void }) {
@@ -75,6 +76,7 @@ function Page({ page, onPage }: { page: PageKey; onPage: (page: PageKey) => void
   switch (page) {
     case 'requests': return <RequestsPage />
     case 'dispatch': return <DispatchPage />
+    case 'tracking': return <TrackingPage />
     case 'vehicles': return <VehiclesPage />
     case 'expenses': return <ExpensesPage />
     case 'incidents': return <IncidentsPage />

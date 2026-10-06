@@ -274,8 +274,11 @@ function buildPlayerUrl(session, deviceId, channel) {
   url.searchParams.set('lang', env('NAVICOM_CMSV6_PLAYER_LANG', 'en'))
   url.searchParams.set('devIdno', deviceId)
   url.searchParams.set('jsession', session.jsession)
-  url.searchParams.set('channel', String(channel))
-  url.searchParams.set('chn', String(channel))
+  // CMSV6 video.html: `channel` là SỐ CỬA SỔ preview, không phải index camera.
+  // Mỗi tab trong app chỉ xem một camera nên luôn dùng 1 cửa sổ,
+  // còn `chns` mới là danh sách index kênh cần phát (0 = trước, 1 = cabin).
+  url.searchParams.set('channel', '1')
+  url.searchParams.set('chns', String(channel))
   url.searchParams.set('stream', env('NAVICOM_CMSV6_STREAM', '1'))
   return url.toString()
 }

@@ -6,7 +6,7 @@ import type { AppData, Expense, Incident, Maintenance, Trip, UserRole, VehicleRe
 
 export type NotificationKind = 'request' | 'trip' | 'incident' | 'expense' | 'maintenance' | 'system'
 export type NotificationPriority = 'normal' | 'important' | 'urgent'
-export type NotificationTarget = 'dashboard' | 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance'
+export type NotificationTarget = 'dashboard' | 'requests' | 'dispatch' | 'tracking' | 'expenses' | 'incidents' | 'maintenance'
 
 export interface AppNotification {
   id: string
@@ -33,6 +33,7 @@ interface NotificationContextValue {
   dismissToast(id: string): void
   requestBrowserPermission(): Promise<NotificationPermission | 'unsupported'>
   refreshBrowserPermission(): NotificationPermission | 'unsupported'
+  pushNotification(item: AppNotification): void
 }
 
 interface EventSnapshot {
@@ -557,6 +558,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     return permission
   }, [])
 
+  const pushNotification = useCallback((item: AppNotification) => {
+    setNotifications((current) => {
+      if (current.some((existing) => existing.id === item.id)) return current
+      const next = [item, ...current].slice(0, MAX_NOTIFICATIONS)
+      persistNotifications(next)
+      setToastNotifications((toasts) => [item, ...toasts.filter((toast) => toast.id !== item.id)].slice(0, 3))
+      void showBrowserNotification(item)
+      return next
+    })
+  }, [persistNotifications, showBrowserNotification])
+
   const requestBrowserPermission = useCallback(async () => {
     if (!('Notification' in window) || !window.isSecureContext) {
       setBrowserPermission('unsupported')
@@ -587,7 +599,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     dismissToast,
     requestBrowserPermission,
     refreshBrowserPermission,
-  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, markTargetRead, notifications, refreshBrowserPermission, requestBrowserPermission, toastNotifications])
+    pushNotification,
+  }), [browserPermission, clearAll, dismissToast, markAllRead, markRead, markTargetRead, notifications, pushNotification, refreshBrowserPermission, requestBrowserPermission, toastNotifications])
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>
 }

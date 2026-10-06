@@ -243,6 +243,7 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
   })
   const [saving, setSaving] = useState(false)
   const [navicomVehicles, setNavicomVehicles] = useState<NavicomAccountVehicle[]>([])
+  const [selectedNavicomKey, setSelectedNavicomKey] = useState('')
   const [navicomLoading, setNavicomLoading] = useState(false)
   const [navicomError, setNavicomError] = useState<string | null>(null)
 
@@ -251,8 +252,12 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     setNavicomError(null)
     try {
       const result = await fetchNavicomAccountVehicles()
-      setNavicomVehicles(result.vehicles ?? [])
-      if (!(result.vehicles ?? []).length) setNavicomError('Tài khoản Navicom chưa trả về danh sách xe qua API.')
+      const vehicles: NavicomAccountVehicle[] = result.vehicles ?? []
+      setNavicomVehicles(vehicles)
+      const currentDeviceId = form.navicom_device_id.trim()
+      const currentVehicle = currentDeviceId ? vehicles.find((item) => item.device_id?.trim() === currentDeviceId) : undefined
+      setSelectedNavicomKey(currentVehicle?.key ?? '')
+      if (!vehicles.length) setNavicomError('Tài khoản Navicom chưa trả về danh sách xe qua API.')
     } catch (error) {
       setNavicomError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -260,15 +265,27 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     }
   }
 
-  function selectNavicomVehicle(deviceId: string) {
-    const selected = navicomVehicles.find((item) => item.device_id === deviceId)
+  function selectNavicomVehicle(vehicleKey: string) {
+    setSelectedNavicomKey(vehicleKey)
+    if (!vehicleKey) {
+      setNavicomError(null)
+      return
+    }
+
+    const selected = navicomVehicles.find((item) => item.key === vehicleKey)
+    if (!selected) return
+
+    const deviceId = selected.device_id?.trim() ?? ''
+    const displayName = selected.plate_number || selected.vehicle_name || 'Xe Navicom'
     setForm((current) => ({
       ...current,
-      navicom_enabled: Boolean(deviceId),
+      // Việc chọn xe Navicom không được tự bật/tắt tích hợp.
+      // Trạng thái này chỉ thay đổi khi người dùng thao tác checkbox "Kích hoạt Navicom".
       navicom_device_id: deviceId,
       navicom_channel_count: '2',
-      navicom_notes: selected ? [selected.plate_number, selected.vehicle_name].filter(Boolean).join(' · ') : current.navicom_notes,
+      navicom_notes: [selected.plate_number, selected.vehicle_name].filter(Boolean).join(' · ') || current.navicom_notes,
     }))
+    setNavicomError(deviceId ? null : `${displayName} chưa có Device ID từ Navicom. Kích hoạt Navicom vẫn được giữ nguyên; hãy nhập Device ID / IMEI thủ công nếu cần.`)
   }
 
   return <form className="form-grid" onSubmit={async (event) => {
@@ -320,8 +337,8 @@ function VehicleFields({ initial, onSubmit, onCancel, submitLabel }: { initial?:
     <div className="form-section-title span-2"><strong>Tích hợp Navicom</strong><small>Tài khoản Navicom hiện có 2 xe; mỗi xe cố định 2 kênh: Camera trước và Camera cabin.</small></div>
     <label className="navicom-toggle-field"><span>Kích hoạt Navicom</span><input type="checkbox" checked={form.navicom_enabled} onChange={(e) => setForm({ ...form, navicom_enabled: e.target.checked, navicom_channel_count: '2' })} /></label>
     <div className="navicom-account-picker">
-      <button type="button" className="secondary-button compact" onClick={() => void loadNavicomVehicles()} disabled={navicomLoading}>{navicomLoading ? 'Đang lấy xe...' : 'Lấy 2 xe từ tài khoản Navicom'}</button>
-      {navicomVehicles.length > 0 && <select value={form.navicom_device_id} onChange={(e) => selectNavicomVehicle(e.target.value)}><option value="">— Chọn xe Navicom —</option>{navicomVehicles.map((item) => <option key={item.key} value={item.device_id ?? ''}>{item.plate_number || item.vehicle_name || 'Xe Navicom'} · {item.device_id || 'Chưa có Device ID'}</option>)}</select>}
+      <button type="button" className="secondary-button compact" onClick={() => void loadNavicomVehicles()} disabled={navicomLoading}>{navicomLoading ? 'Đang lấy xe...' : 'Lấy danh sách xe Navicom'}</button>
+      {navicomVehicles.length > 0 && <select value={selectedNavicomKey} onChange={(e) => selectNavicomVehicle(e.target.value)}><option value="">— Chọn xe Navicom —</option>{navicomVehicles.map((item) => <option key={item.key} value={item.key}>{item.plate_number || item.vehicle_name || 'Xe Navicom'} · {item.device_id || 'Chưa có Device ID'}</option>)}</select>}
       {navicomError && <small className="danger-text">{navicomError}</small>}
     </div>
     <label>Mã thiết bị / IMEI<input value={form.navicom_device_id} onChange={(e) => setForm({ ...form, navicom_device_id: e.target.value.trimStart(), navicom_channel_count: '2' })} placeholder="Device ID / IMEI" /></label>

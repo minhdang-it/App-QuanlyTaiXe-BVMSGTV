@@ -1,4 +1,4 @@
-export type FocusTarget = 'requests' | 'dispatch' | 'expenses' | 'incidents' | 'maintenance'
+export type FocusTarget = 'requests' | 'dispatch' | 'tracking' | 'expenses' | 'incidents' | 'maintenance'
 
 const FOCUS_KEY = 'msg-car-navigation-focus'
 export const NAVIGATION_FOCUS_EVENT = 'msg-car-navigation-focus-event'
