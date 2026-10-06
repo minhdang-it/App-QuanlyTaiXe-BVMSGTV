@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { ADHOC_REPORT_LABELS, EXPENSE_LABELS, INCIDENT_LABELS, PURPOSE_LABELS } from '../lib/constants'
-import { formatCurrency, formatDate, formatDateTime, toDateTimeLocal, todayKey } from '../lib/utils'
+import { formatCurrency, formatDate, formatDateTime, getErrorMessage, toDateTimeLocal, todayKey } from '../lib/utils'
 import type { AppData, CreateTripInput, Trip, TripPurpose, TripStatus } from '../types/models'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
@@ -137,7 +137,7 @@ export function DispatchPage() {
       setSelectedTrip(null)
       setMessage({ text: 'Đã hủy chuyến đi.' })
     } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
+      setMessage({ text: getErrorMessage(error, 'Không thể xử lý chuyến đi. Vui lòng thử lại.'), error: true })
     }
   }
 
@@ -162,7 +162,7 @@ export function DispatchPage() {
       setSelectedTrip(null)
       setMessage({ text: 'Đã xóa chuyến đi.' })
     } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
+      setMessage({ text: getErrorMessage(error, 'Không thể xử lý chuyến đi. Vui lòng thử lại.'), error: true })
     }
   }
 
@@ -177,7 +177,7 @@ export function DispatchPage() {
       })
       setMessage({ text: 'Hành chính đã duyệt. Chuyến đã được giao cho tài xế.' })
     } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
+      setMessage({ text: getErrorMessage(error, 'Không thể xử lý chuyến đi. Vui lòng thử lại.'), error: true })
     }
   }
 
@@ -188,7 +188,7 @@ export function DispatchPage() {
       await updateTrip(trip.id, { status: 'cancelled', approval_rejection_reason: reason })
       setMessage({ text: 'Đã từ chối yêu cầu điều xe.' })
     } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : String(error), error: true })
+      setMessage({ text: getErrorMessage(error, 'Không thể xử lý chuyến đi. Vui lòng thử lại.'), error: true })
     }
   }
 

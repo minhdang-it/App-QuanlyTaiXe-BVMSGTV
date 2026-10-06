@@ -219,6 +219,9 @@ function friendlyTripError(error: unknown, fallback: string) {
   if (/trips_vehicle_time_no_overlap/i.test(message)) return 'Xe đã có chuyến khác trùng khoảng thời gian này. Vui lòng chọn xe khác hoặc đổi giờ.'
   if (/trips_driver_time_no_overlap/i.test(message)) return 'Tài xế đã có chuyến khác trùng khoảng thời gian này.'
   if (/trip_time_order/i.test(message)) return 'Thời gian dự kiến về phải sau giờ xuất phát.'
+  if (/Chuyển trạng thái Hành chính duyệt không hợp lệ|không ở bước chờ Hành chính duyệt|approval_mode|director_required/i.test(message)) {
+    return 'Cơ sở dữ liệu đang dùng flow điều xe cũ. Hãy chạy migration v2.11.1 để Hành chính duyệt và giao thẳng cho tài xế.'
+  }
   return message
 }
 
@@ -711,7 +714,7 @@ const supabaseBackend: BackendApi = {
     const optimistic = { id, ...payload } as Trip
     return await performOrQueue('trips.update', { id, ...payload }, async () => {
       const { data, error } = await client.from('trips').update(payload).eq('id', id).select().single()
-      if (error) throw error
+      if (error) throw new Error(friendlyTripError(error, 'Không thể cập nhật chuyến đi.'))
       return data as Trip
     }, optimistic)
   },

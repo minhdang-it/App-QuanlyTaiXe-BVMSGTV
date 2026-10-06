@@ -36,7 +36,7 @@ export function coordinateLabel(state: NavicomVehicleState | null | undefined) {
 export function buildNavicomFleetEvent(vehicle: Vehicle, previous: FleetStatus, next: FleetStatus, state: NavicomVehicleState | null): FleetEvent | null {
   const now = new Date().toISOString()
   const detailBase = state?.gps.address || coordinateLabel(state) || 'Không có vị trí mới'
-  if (['offline', 'unknown', 'stale'].includes(previous) && ['moving', 'stopped'].includes(next)) {
+  if (previous === 'offline' && ['moving', 'stopped'].includes(next)) {
     return { id: `navicom-${vehicle.id}-online-${now}`, vehicleId: vehicle.id, plateNumber: vehicle.plate_number, type: 'online', title: `${vehicle.plate_number} vừa online`, detail: `${detailBase} · ${state?.gps.speed_kph != null ? `${Math.round(state.gps.speed_kph)} km/h` : 'đã có GPS mới'}`, createdAt: now }
   }
   if (['moving', 'stopped'].includes(previous) && ['offline', 'unknown'].includes(next)) {

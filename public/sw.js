@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2110-fleet-command-center'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2112-fleet-command-center'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope
