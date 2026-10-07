@@ -77,7 +77,7 @@ export function OnlineUsersButton() {
     <button type="button" className="online-users-button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`${onlineProfiles.length} tài khoản đang trực tuyến`}>
       <span className="presence-dot online" aria-hidden="true" />
       <strong>{onlineProfiles.length}</strong>
-      <span className="online-users-label">tài khoản</span>
+      <span className="online-users-label">trực tuyến</span>
     </button>
     {open && <div className="online-users-popover" role="dialog" aria-label="Tài khoản đang trực tuyến">
       <div className="online-users-head">

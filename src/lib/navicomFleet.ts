@@ -17,7 +17,7 @@ export type FleetEvent = {
   createdAt: string
 }
 
-export function classifyNavicomState(state: NavicomVehicleState | null | undefined): FleetStatus {
+export function classifyNavicomState(state: NavicomVehicleState | null | undefined, previousState?: NavicomVehicleState | null): FleetStatus {
   const updatedAt = state?.gps.updated_at || state?.updated_at
   if (!updatedAt) return 'unknown'
   const time = new Date(updatedAt).getTime()
@@ -25,7 +25,35 @@ export function classifyNavicomState(state: NavicomVehicleState | null | undefin
   const ageMinutes = Math.max(0, (Date.now() - time) / 60_000)
   if (ageMinutes > NAVICOM_OFFLINE_MINUTES) return 'offline'
   if (ageMinutes > NAVICOM_ONLINE_MINUTES) return 'stale'
-  return Number(state?.gps.speed_kph ?? 0) > 3 ? 'moving' : 'stopped'
+
+  const speed = Number(state?.gps.speed_kph ?? 0)
+  if (Number.isFinite(speed) && speed > 2) return 'moving'
+
+  const currentLat = state?.gps.lat
+  const currentLng = state?.gps.lng
+  const previousLat = previousState?.gps.lat
+  const previousLng = previousState?.gps.lng
+  const previousAt = previousState?.gps.updated_at || previousState?.updated_at
+  if (currentLat != null && currentLng != null && previousLat != null && previousLng != null && previousAt) {
+    const previousTime = new Date(previousAt).getTime()
+    const seconds = Math.abs(time - previousTime) / 1000
+    if (Number.isFinite(previousTime) && seconds > 0 && seconds <= 180) {
+      const distance = haversineMeters(previousLat, previousLng, currentLat, currentLng)
+      // GPS CMSV6 đôi khi trả tốc độ 0 dù tọa độ đã thay đổi. Trên 18m/3 phút được xem là xe đang di chuyển.
+      if (distance >= 18) return 'moving'
+    }
+  }
+
+  if (state?.gps.ignition === true && speed > 0.5) return 'moving'
+  return 'stopped'
+}
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const rad = Math.PI / 180
+  const dLat = (lat2 - lat1) * rad
+  const dLng = (lng2 - lng1) * rad
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 export function coordinateLabel(state: NavicomVehicleState | null | undefined) {

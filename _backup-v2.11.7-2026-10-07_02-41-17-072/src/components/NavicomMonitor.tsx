@@ -91,7 +91,7 @@ export function NavicomMonitor({ vehicle, compact = false }: { vehicle: Vehicle 
         compact={compact}
       />}
 
-      {!compact && <CameraViewer channels={state.channels ?? []} mode={cameraMode} onMode={setCameraMode} deviceOnline={navicomStateIsFresh(state)} />}
+      {!compact && <CameraViewer channels={state.channels ?? []} mode={cameraMode} onMode={setCameraMode} />}
     </>}
   </section>
 }
@@ -140,14 +140,7 @@ function NavicomRealtimeMap({ lat, lng, plateNumber, speedKph, updatedAt, addres
   </section>
 }
 
-function navicomStateIsFresh(state: NavicomVehicleState | null | undefined) {
-  const value = state?.gps.updated_at || state?.updated_at
-  if (!value) return false
-  const stamp = new Date(value).getTime()
-  return Number.isFinite(stamp) && Date.now() - stamp <= 2 * 60_000
-}
-
-function CameraViewer({ channels, mode, onMode, deviceOnline }: { channels: NavicomCameraChannel[]; mode: 'both' | 'front' | 'cabin'; onMode: (mode: 'both' | 'front' | 'cabin') => void; deviceOnline: boolean }) {
+function CameraViewer({ channels, mode, onMode }: { channels: NavicomCameraChannel[]; mode: 'both' | 'front' | 'cabin'; onMode: (mode: 'both' | 'front' | 'cabin') => void }) {
   const twoChannels = channels.slice(0, 2)
   if (!twoChannels.length) return <div className="navicom-camera-empty"><Icon name="camera" size={18} /><span>Thiết bị chưa trả về kênh camera.</span></div>
 
@@ -160,13 +153,13 @@ function CameraViewer({ channels, mode, onMode, deviceOnline }: { channels: Navi
       <button type="button" className={mode === 'cabin' ? 'active' : ''} onClick={() => onMode('cabin')}>Camera cabin</button>
     </div>
     <div className={`navicom-dual-player mode-${mode}`}>
-      {(mode === 'both' || mode === 'front') && <NavicomCameraPane channel={front} fallbackLabel="Camera trước" deviceOnline={deviceOnline} />}
-      {(mode === 'both' || mode === 'cabin') && <NavicomCameraPane channel={cabin} fallbackLabel="Camera cabin" deviceOnline={deviceOnline} />}
+      {(mode === 'both' || mode === 'front') && <NavicomCameraPane channel={front} fallbackLabel="Camera trước" />}
+      {(mode === 'both' || mode === 'cabin') && <NavicomCameraPane channel={cabin} fallbackLabel="Camera cabin" />}
     </div>
   </div>
 }
 
-function NavicomCameraPane({ channel, fallbackLabel, deviceOnline }: { channel: NavicomCameraChannel | null; fallbackLabel: string; deviceOnline: boolean }) {
+function NavicomCameraPane({ channel, fallbackLabel }: { channel: NavicomCameraChannel | null; fallbackLabel: string }) {
   const label = channel?.label || fallbackLabel
   const paneRef = useRef<HTMLElement | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -209,17 +202,15 @@ function NavicomCameraPane({ channel, fallbackLabel, deviceOnline }: { channel: 
     <header>
       <div><span className={channel?.online === false ? 'offline' : channel?.online === true ? 'online' : 'unknown'} /><strong>{label}</strong></div>
       <div className="navicom-camera-actions">
-        {deviceOnline && channel?.online !== false && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
+        {channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
         <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>
       </div>
     </header>
-    <div className={`navicom-player ${!deviceOnline || channel?.online === false ? 'is-offline' : ''}`}>
-      {!deviceOnline ? <div className="navicom-camera-offline"><Icon name="cloud-off" size={22} /><strong>Xe đang offline</strong><span>Không mở luồng camera Navicom khi thiết bị ngoại tuyến.</span></div>
-        : channel?.online === false ? <div className="navicom-camera-offline"><Icon name="cloud-off" size={22} /><strong>Kênh camera ngoại tuyến</strong><span>Vui lòng thử lại khi thiết bị có tín hiệu.</span></div>
-          : channel?.player_url ? <iframe title={`Camera ${label}`} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
-            : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
-              : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={`Camera ${label}`} />
-                : <div className="navicom-camera-empty"><Icon name="camera" size={18} /><strong>{label} chưa khả dụng</strong><span>Gateway chưa cung cấp URL video.</span></div>}
+    <div className="navicom-player">
+      {channel?.player_url ? <iframe title={`Camera ${label}`} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
+        : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
+          : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={`Camera ${label}`} />
+            : <div className="navicom-camera-empty"><Icon name="camera" size={18} /><strong>{label} chưa khả dụng</strong><span>Thiết bị có thể đang ngoại tuyến hoặc Gateway chưa cung cấp URL video.</span></div>}
     </div>
     {expanded && forceLandscape && <div className="camera-rotate-hint">Đang hiển thị ngang để xem camera rõ hơn</div>}
   </article>

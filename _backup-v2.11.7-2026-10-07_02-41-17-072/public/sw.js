@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2117-mobile-offline-camera'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v2116-tracking-ux'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope

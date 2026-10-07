@@ -16,7 +16,7 @@ const STATUS_META: Record<FleetStatus, { label: string; tone: string }> = {
   moving: { label: 'Đang chạy', tone: 'moving' },
   stopped: { label: 'Đang dừng', tone: 'stopped' },
   stale: { label: 'Chậm cập nhật', tone: 'stale' },
-  offline: { label: 'Offline', tone: 'offline' },
+  offline: { label: 'Mất tín hiệu', tone: 'offline' },
   unknown: { label: 'Chưa có dữ liệu', tone: 'unknown' },
 }
 
@@ -182,7 +182,7 @@ export function TrackingPage() {
       <FleetMetric icon="activity" label="Xe online" value={metrics.online} tone="online" />
       <FleetMetric icon="navigation" label="Đang chạy" value={metrics.moving} tone="moving" />
       <FleetMetric icon="parking" label="Đang dừng" value={metrics.stopped} tone="stopped" />
-      <FleetMetric icon="cloud-off" label="Xe offline" value={metrics.offline} tone="offline" />
+      <FleetMetric icon="cloud-off" label="Mất tín hiệu" value={metrics.offline} tone="offline" />
       <FleetMetric icon="alert" label="Cảnh báo" value={metrics.warnings} tone="warning" />
     </section>
 
@@ -195,7 +195,7 @@ export function TrackingPage() {
         <div className="fleet-filter-tabs">
           {([
             ['all', 'Tất cả', metrics.total], ['online', 'Online', metrics.online], ['moving', 'Đang chạy', metrics.moving],
-            ['stopped', 'Đang dừng', metrics.stopped], ['offline', 'Offline', metrics.offline], ['warning', 'Cảnh báo', metrics.warnings],
+            ['stopped', 'Đang dừng', metrics.stopped], ['offline', 'Mất tín hiệu', metrics.offline], ['warning', 'Cảnh báo', metrics.warnings],
           ] as Array<[FilterKey, string, number]>).map(([key, label, count]) => <button type="button" key={key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}<b>{count}</b></button>)}
         </div>
         <label className="fleet-search"><Icon name="search" size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm biển số, tài xế, vị trí..." /></label>
@@ -270,7 +270,6 @@ function makeItemShape(item: {
 function VehicleCommandDetail({ item }: { item: ReturnType<typeof makeItemShape> }) {
   const [cameraMode, setCameraMode] = useState<'both' | 'front' | 'cabin'>('both')
   const status = STATUS_META[item.status]
-  const cameraDeviceOnline = (item.status === 'moving' || item.status === 'stopped') && !item.error
   const channels = (item.state?.channels ?? []).slice(0, 2)
   const front = channels[0] ?? null
   const cabin = channels[1] ?? null
@@ -305,14 +304,14 @@ function VehicleCommandDetail({ item }: { item: ReturnType<typeof makeItemShape>
         </div>
       </div>
       <div className={`fleet-dual-camera mode-${cameraMode}`}>
-        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel channel={front} title="Camera trước" vehicleOnline={cameraDeviceOnline} />}
-        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel channel={cabin} title="Camera cabin" vehicleOnline={cameraDeviceOnline} />}
+        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel channel={front} title="Camera trước" />}
+        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel channel={cabin} title="Camera cabin" />}
       </div>
     </div>
   </section>
 }
 
-function CameraPanel({ channel, title, vehicleOnline }: { channel: NavicomVehicleState['channels'][number] | null; title: string; vehicleOnline: boolean }) {
+function CameraPanel({ channel, title }: { channel: NavicomVehicleState['channels'][number] | null; title: string }) {
   const cardRef = useRef<HTMLElement | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [forceLandscape, setForceLandscape] = useState(false)
@@ -355,17 +354,15 @@ function CameraPanel({ channel, title, vehicleOnline }: { channel: NavicomVehicl
     <header>
       <div><span className={`fleet-camera-dot ${channel?.online === false ? 'offline' : channel?.online === true ? 'online' : 'unknown'}`} /><strong>{title}</strong></div>
       <div className="fleet-camera-actions">
-        {vehicleOnline && channel?.online !== false && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
+        {channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
         <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>
       </div>
     </header>
-    <div className={`fleet-camera-frame ${!vehicleOnline || channel?.online === false ? 'is-offline' : ''}`}>
-      {!vehicleOnline ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Xe đang offline</strong><small>Camera tạm ngưng để tránh mở trang Navicom khi thiết bị ngoại tuyến.</small></div>
-        : channel?.online === false ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Kênh camera ngoại tuyến</strong><small>GPS xe vẫn có thể hoạt động nhưng kênh camera này chưa sẵn sàng.</small></div>
-          : channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
-            : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
-              : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
-                : <div className="fleet-camera-unavailable"><Icon name="camera" size={24} /><strong>{title} chưa khả dụng</strong><span>Gateway chưa cung cấp URL video.</span></div>}
+    <div className="fleet-camera-frame">
+      {channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
+        : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
+          : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
+            : <div className="fleet-camera-unavailable"><Icon name="camera" size={24} /><strong>{title} chưa khả dụng</strong><span>Thiết bị có thể đang ngoại tuyến hoặc Gateway chưa trả URL video.</span></div>}
     </div>
     {expanded && forceLandscape && <div className="camera-rotate-hint">Đang hiển thị ngang để xem camera rõ hơn</div>}
   </article>
@@ -516,7 +513,7 @@ function FleetTileMap({ items, selectedVehicleId, onSelect }: { items: Array<Ret
         <button type="button" className="fleet-map-reset" onClick={resetView} aria-label="Căn lại bản đồ">⌖</button>
         <button type="button" className="fleet-map-fullscreen" onClick={() => void toggleMapFullscreen()} aria-label="Toàn màn hình bản đồ">⛶</button>
       </div>
-      <div className="fleet-map-legend"><span><i className="moving" /> Đang chạy</span><span><i className="stopped" /> Đang dừng</span><span><i className="offline" /> Offline</span></div>
+      <div className="fleet-map-legend"><span><i className="moving" /> Đang chạy</span><span><i className="stopped" /> Đang dừng</span><span><i className="offline" /> Mất tín hiệu</span></div>
       <small className="fleet-map-credit">© OpenStreetMap contributors · GPS Navicom</small>
     </div>
   </div>

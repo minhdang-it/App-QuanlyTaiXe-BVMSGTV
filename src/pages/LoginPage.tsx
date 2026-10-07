@@ -43,46 +43,83 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login-page">
-      <section className="login-hero" aria-label="Trung tâm điều hành đội xe Bệnh viện Mắt Sài Gòn Trà Vinh">
-        <div className="login-hero-bg" aria-hidden="true" />
-        <header className="login-hero-brand">
-          <span className="login-logo"><img src="/logo-bvmsgtv-v201.png" alt="" /></span>
-          <div><strong>Điều phối xe</strong><small>Bệnh viện Mắt Sài Gòn Trà Vinh</small></div>
+    <main className="login-page login-cinematic">
+      <div className="login-curtain login-curtain-left" aria-hidden="true" />
+      <div className="login-curtain login-curtain-right" aria-hidden="true" />
+
+      <section className="login-showcase" aria-label="Trung tâm điều hành đội xe Bệnh viện Mắt Sài Gòn Trà Vinh">
+        <div className="login-hospital-backdrop" aria-hidden="true" />
+        <div className="login-grid-light" aria-hidden="true" />
+        <div className="login-aurora login-aurora-a" aria-hidden="true" />
+        <div className="login-aurora login-aurora-b" aria-hidden="true" />
+
+        <header className="login-brand-lockup">
+          <span className="login-brand-logo"><img src="/logo-bvmsgtv-v201.png" alt="" /></span>
+          <div>
+            <strong>Điều phối xe</strong>
+            <small>Bệnh viện Mắt Sài Gòn Trà Vinh</small>
+          </div>
         </header>
 
-        <div className="login-hero-copy">
-          <span className="login-kicker"><i /> Hệ thống đang hoạt động</span>
-          <h2>Điều hành đội xe tập trung, minh bạch từng hành trình.</h2>
-          <p>Giao chuyến, duyệt chuyến, kilomet, chi phí, sự cố và bảo dưỡng trên một nền tảng thống nhất cho toàn bệnh viện.</p>
+        <div className="login-showcase-copy">
+          <span className="login-live-pill"><i /> Trung tâm điều hành đang trực tuyến</span>
+          <h1>Điều hành đội xe<br /><em>như một trung tâm chỉ huy.</em></h1>
+          <p>Phân công chuyến, GPS Navicom, camera, chi phí và bảo dưỡng — tập trung trong một giao diện duy nhất.</p>
+
+          <div className="login-command-chips">
+            <span><Icon name="navigation" size={15} /> GPS realtime</span>
+            <span><Icon name="camera" size={15} /> 2 camera / xe</span>
+            <span><Icon name="shield" size={15} /> Phân quyền nội bộ</span>
+          </div>
         </div>
 
-        <ul className="login-capabilities">
-          <li><span><Icon name="route" size={18} /></span><div><strong>Điều phối → Hành chính → Tài xế</strong><small>Hành chính duyệt là xe đi, không chờ đợi</small></div></li>
-          <li><span><Icon name="navigation" size={18} /></span><div><strong>Theo dõi GPS thời gian thực</strong><small>Vị trí xe đang chạy và trạng thái trực tuyến</small></div></li>
-          <li><span><Icon name="chart" size={18} /></span><div><strong>Báo cáo tháng cho Ban Giám đốc</strong><small>Chi phí vận hành, chuyến đột xuất, dự báo</small></div></li>
-        </ul>
+        <div className="login-fleet-stage" aria-label="Xe phục vụ Bệnh viện Mắt Sài Gòn Trà Vinh">
+          <div className="login-road-orbit" aria-hidden="true"><span /><span /><span /></div>
+          <article className="login-vehicle-card login-vehicle-hiace">
+            <span className="login-vehicle-status"><i /> Xe điều phối</span>
+            <img src="/hiace-user-v201.png" alt="Xe Toyota Hiace phục vụ điều phối bệnh viện" />
+            <div className="login-vehicle-hospital-badge"><img src="/logo-bvmsgtv-v201.png" alt="" /><span>BVMSGTV</span></div>
+          </article>
+          <article className="login-vehicle-card login-vehicle-fortuner">
+            <span className="login-vehicle-status"><i /> Xe công tác</span>
+            <img src="/fortuner-user-v201.png" alt="Xe Toyota Fortuner phục vụ công tác bệnh viện" />
+            <div className="login-vehicle-hospital-badge"><img src="/logo-bvmsgtv-v201.png" alt="" /><span>BVMSGTV</span></div>
+          </article>
+        </div>
 
-        <footer className="login-hero-footer">© {new Date().getFullYear()} Bệnh viện Mắt Sài Gòn Trà Vinh · Phòng Hành chính</footer>
+        <footer className="login-showcase-footer">
+          <span>© {new Date().getFullYear()} Bệnh viện Mắt Sài Gòn Trà Vinh</span>
+          <span>Hệ thống nội bộ · Phòng Hành chính</span>
+        </footer>
       </section>
 
       <section className="login-panel" aria-label="Đăng nhập hệ thống điều phối xe">
+        <div className="login-panel-glow" aria-hidden="true" />
+        <div className="login-eye-orbit" aria-hidden="true"><i /><i /><i /></div>
+
         <div className="login-card">
+          <div className="login-mobile-vehicle" aria-hidden="true">
+            <div className="login-mobile-vehicle-backdrop" />
+            <img src="/hiace-user-v201.png" alt="" />
+            <span>Đội xe BVMSGTV</span>
+          </div>
+
           <div className="login-mobile-brand">
             <span className="login-logo"><img src="/logo-bvmsgtv-v201.png" alt="" /></span>
             <div><strong>Điều phối xe</strong><small>Bệnh viện Mắt Sài Gòn Trà Vinh</small></div>
           </div>
 
           <header className="login-heading">
-            <h1>Đăng nhập</h1>
-            <p>Dùng số điện thoại đã được Quản trị cấp tài khoản.</p>
+            <span className="login-heading-kicker"><Icon name="sparkles" size={14} /> Welcome back</span>
+            <h2>Chào mừng trở lại</h2>
+            <p>Đăng nhập để tiếp tục điều hành đội xe.</p>
           </header>
 
           <form onSubmit={submit} className="login-form">
             <label className="login-field">
               <span>Số điện thoại</span>
               <div className="login-input">
-                <Icon name="phone" size={17} />
+                <Icon name="phone" size={18} />
                 <input
                   inputMode="tel"
                   autoComplete="username"
@@ -97,7 +134,7 @@ export function LoginPage() {
             <label className="login-field">
               <span>Mật khẩu</span>
               <div className="login-input">
-                <Icon name="lock" size={17} />
+                <Icon name="lock" size={18} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
@@ -107,7 +144,7 @@ export function LoginPage() {
                   required
                 />
                 <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>
-                  <Icon name="eye" size={17} />
+                  <Icon name="eye" size={18} />
                 </button>
               </div>
             </label>
@@ -123,14 +160,19 @@ export function LoginPage() {
             {error && <div className="form-error" role="alert"><Icon name="alert" size={16} /><span><strong>Không thể đăng nhập.</strong> {error}</span></div>}
 
             <button type="submit" className="primary-button login-submit" disabled={loading}>
-              {loading ? <><i className="login-spinner" />Đang xác thực...</> : <>Đăng nhập<Icon name="arrow-right" size={17} /></>}
+              <span className="login-submit-shine" aria-hidden="true" />
+              {loading ? <><i className="login-spinner" />Đang xác thực...</> : <>Vào trung tâm điều hành<Icon name="arrow-right" size={18} /></>}
             </button>
           </form>
 
           <aside className="login-security">
-            <Icon name="shield" size={18} />
-            <span>Mọi phiên đăng nhập và thao tác đều được ghi nhận theo tài khoản và phân quyền theo vai trò.</span>
+            <Icon name="shield" size={19} />
+            <span>Phiên đăng nhập được bảo vệ và phân quyền theo từng vai trò trong bệnh viện.</span>
           </aside>
+
+          <div className="login-system-note">
+            <i /> Hệ thống nội bộ BVMSGTV
+          </div>
         </div>
       </section>
     </main>
