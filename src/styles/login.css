@@ -97,39 +97,102 @@
 }
 .login-command-chips .ui-icon { color: #75e8ca; }
 
-.login-fleet-stage { position: absolute!important; left: 44%; right: 3%; bottom: 18px; height: 300px; z-index: 3!important; pointer-events: none; }
+.login-fleet-stage {
+  position: absolute!important;
+  left: 4%;
+  right: 4%;
+  bottom: 18px;
+  height: 270px;
+  z-index: 3!important;
+  pointer-events: none;
+}
 .login-road-orbit {
-  position: absolute; left: 0; right: 2%; bottom: 14px; height: 122px;
-  border: 1px solid rgba(143,240,216,.22); border-radius: 50%;
-  transform: perspective(430px) rotateX(67deg) rotateZ(-5deg);
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  bottom: 10px;
+  height: 104px;
+  border: 1px solid rgba(143,240,216,.22);
+  border-radius: 50%;
+  transform: perspective(430px) rotateX(67deg) rotateZ(-2deg);
   background: radial-gradient(ellipse at center, rgba(41,189,151,.14), transparent 66%);
   box-shadow: 0 0 80px rgba(23,209,163,.08) inset;
 }
 .login-road-orbit::before, .login-road-orbit::after { content: ''; position: absolute; inset: 18px 9%; border: 1px dashed rgba(255,255,255,.22); border-radius: inherit; }
-.login-road-orbit::after { inset: 42px 22%; border-color: rgba(110,236,202,.18); }
+.login-road-orbit::after { inset: 39px 22%; border-color: rgba(110,236,202,.18); }
 .login-road-orbit span { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #62e8c5; box-shadow: 0 0 16px #62e8c5; animation: loginRoadDot 5s linear infinite; }
 .login-road-orbit span:nth-child(1) { left: 12%; top: 47%; }
 .login-road-orbit span:nth-child(2) { right: 19%; top: 27%; animation-delay: -1.5s; }
 .login-road-orbit span:nth-child(3) { right: 38%; bottom: 18%; animation-delay: -3s; }
 @keyframes loginRoadDot { 50% { opacity: .25; transform: scale(.65); } }
 
-.login-vehicle-card { position: absolute; bottom: 38px; filter: drop-shadow(0 22px 24px rgba(0,0,0,.36)); }
-.login-vehicle-card > img { display: block; width: 100%; height: auto; object-fit: contain; user-select: none; }
-.login-vehicle-hiace { right: 2%; width: min(34vw, 500px); animation: loginVehicleIn .9s cubic-bezier(.18,.8,.2,1) .58s both, loginVehicleFloat 5.5s ease-in-out 1.55s infinite; }
-.login-vehicle-fortuner { left: -1%; bottom: 52px; width: min(21vw, 300px); opacity: .88; animation: loginVehicleInLeft .95s cubic-bezier(.18,.8,.2,1) .72s both, loginVehicleFloat 6.2s ease-in-out 1.8s infinite reverse; }
-@keyframes loginVehicleIn { from { opacity: 0; transform: translate3d(48%,24px,0) scale(.86); } }
-@keyframes loginVehicleInLeft { from { opacity: 0; transform: translate3d(-42%,22px,0) scale(.86); } }
-@keyframes loginVehicleFloat { 50% { transform: translateY(-7px); } }
+/* v2.11.9 — 3 xe tách riêng: 16 chỗ | 7 chỗ | 16 chỗ */
+.login-fleet-stage-three { display: block; }
+.login-vehicle-card {
+  position: absolute;
+  bottom: 34px;
+  width: 31%;
+  filter: drop-shadow(0 20px 22px rgba(0,0,0,.34));
+  transform-origin: center bottom;
+}
+.login-vehicle-card > img { display: block; width: 100%; height: 178px; object-fit: contain; user-select: none; }
+.login-vehicle-van-left {
+  left: 0;
+  animation: loginVehicleLeftIn .9s cubic-bezier(.18,.8,.2,1) .55s both, loginVehicleFloatLeft 6.2s ease-in-out 1.5s infinite;
+}
+.login-vehicle-suv-center {
+  left: 50%;
+  width: 28%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  animation: loginVehicleCenterIn .9s cubic-bezier(.18,.8,.2,1) .67s both, loginVehicleFloatCenter 5.7s ease-in-out 1.6s infinite;
+}
+.login-vehicle-van-right {
+  right: 0;
+  animation: loginVehicleRightIn .9s cubic-bezier(.18,.8,.2,1) .78s both, loginVehicleFloatRight 6.4s ease-in-out 1.7s infinite;
+}
+@keyframes loginVehicleLeftIn { from { opacity: 0; transform: translate3d(-42%,22px,0) scale(.86); } }
+@keyframes loginVehicleCenterIn { from { opacity: 0; transform: translate3d(-50%,24px,0) scale(.86); } to { opacity: 1; transform: translate3d(-50%,0,0) scale(1); } }
+@keyframes loginVehicleRightIn { from { opacity: 0; transform: translate3d(42%,22px,0) scale(.86); } }
+@keyframes loginVehicleFloatLeft { 50% { transform: translateY(-6px); } }
+@keyframes loginVehicleFloatCenter { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-7px); } }
+@keyframes loginVehicleFloatRight { 50% { transform: translateY(-5px); } }
 .login-vehicle-status {
-  position: absolute; right: 5%; top: -6px; z-index: 3; display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 9px; border-radius: 999px; background: rgba(5,37,30,.78); border: 1px solid rgba(255,255,255,.12);
-  color: #ddfff6; font-size: 9px; font-weight: 800; backdrop-filter: blur(10px);
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(5,37,30,.8);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #ddfff6;
+  font-size: 9px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
 }
 .login-vehicle-status i { width: 6px; height: 6px; border-radius: 50%; background: #49e6ad; box-shadow: 0 0 10px #49e6ad; }
 .login-vehicle-hospital-badge {
-  position: absolute; right: 18%; bottom: 25%; display: flex; align-items: center; gap: 4px;
-  padding: 4px 6px 4px 4px; border-radius: 8px; background: rgba(255,255,255,.9); color: #0d5748;
-  font-size: 8px; font-weight: 900; letter-spacing: .02em; box-shadow: 0 4px 12px rgba(0,0,0,.18);
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px 4px 4px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.92);
+  color: #0d5748;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  box-shadow: 0 4px 12px rgba(0,0,0,.18);
 }
 .login-vehicle-hospital-badge img { width: 18px; height: 18px; object-fit: contain; }
 .login-showcase-footer { display: flex; justify-content: space-between; gap: 16px; color: rgba(255,255,255,.5); font-size: 10px; }
@@ -221,10 +284,12 @@
 @media (max-width: 1080px) {
   .login-page.login-cinematic { grid-template-columns: minmax(0, 1fr) minmax(390px, .78fr); }
   .login-showcase { padding: 30px; }
-  .login-showcase-copy { padding-bottom: 130px; }
-  .login-fleet-stage { left: 37%; }
-  .login-vehicle-hiace { width: min(39vw, 430px); }
-  .login-vehicle-fortuner { display: none; }
+  .login-showcase-copy { padding-bottom: 205px; }
+  .login-fleet-stage { left: 3%; right: 3%; height: 225px; }
+  .login-vehicle-card { width: 31%; }
+  .login-vehicle-suv-center { width: 27%; }
+  .login-vehicle-card > img { height: 148px; }
+  .login-vehicle-status { font-size: 8px; padding: 5px 7px; }
 }
 
 /* Mobile first: 80% người dùng điện thoại */
@@ -264,17 +329,23 @@
   .login-mobile-vehicle {
     display: block;
     position: relative;
-    height: 116px;
-    margin: -76px -5px 0;
+    height: 142px;
+    margin: -88px -5px 0;
     border-radius: 18px;
     overflow: hidden;
     background: linear-gradient(145deg, rgba(6,81,66,.97), rgba(8,139,109,.88));
     box-shadow: 0 15px 28px rgba(10,89,72,.18);
   }
-  .login-mobile-vehicle-backdrop { position: absolute; inset: 0; background: radial-gradient(circle at 82% 12%, rgba(117,242,209,.38), transparent 35%), linear-gradient(120deg, transparent 45%, rgba(255,255,255,.06) 45% 47%, transparent 47%); }
-  .login-mobile-vehicle img { position: absolute; width: 210px; max-width: 64%; right: 4px; bottom: -3px; filter: drop-shadow(0 10px 10px rgba(0,0,0,.25)); animation: loginMobileVehicle 5s ease-in-out infinite; }
-  @keyframes loginMobileVehicle { 50% { transform: translateY(-4px); } }
-  .login-mobile-vehicle > span { position: absolute; left: 15px; bottom: 16px; width: 90px; color: #dcfff6; font-size: 13px; line-height: 1.1; font-weight: 800; }
+  .login-mobile-vehicle-backdrop { position: absolute; inset: 0; background: radial-gradient(circle at 50% 8%, rgba(117,242,209,.34), transparent 40%), linear-gradient(120deg, transparent 45%, rgba(255,255,255,.06) 45% 47%, transparent 47%); }
+  .login-mobile-fleet-row { position: absolute; inset: 20px 8px 27px; display: grid; grid-template-columns: 1fr .86fr 1fr; gap: 4px; align-items: end; }
+  .login-mobile-fleet-item { position: relative; min-width: 0; height: 86px; display: grid; place-items: end center; }
+  .login-mobile-fleet-item img { position: static; width: 100%; max-width: 124px; height: 72px; object-fit: contain; filter: drop-shadow(0 8px 8px rgba(0,0,0,.24)); animation: loginMobileVehicle 5s ease-in-out infinite; }
+  .login-mobile-fleet-suv img { max-width: 96px; }
+  .login-mobile-fleet-item:nth-child(2) img { animation-delay: -.7s; }
+  .login-mobile-fleet-item:nth-child(3) img { animation-delay: -1.4s; }
+  .login-mobile-fleet-item span { position: absolute; left: 50%; bottom: -14px; transform: translateX(-50%); padding: 2px 6px; border-radius: 999px; background: rgba(4,43,35,.58); color: #e8fff9; font-size: 8px; font-weight: 800; white-space: nowrap; }
+  @keyframes loginMobileVehicle { 50% { transform: translateY(-3px); } }
+  .login-mobile-vehicle > strong { position: absolute; left: 12px; top: 10px; z-index: 2; color: #dcfff6; font-size: 11px; line-height: 1.1; font-weight: 800; letter-spacing: .02em; }
   .login-heading-kicker { display: none; }
   .login-heading h2 { font-size: 25px; }
   .login-heading p { font-size: 12.5px; }
@@ -289,12 +360,14 @@
   .login-card { padding-inline: 14px; }
   .login-options { align-items: flex-start; }
   .login-options label { max-width: 170px; }
-  .login-mobile-vehicle { height: 108px; }
-  .login-mobile-vehicle img { width: 190px; }
+  .login-mobile-vehicle { height: 132px; }
+  .login-mobile-fleet-row { inset-inline: 5px; }
+  .login-mobile-fleet-item img { max-width: 108px; }
+  .login-mobile-fleet-suv img { max-width: 84px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .login-curtain, .login-hospital-backdrop, .login-aurora, .login-road-orbit span,
   .login-vehicle-card, .login-eye-orbit::before, .login-eye-orbit::after,
-  .login-submit-shine, .login-card, .login-mobile-vehicle img { animation: none!important; }
+  .login-submit-shine, .login-card, .login-mobile-fleet-item img { animation: none!important; }
 }

@@ -73,16 +73,24 @@ export function LoginPage() {
           </div>
         </div>
 
-        <div className="login-fleet-stage" aria-label="Xe phục vụ Bệnh viện Mắt Sài Gòn Trà Vinh">
+        <div className="login-fleet-stage login-fleet-stage-three" aria-label="Đội xe phục vụ Bệnh viện Mắt Sài Gòn Trà Vinh">
           <div className="login-road-orbit" aria-hidden="true"><span /><span /><span /></div>
-          <article className="login-vehicle-card login-vehicle-hiace">
-            <span className="login-vehicle-status"><i /> Xe điều phối</span>
-            <img src="/hiace-user-v201.png" alt="Xe Toyota Hiace phục vụ điều phối bệnh viện" />
+
+          <article className="login-vehicle-card login-vehicle-van-left">
+            <span className="login-vehicle-status"><i /> Xe 16 chỗ 01</span>
+            <img src="/hiace-user-v201.png" alt="Xe Toyota Hiace 16 chỗ phục vụ bệnh viện" />
             <div className="login-vehicle-hospital-badge"><img src="/logo-bvmsgtv-v201.png" alt="" /><span>BVMSGTV</span></div>
           </article>
-          <article className="login-vehicle-card login-vehicle-fortuner">
-            <span className="login-vehicle-status"><i /> Xe công tác</span>
-            <img src="/fortuner-user-v201.png" alt="Xe Toyota Fortuner phục vụ công tác bệnh viện" />
+
+          <article className="login-vehicle-card login-vehicle-suv-center">
+            <span className="login-vehicle-status"><i /> Xe điều phối 7 chỗ</span>
+            <img src="/fortuner-user-v201.png" alt="Xe Toyota Fortuner 7 chỗ phục vụ điều phối bệnh viện" />
+            <div className="login-vehicle-hospital-badge"><img src="/logo-bvmsgtv-v201.png" alt="" /><span>BVMSGTV</span></div>
+          </article>
+
+          <article className="login-vehicle-card login-vehicle-van-right">
+            <span className="login-vehicle-status"><i /> Xe 16 chỗ 02</span>
+            <img src="/hiace-user-v201.png" alt="Xe Toyota Hiace 16 chỗ thứ hai phục vụ bệnh viện" />
             <div className="login-vehicle-hospital-badge"><img src="/logo-bvmsgtv-v201.png" alt="" /><span>BVMSGTV</span></div>
           </article>
         </div>
@@ -98,10 +106,14 @@ export function LoginPage() {
         <div className="login-eye-orbit" aria-hidden="true"><i /><i /><i /></div>
 
         <div className="login-card">
-          <div className="login-mobile-vehicle" aria-hidden="true">
+          <div className="login-mobile-vehicle login-mobile-fleet-three" aria-hidden="true">
             <div className="login-mobile-vehicle-backdrop" />
-            <img src="/hiace-user-v201.png" alt="" />
-            <span>Đội xe BVMSGTV</span>
+            <div className="login-mobile-fleet-row">
+              <div className="login-mobile-fleet-item"><img src="/hiace-user-v201.png" alt="" /><span>16 chỗ</span></div>
+              <div className="login-mobile-fleet-item login-mobile-fleet-suv"><img src="/fortuner-user-v201.png" alt="" /><span>7 chỗ</span></div>
+              <div className="login-mobile-fleet-item"><img src="/hiace-user-v201.png" alt="" /><span>16 chỗ</span></div>
+            </div>
+            <strong>Đội xe BVMSGTV</strong>
           </div>
 
           <div className="login-mobile-brand">
