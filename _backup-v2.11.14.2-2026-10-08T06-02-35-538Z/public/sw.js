@@ -1,4 +1,4 @@
-const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v211142-camera-auto'
+const CACHE = 'dieu-phoi-xe-bvmsgtv-shell-v21114-gps-camera-separated'
 
 self.addEventListener('install', (event) => {
   const scope = self.registration.scope

@@ -1,0 +1,115 @@
+function CameraPanel({ channel, title, gpsStatus, stateOnline, gatewayError }: {
+  channel: NavicomVehicleState['channels'][number] | null
+  title: string
+  gpsStatus: FleetStatus
+  stateOnline: boolean
+  gatewayError: string | null
+}) {
+  const cardRef = useRef<HTMLElement | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [forceLandscape, setForceLandscape] = useState(false)
+  const [streamError, setStreamError] = useState(false)
+
+  // Không lấy trạng thái GPS (moving/stopped/stale/offline) làm trạng thái camera.
+  // CMSV6 chỉ có dữ liệu GPS mới/cũ, còn online của từng kênh là tùy chọn.
+  // Khi Gateway cung cấp URL và không báo lỗi/kênh offline: tự động tải trình phát.
+  const streamKey = channel?.player_url || channel?.hls_url || channel?.snapshot_url || ''
+  const reportedOffline = channel?.online === false
+  const gatewayHealthy = !gatewayError
+  const streamAvailable = Boolean(streamKey)
+  const shouldLoad = gatewayHealthy && streamAvailable && !reportedOffline && !streamError
+
+  useEffect(() => {
+    // Chuyển kênh/đổi phiên video sẽ cho phép thử lại mà không cần nút thủ công.
+    setStreamError(false)
+  }, [streamKey])
+
+  useEffect(() => {
+    if (!expanded) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const handleFullscreen = () => {
+      if (!fullscreenElement()) {
+        setExpanded(false)
+        setForceLandscape(false)
+      }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreen)
+    document.addEventListener('webkitfullscreenchange', handleFullscreen as EventListener)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('fullscreenchange', handleFullscreen)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreen as EventListener)
+    }
+  }, [expanded])
+
+  const toggleFullscreen = async () => {
+    if (expanded) {
+      await exitLandscapeFullscreen()
+      setExpanded(false)
+      setForceLandscape(false)
+      return
+    }
+    setExpanded(true)
+    const element = cardRef.current
+    if (!element) return
+    const result = await enterLandscapeFullscreen(element)
+    setForceLandscape(!result.orientationLocked)
+  }
+
+  // Phân biệt rõ offline do Navicom xác nhận với Gateway/GPS không phản hồi.
+  let cameraTitle = 'Chưa có tín hiệu camera'
+  let cameraDetail = 'Hiện chưa có đường dẫn phát video cho kênh này.'
+  if (gatewayError) {
+    cameraTitle = 'Không kết nối được Navicom Gateway'
+    cameraDetail = 'Chưa xác minh được trạng thái camera. Không đồng nghĩa xe offline.'
+  } else if (reportedOffline) {
+    cameraTitle = 'Camera offline'
+    cameraDetail = 'Hệ thống Navicom báo kênh camera này ngoại tuyến.'
+  } else if (streamError) {
+    cameraTitle = 'Không tải được camera'
+    cameraDetail = 'Luồng phát gặp lỗi hoặc bị ngắt. Trạng thái thiết bị cần được xác minh.'
+  }
+
+  // `stateOnline` chỉ là cờ GPS để tương thích callsite hiện tại, không dùng chặn video.
+  // `gpsStatus` chỉ mô tả GPS, KHÔNG dùng quyết định camera offline.
+  void gpsStatus
+  void stateOnline
+
+  return <article ref={cardRef} className={`fleet-camera-card ${expanded ? 'camera-landscape-expanded' : ''} ${forceLandscape ? 'camera-force-landscape' : ''}`}>
+    <header>
+      <div><span className={`fleet-camera-dot ${reportedOffline ? 'offline' : shouldLoad ? channel?.online === true ? 'online' : 'unknown' : 'unknown'}`} /><strong>{title}</strong></div>
+      <div className="fleet-camera-actions">
+        {shouldLoad && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noopener noreferrer">Mở riêng</a>}
+        {shouldLoad && <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>}
+      </div>
+    </header>
+    <div className={`fleet-camera-frame ${!shouldLoad ? 'is-unverified' : ''}`}>
+      {shouldLoad
+        ? (channel?.player_url
+          ? <iframe
+              key={streamKey}
+              title={title}
+              src={channel.player_url}
+              loading="eager"
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+              // Không cho phép alert()/confirm() từ iframe Navicom (popup cũ gây khó chịu).
+              // CMSV6 vẫn được phép chạy JS, tải nội dung và trình chiếu.
+              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+              onError={() => setStreamError(true)}
+            />
+          : channel?.hls_url
+            ? <video key={streamKey} src={channel.hls_url} controls autoPlay muted playsInline onError={() => setStreamError(true)} />
+            : channel?.snapshot_url
+              ? <img key={streamKey} src={channel.snapshot_url} alt={title} onError={() => setStreamError(true)} />
+              : null)
+        : <div className="fleet-camera-unavailable fleet-camera-pending">
+            <Icon name="camera" size={24} />
+            <strong>{cameraTitle}</strong>
+            <span>{cameraDetail}</span>
+          </div>}
+    </div>
+    {expanded && forceLandscape && <div className="camera-rotate-hint">Đang hiển thị ngang để xem camera rõ hơn</div>}
+  </article>
+}
