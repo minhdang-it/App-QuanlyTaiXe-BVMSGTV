@@ -1,0 +1,16 @@
+/* Điều phối xe BVMSGTV — giao diện v3. Thứ tự import quyết định độ ưu tiên. */
+@import './styles/base.css';
+@import './styles/shell.css';
+@import './styles/components.css';
+@import './styles/dashboard.css';
+@import './styles/dispatch.css';
+@import './styles/pages.css';
+@import './styles/reports.css';
+@import './styles/driver.css';
+@import './styles/login.css';
+@import './styles/tracking.css';
+@import './styles/fleet-smooth-map.css';
+/* v2.10.3 Navicom local diagnostics */
+.navicom-mode-note{display:flex;align-items:flex-start;gap:8px;margin:10px 0;padding:9px 11px;border:1px solid #d9e8e4;border-radius:12px;background:#f3f9f7;color:#55726a;font-size:11px;line-height:1.5}
+.navicom-mode-note svg{flex:0 0 auto;margin-top:1px;color:#0f8269}
+

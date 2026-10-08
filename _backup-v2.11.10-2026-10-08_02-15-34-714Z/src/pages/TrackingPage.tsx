@@ -305,38 +305,17 @@ function VehicleCommandDetail({ item }: { item: ReturnType<typeof makeItemShape>
         </div>
       </div>
       <div className={`fleet-dual-camera mode-${cameraMode}`}>
-        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel key={`${item.vehicle.id}:front`} channel={front} title="Camera trước" gpsStatus={item.status} stateOnline={item.state?.online === true} gatewayError={item.error ?? null} />}
-        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel key={`${item.vehicle.id}:cabin`} channel={cabin} title="Camera cabin" gpsStatus={item.status} stateOnline={item.state?.online === true} gatewayError={item.error ?? null} />}
+        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel channel={front} title="Camera trước" vehicleOnline={cameraDeviceOnline} />}
+        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel channel={cabin} title="Camera cabin" vehicleOnline={cameraDeviceOnline} />}
       </div>
     </div>
   </section>
 }
 
-function CameraPanel({ channel, title, gpsStatus, stateOnline, gatewayError }: {
-  channel: NavicomVehicleState['channels'][number] | null
-  title: string
-  gpsStatus: FleetStatus
-  stateOnline: boolean
-  gatewayError: string | null
-}) {
+function CameraPanel({ channel, title, vehicleOnline }: { channel: NavicomVehicleState['channels'][number] | null; title: string; vehicleOnline: boolean }) {
   const cardRef = useRef<HTMLElement | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [forceLandscape, setForceLandscape] = useState(false)
-  const [manualRequested, setManualRequested] = useState(false)
-
-  // CMSV6 hiện đánh giá `state.online` qua thời điểm GPS, không phải kiểm tra video.
-  // Không dùng trạng thái GPS "Chậm cập nhật" để tuyên bố camera ngoại tuyến.
-  const streamAvailable = Boolean(channel?.player_url || channel?.hls_url || channel?.snapshot_url)
-  const reportedOffline = channel?.online === false
-  const gatewayHealthy = !gatewayError
-  const gpsRecent = gpsStatus === 'moving' || gpsStatus === 'stopped'
-  const canTryCamera = gatewayHealthy && streamAvailable && !reportedOffline
-  const automaticallyPlay = canTryCamera && (channel?.online === true || (gpsRecent && stateOnline))
-  const canPlay = canTryCamera && (automaticallyPlay || manualRequested)
-
-  useEffect(() => {
-    if (!gatewayHealthy || reportedOffline) setManualRequested(false)
-  }, [gatewayHealthy, reportedOffline])
 
   useEffect(() => {
     if (!expanded) return
@@ -368,46 +347,25 @@ function CameraPanel({ channel, title, gpsStatus, stateOnline, gatewayError }: {
     const element = cardRef.current
     if (!element) return
     const result = await enterLandscapeFullscreen(element)
+    // Chrome/Android thường khóa ngang được. Safari/iPhone dùng lớp xoay giao diện dự phòng.
     setForceLandscape(!result.orientationLocked)
-  }
-
-  let cameraTitle = 'Camera chưa xác minh'
-  let cameraDetail = 'GPS đang chậm cập nhật; không thể suy ra trạng thái camera chỉ từ GPS.'
-  if (gatewayError) {
-    cameraTitle = 'Gateway Navicom chưa phản hồi'
-    cameraDetail = 'Ứng dụng chưa xác minh được kết nối camera. Hãy kiểm tra Gateway trước khi mở video.'
-  } else if (reportedOffline) {
-    cameraTitle = 'Kênh camera báo ngoại tuyến'
-    cameraDetail = 'Navicom trả trạng thái ngoại tuyến cho riêng kênh này.'
-  } else if (!streamAvailable) {
-    cameraTitle = 'Chưa có đường dẫn camera'
-    cameraDetail = 'Gateway chưa cung cấp URL phát video cho kênh này.'
-  } else if (!gpsRecent && !stateOnline) {
-    cameraDetail = 'GPS chưa cập nhật; camera có thể vẫn hoạt động. Bạn có thể thử mở thủ công.'
   }
 
   return <article ref={cardRef} className={`fleet-camera-card ${expanded ? 'camera-landscape-expanded' : ''} ${forceLandscape ? 'camera-force-landscape' : ''}`}>
     <header>
-      <div><span className={`fleet-camera-dot ${canPlay ? 'online' : reportedOffline ? 'offline' : 'unknown'}`} /><strong>{title}</strong></div>
+      <div><span className={`fleet-camera-dot ${channel?.online === false ? 'offline' : channel?.online === true ? 'online' : 'unknown'}`} /><strong>{title}</strong></div>
       <div className="fleet-camera-actions">
-        {canPlay && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noopener noreferrer">Mở riêng</a>}
-        {canPlay && <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>}
-        {manualRequested && !automaticallyPlay && <button type="button" onClick={() => setManualRequested(false)}>Tắt xem</button>}
+        {vehicleOnline && channel?.online !== false && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
+        <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>
       </div>
     </header>
-    <div className={`fleet-camera-frame ${!canPlay ? 'is-unverified' : ''}`}>
-      {canPlay ? (channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
-        : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
-          : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
-            : null) : <div className="fleet-camera-unavailable fleet-camera-pending">
-              <Icon name="camera" size={24} />
-              <strong>{cameraTitle}</strong>
-              <span>{cameraDetail}</span>
-              {canTryCamera && <button type="button" className="fleet-camera-manual-button" onClick={() => setManualRequested(true)}>
-                Thử mở camera
-              </button>}
-              {canTryCamera && <small>Chỉ tải trình phát khi bạn bấm. Navicom có thể báo ngoại tuyến nếu thiết bị thực sự mất kết nối.</small>}
-            </div>}
+    <div className={`fleet-camera-frame ${!vehicleOnline || channel?.online === false ? 'is-offline' : ''}`}>
+      {!vehicleOnline ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Xe đang offline</strong><small>Camera tạm ngưng để tránh mở trang Navicom khi thiết bị ngoại tuyến.</small></div>
+        : channel?.online === false ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Kênh camera ngoại tuyến</strong><small>GPS xe vẫn có thể hoạt động nhưng kênh camera này chưa sẵn sàng.</small></div>
+          : channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
+            : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
+              : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
+                : <div className="fleet-camera-unavailable"><Icon name="camera" size={24} /><strong>{title} chưa khả dụng</strong><span>Gateway chưa cung cấp URL video.</span></div>}
     </div>
     {expanded && forceLandscape && <div className="camera-rotate-hint">Đang hiển thị ngang để xem camera rõ hơn</div>}
   </article>

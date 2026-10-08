@@ -1,0 +1,31 @@
+/* v2.11.10: Leaflet map - không render lại 49 ô PNG trên mỗi tương tác */
+.fleet-smooth-map-shell{width:100%;min-width:0;padding:0 12px 12px}
+.fleet-smooth-map-frame{width:100%;height:clamp(320px,47vh,510px);position:relative;isolation:isolate;border-radius:16px;overflow:hidden;border:1px solid #d8e5e1;background:#e5efea}
+.fleet-smooth-map-surface{width:100%;height:100%;z-index:1;position:relative;outline:0}
+.fleet-smooth-map-surface.leaflet-container{font-family:inherit;background:#e5efea;touch-action:none}
+.fleet-smooth-map-frame:fullscreen{height:100vh!important;border-radius:0}
+.fleet-smooth-map-frame .leaflet-control-attribution{font-size:9px!important;background:rgba(255,255,255,.82)}
+.fleet-smooth-map-frame .leaflet-control-zoom{border:1px solid #cbdcd6!important;border-radius:12px!important;overflow:hidden;box-shadow:0 4px 16px rgba(18,60,52,.1)!important}
+.fleet-smooth-map-frame .leaflet-control-zoom a{width:40px;height:40px;line-height:40px;color:#173b33;font-size:23px}
+.fleet-smooth-map-frame .leaflet-control-zoom a:hover{background:#e8f5ef}
+.bvmsgtv-leaflet-marker-host{background:transparent!important;border:none!important}
+.bvmsgtv-leaflet-marker{height:57px;width:100px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;pointer-events:none;transform-origin:center bottom}
+.bvmsgtv-leaflet-car{width:39px;height:38px;border:3px solid white;border-radius:14px;display:grid;place-items:center;background:var(--marker-color);box-shadow:0 3px 12px rgba(0,0,0,.24);font-size:18px;line-height:1}
+.bvmsgtv-leaflet-plate{margin-top:2px;background:#213f36;color:#fff;border-radius:5px;padding:2px 6px;font-weight:800;font-size:10px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.17)}
+.bvmsgtv-leaflet-marker.is-selected .bvmsgtv-leaflet-car{box-shadow:0 0 0 5px rgba(15,139,108,.2),0 4px 14px rgba(0,0,0,.24);transform:scale(1.1)}
+.fleet-map-progress{position:absolute;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;padding:24px;text-align:center;color:#3e5c53;background:rgba(240,247,244,.92)}
+.fleet-map-progress strong{font-size:14px}.fleet-map-progress span{font-size:12px;line-height:1.5;max-width:350px}.fleet-map-progress button{padding:10px 17px;background:#0f8269;border:0;color:white;border-radius:10px;font-weight:800;font-size:12px}
+.fleet-smooth-map-spinner{width:26px;height:26px;border:3px solid #b8dbcb;border-top-color:#0b8a6a;border-radius:50%;animation:fleetMapSpin .9s linear infinite}@keyframes fleetMapSpin{to{transform:rotate(360deg)}}
+.fleet-smooth-map-toolbar{z-index:550;position:absolute;top:106px;right:11px;display:grid;gap:6px}
+.fleet-smooth-map-toolbar button{width:40px;height:39px;border:1px solid #d8e6e0;border-radius:11px;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.1);font-size:22px;color:#234a3f;font-weight:800;cursor:pointer}
+.fleet-smooth-map-toolbar button.is-following{background:#daf4e8;color:#0b7959;border-color:#94d4b9}
+.fleet-smooth-map-tip{z-index:490;position:absolute;top:15px;left:50%;transform:translateX(-50%);border-radius:999px;background:rgba(255,255,255,.95);padding:8px 14px;color:#51645e;font-size:10.5px;font-weight:750;white-space:nowrap;pointer-events:none;box-shadow:0 3px 14px rgba(0,0,0,.09)}
+.fleet-smooth-map-tip .mobile{display:none}
+.fleet-smooth-map-legend{z-index:495;bottom:10px!important;left:10px!important;max-width:80%;gap:9px!important}
+@media(max-width:820px){.fleet-smooth-map-shell{padding:0 8px 8px}.fleet-smooth-map-frame{height:370px;border-radius:14px}.fleet-smooth-map-tip .desktop{display:none}.fleet-smooth-map-tip .mobile{display:inline}.fleet-smooth-map-toolbar{right:8px;top:103px}.fleet-smooth-map-toolbar button{width:38px;height:37px}.fleet-smooth-map-legend{bottom:20px!important;max-width:calc(100% - 24px)}}
+@media(max-width:430px){.fleet-smooth-map-frame{height:335px}.fleet-smooth-map-tip{font-size:10px;top:9px;padding:7px 11px}.fleet-smooth-map-toolbar button{width:36px;height:35px;font-size:19px}}
+@media(prefers-reduced-motion:reduce){.fleet-smooth-map-spinner{animation:none}}
+
+/* Hiển thị lỗi tải tile nhưng vẫn giữ marker/GPS tương tác. */
+.fleet-smooth-tile-error{position:absolute;z-index:560;top:60px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 110px);padding:7px 11px;border-radius:9px;background:#fff9f0;color:#8c4c15;border:1px solid #edceb0;font-size:12px;font-weight:650;text-align:center;pointer-events:none;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+@media(max-width:820px){.fleet-smooth-tile-error{font-size:11px;max-width:calc(100% - 95px)}}

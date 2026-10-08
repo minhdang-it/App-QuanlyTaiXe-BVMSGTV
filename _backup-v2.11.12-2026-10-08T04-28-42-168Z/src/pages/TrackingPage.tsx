@@ -1,3 +1,5 @@
+import { FleetVehicleCard } from '../components/FleetVehicleCard'
+import { FleetSmoothMap } from '../components/FleetSmoothMap'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useData } from '../context/DataContext'
 import { Icon } from '../components/Icon'
@@ -238,22 +240,7 @@ function FleetMetric({ icon, label, value, tone }: { icon: Parameters<typeof Ico
 }
 
 function VehicleLiveCard({ item, selected, onSelect }: { item: ReturnType<typeof makeItemShape>; selected: boolean; onSelect: () => void }) {
-  const status = STATUS_META[item.status]
-  return <button type="button" className={`fleet-vehicle-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
-    <div className="fleet-card-head">
-      <div><strong>{item.vehicle.plate_number}</strong><small>{item.vehicle.vehicle_name}</small></div>
-      <span className={`fleet-status-badge ${status.tone}`}><i />{status.label}</span>
-    </div>
-    <div className="fleet-card-data">
-      <span><Icon name="gauge" size={13} /><b>{item.state?.gps.speed_kph != null ? `${Math.round(item.state.gps.speed_kph)} km/h` : '—'}</b></span>
-      <span><Icon name="user" size={13} /><b>{item.driver?.full_name || 'Chưa phân công'}</b></span>
-      <span className="wide"><Icon name="pin" size={13} /><b>{item.state?.gps.address || coordinateLabel(item.state) || 'Chưa có vị trí'}</b></span>
-    </div>
-    <div className="fleet-card-foot">
-      <span>{item.state?.gps.updated_at ? `Cập nhật ${formatDateTime(item.state.gps.updated_at)}` : item.error || 'Chưa có dữ liệu mới'}</span>
-      {item.warnings.length > 0 && <b><Icon name="alert" size={12} /> {item.warnings.length}</b>}
-    </div>
-  </button>
+  return <FleetVehicleCard item={item} selected={selected} onSelect={onSelect} />
 }
 
 // Helper chỉ để TypeScript suy ra cùng cấu trúc với fleetItems.
@@ -305,38 +292,17 @@ function VehicleCommandDetail({ item }: { item: ReturnType<typeof makeItemShape>
         </div>
       </div>
       <div className={`fleet-dual-camera mode-${cameraMode}`}>
-        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel key={`${item.vehicle.id}:front`} channel={front} title="Camera trước" gpsStatus={item.status} stateOnline={item.state?.online === true} gatewayError={item.error ?? null} />}
-        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel key={`${item.vehicle.id}:cabin`} channel={cabin} title="Camera cabin" gpsStatus={item.status} stateOnline={item.state?.online === true} gatewayError={item.error ?? null} />}
+        {(cameraMode === 'both' || cameraMode === 'front') && <CameraPanel channel={front} title="Camera trước" vehicleOnline={cameraDeviceOnline} />}
+        {(cameraMode === 'both' || cameraMode === 'cabin') && <CameraPanel channel={cabin} title="Camera cabin" vehicleOnline={cameraDeviceOnline} />}
       </div>
     </div>
   </section>
 }
 
-function CameraPanel({ channel, title, gpsStatus, stateOnline, gatewayError }: {
-  channel: NavicomVehicleState['channels'][number] | null
-  title: string
-  gpsStatus: FleetStatus
-  stateOnline: boolean
-  gatewayError: string | null
-}) {
+function CameraPanel({ channel, title, vehicleOnline }: { channel: NavicomVehicleState['channels'][number] | null; title: string; vehicleOnline: boolean }) {
   const cardRef = useRef<HTMLElement | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [forceLandscape, setForceLandscape] = useState(false)
-  const [manualRequested, setManualRequested] = useState(false)
-
-  // CMSV6 hiện đánh giá `state.online` qua thời điểm GPS, không phải kiểm tra video.
-  // Không dùng trạng thái GPS "Chậm cập nhật" để tuyên bố camera ngoại tuyến.
-  const streamAvailable = Boolean(channel?.player_url || channel?.hls_url || channel?.snapshot_url)
-  const reportedOffline = channel?.online === false
-  const gatewayHealthy = !gatewayError
-  const gpsRecent = gpsStatus === 'moving' || gpsStatus === 'stopped'
-  const canTryCamera = gatewayHealthy && streamAvailable && !reportedOffline
-  const automaticallyPlay = canTryCamera && (channel?.online === true || (gpsRecent && stateOnline))
-  const canPlay = canTryCamera && (automaticallyPlay || manualRequested)
-
-  useEffect(() => {
-    if (!gatewayHealthy || reportedOffline) setManualRequested(false)
-  }, [gatewayHealthy, reportedOffline])
 
   useEffect(() => {
     if (!expanded) return
@@ -368,46 +334,25 @@ function CameraPanel({ channel, title, gpsStatus, stateOnline, gatewayError }: {
     const element = cardRef.current
     if (!element) return
     const result = await enterLandscapeFullscreen(element)
+    // Chrome/Android thường khóa ngang được. Safari/iPhone dùng lớp xoay giao diện dự phòng.
     setForceLandscape(!result.orientationLocked)
-  }
-
-  let cameraTitle = 'Camera chưa xác minh'
-  let cameraDetail = 'GPS đang chậm cập nhật; không thể suy ra trạng thái camera chỉ từ GPS.'
-  if (gatewayError) {
-    cameraTitle = 'Gateway Navicom chưa phản hồi'
-    cameraDetail = 'Ứng dụng chưa xác minh được kết nối camera. Hãy kiểm tra Gateway trước khi mở video.'
-  } else if (reportedOffline) {
-    cameraTitle = 'Kênh camera báo ngoại tuyến'
-    cameraDetail = 'Navicom trả trạng thái ngoại tuyến cho riêng kênh này.'
-  } else if (!streamAvailable) {
-    cameraTitle = 'Chưa có đường dẫn camera'
-    cameraDetail = 'Gateway chưa cung cấp URL phát video cho kênh này.'
-  } else if (!gpsRecent && !stateOnline) {
-    cameraDetail = 'GPS chưa cập nhật; camera có thể vẫn hoạt động. Bạn có thể thử mở thủ công.'
   }
 
   return <article ref={cardRef} className={`fleet-camera-card ${expanded ? 'camera-landscape-expanded' : ''} ${forceLandscape ? 'camera-force-landscape' : ''}`}>
     <header>
-      <div><span className={`fleet-camera-dot ${canPlay ? 'online' : reportedOffline ? 'offline' : 'unknown'}`} /><strong>{title}</strong></div>
+      <div><span className={`fleet-camera-dot ${channel?.online === false ? 'offline' : channel?.online === true ? 'online' : 'unknown'}`} /><strong>{title}</strong></div>
       <div className="fleet-camera-actions">
-        {canPlay && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noopener noreferrer">Mở riêng</a>}
-        {canPlay && <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>}
-        {manualRequested && !automaticallyPlay && <button type="button" onClick={() => setManualRequested(false)}>Tắt xem</button>}
+        {vehicleOnline && channel?.online !== false && channel?.external_url && <a href={channel.external_url} target="_blank" rel="noreferrer">Mở riêng</a>}
+        <button type="button" onClick={() => void toggleFullscreen()}>{expanded ? 'Thoát' : 'Phóng to ngang'}</button>
       </div>
     </header>
-    <div className={`fleet-camera-frame ${!canPlay ? 'is-unverified' : ''}`}>
-      {canPlay ? (channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
-        : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
-          : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
-            : null) : <div className="fleet-camera-unavailable fleet-camera-pending">
-              <Icon name="camera" size={24} />
-              <strong>{cameraTitle}</strong>
-              <span>{cameraDetail}</span>
-              {canTryCamera && <button type="button" className="fleet-camera-manual-button" onClick={() => setManualRequested(true)}>
-                Thử mở camera
-              </button>}
-              {canTryCamera && <small>Chỉ tải trình phát khi bạn bấm. Navicom có thể báo ngoại tuyến nếu thiết bị thực sự mất kết nối.</small>}
-            </div>}
+    <div className={`fleet-camera-frame ${!vehicleOnline || channel?.online === false ? 'is-offline' : ''}`}>
+      {!vehicleOnline ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Xe đang offline</strong><small>Camera tạm ngưng để tránh mở trang Navicom khi thiết bị ngoại tuyến.</small></div>
+        : channel?.online === false ? <div className="fleet-camera-offline"><span><Icon name="cloud-off" size={26} /></span><strong>Kênh camera ngoại tuyến</strong><small>GPS xe vẫn có thể hoạt động nhưng kênh camera này chưa sẵn sàng.</small></div>
+          : channel?.player_url ? <iframe title={title} src={channel.player_url} allow="autoplay; fullscreen; picture-in-picture" />
+            : channel?.hls_url ? <video src={channel.hls_url} controls autoPlay muted playsInline />
+              : channel?.snapshot_url ? <img src={channel.snapshot_url} alt={title} />
+                : <div className="fleet-camera-unavailable"><Icon name="camera" size={24} /><strong>{title} chưa khả dụng</strong><span>Gateway chưa cung cấp URL video.</span></div>}
     </div>
     {expanded && forceLandscape && <div className="camera-rotate-hint">Đang hiển thị ngang để xem camera rõ hơn</div>}
   </article>
@@ -418,158 +363,7 @@ function FleetRealtimeMap({ items, selectedVehicleId, onSelect }: { items: Array
 }
 
 function FleetTileMap({ items, selectedVehicleId, onSelect }: { items: Array<ReturnType<typeof makeItemShape>>; selectedVehicleId: string; onSelect: (id: string) => void }) {
-  const viewportRef = useRef<HTMLDivElement | null>(null)
-  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; panX: number; panY: number } | null>(null)
-  const pointersRef = useRef(new Map<number, { x: number; y: number; type: string }>())
-  const pinchRef = useRef<{ distance: number; zoomAdjust: number } | null>(null)
-  const [zoomAdjust, setZoomAdjust] = useState(0)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState(false)
-  const located = items.filter((item) => item.state?.gps.lat != null && item.state?.gps.lng != null)
-
-  useEffect(() => {
-    const element = viewportRef.current
-    if (!element) return
-    const handleWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey) return
-      event.preventDefault()
-      const delta = event.deltaY < 0 ? 1 : -1
-      setZoomAdjust((value) => Math.max(-5, Math.min(5, value + delta)))
-    }
-    element.addEventListener('wheel', handleWheel, { passive: false })
-    return () => element.removeEventListener('wheel', handleWheel)
-  }, [])
-
-  if (!located.length) return <div className="fleet-map-empty"><Icon name="map" size={28} /><strong>Chưa có tọa độ GPS Navicom</strong><span>Khi thiết bị gửi GPS, xe sẽ xuất hiện trên bản đồ này.</span></div>
-
-  const centerLat = located.reduce((sum, item) => sum + Number(item.state!.gps.lat), 0) / located.length
-  const centerLng = located.reduce((sum, item) => sum + Number(item.state!.gps.lng), 0) / located.length
-  const spread = Math.max(...located.map((item) => Math.max(Math.abs(Number(item.state!.gps.lat) - centerLat), Math.abs(Number(item.state!.gps.lng) - centerLng))))
-  const baseZoom = spread > 0.08 ? 11 : spread > 0.03 ? 12 : spread > 0.012 ? 13 : 14
-  const zoom = Math.max(3, Math.min(19, baseZoom + zoomAdjust))
-  const tileSize = 256
-  const planeTiles = 7
-  const planeSize = planeTiles * tileSize
-  const centerWorld = project(centerLat, centerLng, zoom)
-  const centerTileX = Math.floor(centerWorld.x / tileSize)
-  const centerTileY = Math.floor(centerWorld.y / tileSize)
-  const half = Math.floor(planeTiles / 2)
-  const originTileX = centerTileX - half
-  const originTileY = centerTileY - half
-  const originWorldX = originTileX * tileSize
-  const originWorldY = originTileY * tileSize
-  const centerLocalX = centerWorld.x - originWorldX
-  const centerLocalY = centerWorld.y - originWorldY
-
-  const pointerDistance = () => {
-    const points = Array.from(pointersRef.current.values())
-    if (points.length < 2) return 0
-    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
-  }
-
-  function changeZoom(delta: number) {
-    setZoomAdjust((value) => Math.max(-5, Math.min(5, value + delta)))
-  }
-
-  function resetView() {
-    setZoomAdjust(0)
-    setPan({ x: 0, y: 0 })
-  }
-
-  async function toggleMapFullscreen() {
-    const element = viewportRef.current
-    if (!element) return
-    try {
-      if (document.fullscreenElement === element) await document.exitFullscreen()
-      else await element.requestFullscreen()
-    } catch { /* trình duyệt có thể chặn fullscreen */ }
-  }
-
-  return <div className="fleet-map-shell">
-    <div
-      ref={viewportRef}
-      className={`fleet-map-viewport ${dragging ? 'is-dragging' : ''}`}
-      onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('button,a')) return
-        pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, type: event.pointerType })
-        event.currentTarget.setPointerCapture(event.pointerId)
-        if (pointersRef.current.size >= 2) {
-          dragRef.current = null
-          pinchRef.current = { distance: pointerDistance(), zoomAdjust }
-          setDragging(false)
-          return
-        }
-        dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y }
-        setDragging(true)
-      }}
-      onPointerMove={(event) => {
-        if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, type: event.pointerType })
-        if (pointersRef.current.size >= 2 && pinchRef.current) {
-          const distance = pointerDistance()
-          if (distance > 0 && pinchRef.current.distance > 0) {
-            const ratio = distance / pinchRef.current.distance
-            const steps = Math.round(Math.log(ratio) / Math.log(1.3))
-            setZoomAdjust(Math.max(-5, Math.min(5, pinchRef.current.zoomAdjust + steps)))
-          }
-          return
-        }
-        const drag = dragRef.current
-        if (!drag || drag.pointerId !== event.pointerId) return
-        const nextX = Math.max(-520, Math.min(520, drag.panX + event.clientX - drag.startX))
-        const nextY = Math.max(-360, Math.min(360, drag.panY + event.clientY - drag.startY))
-        setPan({ x: nextX, y: nextY })
-      }}
-      onPointerUp={(event) => {
-        pointersRef.current.delete(event.pointerId)
-        if (pointersRef.current.size < 2) pinchRef.current = null
-        if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-        setDragging(false)
-      }}
-      onPointerCancel={(event) => {
-        pointersRef.current.delete(event.pointerId)
-        if (pointersRef.current.size < 2) pinchRef.current = null
-        dragRef.current = null
-        setDragging(false)
-      }}
-    >
-      <div className="fleet-map-plane" style={{ width: planeSize, height: planeSize, left: `calc(50% - ${centerLocalX}px + ${pan.x}px)`, top: `calc(50% - ${centerLocalY}px + ${pan.y}px)` }}>
-        {Array.from({ length: planeTiles * planeTiles }, (_, index) => {
-          const x = index % planeTiles
-          const y = Math.floor(index / planeTiles)
-          const tileX = originTileX + x
-          const tileY = originTileY + y
-          return <img key={`${tileX}-${tileY}`} className="fleet-map-tile" src={`https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`} alt="" draggable={false} style={{ left: x * tileSize, top: y * tileSize }} />
-        })}
-        {located.map((item) => {
-          const world = project(Number(item.state!.gps.lat), Number(item.state!.gps.lng), zoom)
-          const left = world.x - originWorldX
-          const top = world.y - originWorldY
-          const status = STATUS_META[item.status]
-          return <button type="button" key={item.vehicle.id} className={`fleet-map-marker ${status.tone} ${selectedVehicleId === item.vehicle.id ? 'selected' : ''}`} style={{ left, top }} onClick={() => onSelect(item.vehicle.id)} title={`${item.vehicle.plate_number} · ${status.label}`}>
-            <span><Icon name="vehicle" size={15} /></span><b>{item.vehicle.plate_number}</b>
-          </button>
-        })}
-      </div>
-      <div className="fleet-map-gesture-hint"><span className="desktop-hint">Giữ Ctrl + lăn chuột để thu phóng</span><span className="mobile-hint">Chụm 2 ngón tay để thu phóng</span></div>
-      <div className="fleet-map-zoom" aria-label="Điều khiển bản đồ">
-        <button type="button" onClick={() => changeZoom(1)} aria-label="Phóng to bản đồ">+</button>
-        <button type="button" onClick={() => changeZoom(-1)} aria-label="Thu nhỏ bản đồ">−</button>
-        <button type="button" className="fleet-map-reset" onClick={resetView} aria-label="Căn lại bản đồ">⌖</button>
-        <button type="button" className="fleet-map-fullscreen" onClick={() => void toggleMapFullscreen()} aria-label="Toàn màn hình bản đồ">⛶</button>
-      </div>
-      <div className="fleet-map-legend"><span><i className="moving" /> Đang chạy</span><span><i className="stopped" /> Đang dừng</span><span><i className="offline" /> Offline</span></div>
-      <small className="fleet-map-credit">© OpenStreetMap contributors · GPS Navicom</small>
-    </div>
-  </div>
-}
-function project(lat: number, lng: number, zoom: number) {
-  const scale = 256 * Math.pow(2, zoom)
-  const sin = Math.sin(lat * Math.PI / 180)
-  return {
-    x: (lng + 180) / 360 * scale,
-    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
-  }
+  return <FleetSmoothMap items={items} selectedVehicleId={selectedVehicleId} onSelect={onSelect} />
 }
 
 function fleetListPriority(status: FleetStatus) {

@@ -1,0 +1,51 @@
+/* v2.11.12 — thẻ xe tương tác: tốc độ lớn, hồ sơ tài xế, vị trí Google Maps */
+.fleet-action-vehicle-card{cursor:pointer}
+.fleet-action-vehicle-card .fleet-card-action-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:12px}
+.fleet-action-vehicle-card .fleet-card-action-grid .wide{grid-column:1/-1}
+.fleet-data-action{display:flex;align-items:center;gap:6px;min-width:0;min-height:36px;padding:8px;border:1px solid transparent;border-radius:10px;color:var(--text-2,#344941);background:rgba(239,248,244,.9);text-align:left;text-decoration:none;font:inherit;font-size:11px;cursor:pointer}
+.fleet-data-action b{display:block;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:750;color:var(--text,#152f28)}
+.fleet-data-action svg{flex-shrink:0;color:var(--brand-700,#0b785c)}
+.fleet-data-action:hover,.fleet-data-action:focus-visible{background:#dcf4e9;border-color:#8dd6ba;color:#085a46;outline:none}
+.fleet-data-action.fleet-data-disabled{cursor:default;background:#f2f5f4;color:#87948f}
+.fleet-data-action.fleet-data-disabled:hover{border-color:transparent;background:#f2f5f4}
+.fleet-action-vehicle-card .fleet-card-foot{align-items:center;flex-wrap:wrap;gap:4px}
+.fleet-action-vehicle-card .fleet-card-foot > span{font-size:10.5px;line-height:1.5}
+.fleet-card-dialog-backdrop{position:fixed;inset:0;z-index:2500;display:grid;place-items:center;padding:16px;background:rgba(9,32,27,.62);backdrop-filter:blur(5px)}
+.fleet-card-dialog{width:min(460px,100%);max-height:min(92dvh,800px);overflow-y:auto;overscroll-behavior:contain;border:1px solid #c5ddd3;border-radius:22px;padding:22px;background:#fff;color:#172f29;box-shadow:0 20px 70px rgba(0,0,0,.25)}
+.fleet-card-dialog-head{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:15px}
+.fleet-card-dialog-head small{display:block;font-size:10px;font-weight:850;letter-spacing:.09em;color:#12805f}
+.fleet-card-dialog-head h2{font-size:20px;line-height:1.25;margin:5px 0 0;color:#123b34}
+.fleet-card-dialog-close{width:42px;height:42px;display:grid;place-items:center;flex-shrink:0;border:1px solid #d5e5df;background:#eef6f3;border-radius:12px;color:#21453b;cursor:pointer}
+.fleet-speed-status{display:flex;justify-content:center;align-items:center;gap:8px;padding:10px;background:#fff3e2;color:#97621e;border-radius:12px;font-size:11.5px;font-weight:750;text-align:center}
+.fleet-speed-status.is-live{background:#e5f8ef;color:#087e58}
+.fleet-live-indicator{width:9px;height:9px;flex-shrink:0;border-radius:50%;background:currentColor}
+.fleet-speed-status.is-live .fleet-live-indicator{box-shadow:0 0 0 5px rgba(20,160,103,.12)}
+.fleet-speed-dial{width:min(290px,75vw);height:min(290px,75vw);display:grid;place-items:center;margin:20px auto;border-radius:50%;background:conic-gradient(from 225deg,#13966e 0 var(--fleet-speed-fill,0%),#d8e8e1 var(--fleet-speed-fill,0%) 75%,transparent 75% 100%);position:relative}
+.fleet-speed-dial:before{content:"";position:absolute;inset:16px;border-radius:50%;background:white}
+.fleet-speed-dial-inner{position:relative;text-align:center;display:grid;gap:0}
+.fleet-speed-dial-inner strong{font-size:clamp(68px,15vw,104px);line-height:1;font-weight:850;font-variant-numeric:tabular-nums;letter-spacing:-.07em;color:#093e30}
+.fleet-speed-dial-inner span{font-size:19px;font-weight:700;color:#648078}
+.fleet-speed-details{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fleet-speed-details div{padding:13px;background:#f2f8f5;border:1px solid #dfeae6;border-radius:13px}
+.fleet-speed-details span,.fleet-speed-details strong{display:block}
+.fleet-speed-details span{font-size:11px;color:#607c74}
+.fleet-speed-details strong{margin-top:6px;font-size:13px;font-variant-numeric:tabular-nums;color:#174639;line-height:1.4}
+.fleet-speed-footnote{font-size:11.5px;color:#637d74;line-height:1.55;margin:14px 0 0}
+.fleet-driver-top{display:flex;align-items:center;gap:15px;padding:15px;background:#f1faf6;border-radius:15px}
+.fleet-driver-top img,.fleet-driver-avatar{width:62px;height:62px;object-fit:cover;flex-shrink:0;border-radius:18px;display:grid;place-items:center;background:#d5f0e3;color:#0f795d}
+.fleet-driver-top strong{display:block;font-size:18px;line-height:1.4}
+.fleet-driver-top span{display:block;margin-top:3px;font-size:12px;color:#628077}
+.fleet-driver-fields{margin:12px 0;display:grid;gap:2px}
+.fleet-driver-fields>div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;border-bottom:1px solid #e4eeea;padding:12px 3px;font-size:13px;line-height:1.45}
+.fleet-driver-fields dt{color:#607d73}
+.fleet-driver-fields dd{margin:0;word-break:break-word;font-weight:700;color:#1d453a}
+.fleet-driver-call{display:flex;align-items:center;justify-content:center;gap:9px;padding:13px 15px;border-radius:12px;color:white!important;background:#0c8766;font-size:14px;font-weight:800;text-decoration:none}
+@media(max-width:820px){
+  .fleet-data-action{min-height:43px;padding:9px;font-size:12px}
+  .fleet-data-action b{font-size:12px}
+  .fleet-card-dialog{padding:17px;border-radius:18px}
+  .fleet-card-dialog-head h2{font-size:19px}
+  .fleet-speed-details strong{font-size:12px}
+}
+@media(max-width:380px){.fleet-driver-fields>div{grid-template-columns:95px minmax(0,1fr)}.fleet-card-dialog-backdrop{padding:9px}}
+@media(prefers-reduced-motion:reduce){.fleet-speed-status.is-live .fleet-live-indicator{box-shadow:none}}
