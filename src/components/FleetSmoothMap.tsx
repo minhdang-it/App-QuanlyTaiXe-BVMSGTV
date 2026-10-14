@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
  */
 type FleetStatus = 'moving' | 'stopped' | 'stale' | 'offline' | 'unknown'
 type FleetSmoothMapItem = {
-  vehicle: { id: string; plate_number: string }
+  vehicle: { id: string; plate_number: string; image_url?: string | null; model?: string | null; brand?: string | null }
   state: { gps: { lat?: number | null; lng?: number | null; speed_kph?: number | null; updated_at?: string | null } } | null
   status: FleetStatus
 }
@@ -32,10 +32,8 @@ const LIBRARY_CDN = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
 ]
 const LIBRARY_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css'
-const CARTO_TILE = 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 const OSM_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions">CARTO</a>`
 const STATUS: Record<FleetStatus, { label: string; color: string }> = {
   moving: { label: 'Đang chạy', color: '#2168bb' },
   stopped: { label: 'Đang dừng', color: '#11946d' },
@@ -109,16 +107,23 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] || char)
 }
 
-function markerIcon(L: LeafletApi, plate: string, status: FleetStatus, selected: boolean) {
+function resolveCarPhoto(item: FleetSmoothMapItem) {
+  const image = String(item.vehicle.image_url || '').trim()
+  if (/^(https?:\/\/|\/)/i.test(image)) return image
+  const label = `${item.vehicle.model ?? ''} ${item.vehicle.brand ?? ''} ${item.vehicle.plate_number}`.toLowerCase()
+  return /fortuner|7 chỗ|7 cho/.test(label) ? '/fortuner-real.png' : '/hiace-real.png'
+}
+
+function markerIcon(L: LeafletApi, plate: string, status: FleetStatus, selected: boolean, photoUrl: string) {
   const color = STATUS[status].color
   return L.divIcon({
     className: 'bvmsgtv-leaflet-marker-host',
-    html: `<div class="bvmsgtv-leaflet-marker ${selected ? 'is-selected' : ''}" style="--marker-color:${color}">
-      <div class="bvmsgtv-leaflet-car">🚐</div>
+    html: `<div class="bvmsgtv-leaflet-marker status-${status} ${selected ? 'is-selected' : ''}" style="--marker-color:${color}">
+      <div class="bvmsgtv-leaflet-car"><span class="bvmsgtv-car-fallback" aria-hidden="true">🚐</span><img src="${escapeHtml(photoUrl)}" loading="eager" draggable="false" alt="" onerror="this.style.display='none'" /></div>
       <span class="bvmsgtv-leaflet-plate">${escapeHtml(plate)}</span>
     </div>`,
-    iconSize: [100, 57],
-    iconAnchor: [50, 55],
+    iconSize: [124, 112],
+    iconAnchor: [62, 109],
   })
 }
 
@@ -132,7 +137,7 @@ function validPosition(item: FleetSmoothMapItem): item is FleetSmoothMapItem & {
 export function FleetSmoothMap({ items, selectedVehicleId, onSelect }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<any>(null)
-  const layersRef = useRef<Map<string, { marker: any; plate: string; status: FleetStatus; selected: boolean }>>(new Map())
+  const layersRef = useRef<Map<string, { marker: any; plate: string; status: FleetStatus; selected: boolean; photoUrl: string }>>(new Map())
   const onSelectRef = useRef(onSelect)
   const selectedRef = useRef(selectedVehicleId)
   const previousSelectionRef = useRef<string>('')
@@ -171,25 +176,16 @@ export function FleetSmoothMap({ items, selectedVehicleId, onSelect }: Props) {
       })
       mapRef.current = map
       const configuredTiles = String(import.meta.env.VITE_OSM_TILE_URL ?? '').trim()
-      const layer = L.tileLayer(configuredTiles || CARTO_TILE, {
-        attribution: configuredTiles ? OSM_ATTRIBUTION : CARTO_ATTRIBUTION,
+      const layer = L.tileLayer(configuredTiles || OSM_TILE, {
+        attribution: OSM_ATTRIBUTION,
         maxZoom: 19,
         minZoom: 3,
         updateWhenIdle: true,
         keepBuffer: 4,
         detectRetina: false,
       }).addTo(map)
-      // Nếu nhà cung cấp ảnh nền không phản hồi, chuyển sang OSM chính thức (một lần).
-      let tileFailures = 0
-      let fallbackActivated = false
       layer.on('tileerror', () => {
-        if (configuredTiles || fallbackActivated) return
-        tileFailures += 1
-        if (tileFailures >= 3) {
-          fallbackActivated = true
-          map.removeLayer(layer)
-          L.tileLayer(OSM_TILE, { attribution: OSM_ATTRIBUTION, maxZoom: 19, minZoom: 3, keepBuffer: 4 }).addTo(map)
-        }
+        // Lỗi kết nối tile: không đổi sang CARTO cần API key.
       })
       L.control.zoom({ position: 'topright' }).addTo(map)
       L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(map)
@@ -238,24 +234,26 @@ export function FleetSmoothMap({ items, selectedVehicleId, onSelect }: Props) {
       const latLng: [number, number] = [item.state.gps.lat, item.state.gps.lng]
       nextIds.add(id)
       const selected = selectedVehicleId === id
+      const photoUrl = resolveCarPhoto(item)
       const old = layersRef.current.get(id)
       if (old) {
         old.marker.setLatLng(latLng)
-        if (old.status !== item.status || old.selected !== selected || old.plate !== item.vehicle.plate_number) {
-          old.marker.setIcon(markerIcon(L, item.vehicle.plate_number, item.status, selected))
+        if (old.status !== item.status || old.selected !== selected || old.plate !== item.vehicle.plate_number || old.photoUrl !== photoUrl) {
+          old.marker.setIcon(markerIcon(L, item.vehicle.plate_number, item.status, selected, photoUrl))
           old.status = item.status
           old.selected = selected
           old.plate = item.vehicle.plate_number
+          old.photoUrl = photoUrl
         }
       } else {
         const marker = L.marker(latLng, {
-          icon: markerIcon(L, item.vehicle.plate_number, item.status, selected),
+          icon: markerIcon(L, item.vehicle.plate_number, item.status, selected, photoUrl),
           keyboard: true,
           riseOnHover: true,
           title: `${item.vehicle.plate_number} · ${STATUS[item.status].label}`,
         }).addTo(map)
         marker.on('click', () => onSelectRef.current(id))
-        layersRef.current.set(id, { marker, status: item.status, plate: item.vehicle.plate_number, selected })
+        layersRef.current.set(id, { marker, status: item.status, plate: item.vehicle.plate_number, selected, photoUrl })
       }
     }
 

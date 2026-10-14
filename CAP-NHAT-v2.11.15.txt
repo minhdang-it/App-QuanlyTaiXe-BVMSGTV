@@ -1,0 +1,13 @@
+BVMSGTV v2.11.15 - Ảnh xe thực trên marker + vòng màu trạng thái
+
+Nguồn: bản dist-bk đã cập nhật tương tác thẻ xe v2.11.14.
+1. Marker Leaflet hiển thị ảnh xe image_url trong Hồ sơ xe (nếu có).
+2. Nếu chưa có ảnh, dùng hình xe 16 chỗ hoặc Fortuner mặc định theo loại/tên xe.
+3. Vòng viền màu: xanh dương chạy; xanh lá dừng; cam chậm; đỏ offline; xám chưa có GPS.
+4. Khi vào Theo dõi xe lần đầu, đợi GPS rồi chọn xe online tốt nhất: đang chạy trước, tiếp theo xe đang dừng; xe mới cập nhật lên trước.
+5. Đã chọn thủ công hoặc từ thông báo thì không tự nhảy sang xe khác.
+6. Giữ bản đồ OpenStreetMap, GPS/camera Navicom, phóng to tốc độ, hồ sơ tài xế, link Google Maps.
+
+Cập nhật: giải nén ZIP vào thư mục upload riêng rồi deploy DIST như các bản trước.
+Không chạy SQL; không cập nhật Navicom Gateway.
+LƯU Ý: Bản này chỉnh DIST trực tiếp. Nếu build lại từ full source cũ thì cần tích hợp thay đổi vào TSX.

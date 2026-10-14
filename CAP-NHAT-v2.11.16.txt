@@ -1,0 +1,1 @@
+v2.11.16: Căn ảnh xe giữa vòng trạng thái, tăng marker 80px và font sự kiện gần đây. Không SQL/Gateway. Đây là DIST, không phải TypeScript nguồn.

@@ -1,0 +1,10 @@
+BVMSGTV v2.11.14 – Bổ sung tương tác trên thẻ xe realtime
+
+1. Tốc độ: bấm để mở đồng hồ lớn, tốc độ cập nhật theo dữ liệu Navicom của trang (khoảng 5 giây khi có GPS mới). Xe offline sẽ ghi rõ dữ liệu cuối cùng.
+2. Tài xế: mở tên, bộ phận, chức danh, mã nhân viên, số điện thoại/gọi nhanh (nếu có dữ liệu).
+3. Vị trí: bấm tọa độ/vị trí để mở chính xác Google Maps tại tab mới. Bản đồ nội bộ giữ OpenStreetMap.
+
+ĐÂY LÀ BẢN VÁ DIST, KHÔNG PHẢI FULL SOURCE TSX. Khi build lại từ source cũ, thay đổi này sẽ mất nếu chưa chuyển chúng vào TrackingPage.tsx.
+
+Triển khai: Sao lưu thư mục production hiện tại, sau đó chép nội dung trong ZIP trực tiếp vào document root của Nginx (không chép thêm cấp thư mục BVMSGTV-dist-v2.11.14-FLEET-CARDS).
+Không chạy npm, không cần SQL/Gateway.

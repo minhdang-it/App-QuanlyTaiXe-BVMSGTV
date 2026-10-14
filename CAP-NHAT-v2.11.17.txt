@@ -1,0 +1,7 @@
+BVMSGTV DIST v2.11.17 – Camera độc lập với GPS + dự phòng OpenStreetMap
+- Camera có URL thì hiển thị dù GPS stale/offline, không gắn trạng thái camera vào GPS.
+- Khi kênh báo offline nhưng có URL: nút Thử phát camera để tránh popup Navicom tự động (máy chủ Navicom vẫn có thể hiện alert khi thực sự offline).
+- Khi không có URL: hiển thị thông báo về kênh video; yêu cầu kiểm tra API Gateway.
+- Bản đồ OpenStreetMap đổi máy chủ ảnh nền sang OpenStreetMap France khi gặp >=4 lỗi tải tile. Nếu cả hai đều lỗi, chỉ hiện cảnh báo nhỏ.
+- Không cần SQL / không đổi Navicom Gateway.
+- Bản này chỉnh trực tiếp DIST; chưa phải full source TypeScript.
