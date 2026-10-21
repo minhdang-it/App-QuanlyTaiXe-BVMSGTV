@@ -1,14 +1,5 @@
 node_modules/
-dist/
+local-browser-profile/
+probe-output/
 .env
-.env.*
-!.env.example
-!.env.local.example
-*.log
-*.tsbuildinfo
-.DS_Store
-.certs/
-.service/
-*.zip
-
-supabase/.temp/
+*.har
